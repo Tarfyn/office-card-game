@@ -9174,3 +9174,217 @@ body.match-mode .arena-sidepanel * { max-width:100%; }
   body.match-mode .command-dock { bottom:139px; }
   body.match-mode .board-first-shell.results-view .match-result-panel { overflow:visible !important; }
 }
+
+/* v7.69.5 — match HUD fit + direct Reputation attack anchor */
+/* Office Coach lives in the narrow Match HUD rail. Give it its own compact vertical layout
+   instead of inheriting the old page-wide three-column coach grid. */
+.arena-sidepanel .guidance-coach {
+  width:100%;
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:7px;
+  padding:8px;
+}
+.arena-sidepanel .guidance-kicker {
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.arena-sidepanel .guidance-copy {
+  min-width:0;
+  display:grid;
+  grid-template-columns:1fr;
+  gap:3px;
+}
+.arena-sidepanel .guidance-copy strong,
+.arena-sidepanel .guidance-copy span {
+  min-width:0;
+  white-space:normal;
+  word-break:normal;
+  overflow-wrap:break-word;
+}
+.arena-sidepanel .guidance-actions {
+  min-width:0;
+  display:flex;
+  justify-content:flex-start;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
+}
+.arena-sidepanel .guidance-actions button { min-width:0; }
+
+/* The compact REP vital is the visible direct-attack destination in the board-first HUD.
+   Detailed resource cards remain hidden in match mode for provenance only. */
+body.match-mode .player-vitals .vital.rep.reputation-target-anchor {
+  position:relative;
+  overflow:visible;
+}
+body.match-mode .player-vitals .vital.rep.reputation-target-anchor.attack-destination {
+  border-color:rgba(255,98,84,.72);
+  box-shadow:0 0 0 2px rgba(255,92,78,.32),0 0 18px rgba(255,74,59,.28),inset 0 0 12px rgba(255,74,59,.08);
+}
+body.match-mode .player-vitals .vital-reputation-delta {
+  position:absolute;
+  z-index:3;
+  right:-5px;
+  top:-8px;
+  padding:2px 4px;
+  border-radius:999px;
+  background:#eaf7ee;
+  color:#247044;
+  font:900 6px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  box-shadow:0 2px 8px rgba(0,0,0,.24);
+}
+body.match-mode .player-vitals .vital-reputation-delta.loss { background:#ffe4e0; color:#ad3e34; }
+
+/* v7.69.5 — full-viewport Executive Desk geometry
+   The desk is the viewport stage. Nothing sits on a second wooden background, and the open drawer
+   stays flush with the same left/right edges so its physical perspective remains coherent. */
+body.lobby-mode .app {
+  background-image:
+    radial-gradient(circle at 50% -10%,rgba(255,226,183,.08),transparent 42%),
+    linear-gradient(rgba(34,15,8,.04),rgba(13,7,4,.12)),
+    var(--desk-wood-texture);
+  background-size:auto,auto,720px 720px;
+}
+.executive-lobby {
+  width:100%;
+  min-height:calc(100vh - 58px);
+  padding:0;
+  overflow-x:hidden;
+  background:transparent;
+}
+.executive-desk-surface {
+  width:100%;
+  max-width:none;
+  min-height:calc(100vh - 58px);
+  margin:0;
+  padding:18px clamp(14px,1.8vw,34px) 20px;
+  border-left:0;
+  border-right:0;
+  border-radius:0;
+  box-shadow:inset 0 1px rgba(255,255,255,.08),inset 0 0 0 3px rgba(25,11,5,.20),inset 0 -12px 26px rgba(13,6,3,.18);
+}
+.executive-desk-tools {
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:14px clamp(14px,1.8vw,34px) 36px;
+  border-left:0;
+  border-right:0;
+  border-radius:0;
+  box-shadow:inset 0 10px 18px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.045),0 15px 32px rgba(0,0,0,.22);
+}
+.executive-desk-tools::before {
+  content:'';
+  position:absolute;
+  z-index:1;
+  left:0;
+  right:0;
+  top:0;
+  height:7px;
+  border-top:1px solid rgba(0,0,0,.72);
+  border-bottom:1px solid rgba(218,176,122,.06);
+  background:linear-gradient(180deg,rgba(9,4,2,.55),rgba(39,20,11,.20));
+  pointer-events:none;
+}
+.desk-tools-tray {
+  position:relative;
+  z-index:2;
+  margin-bottom:4px;
+  border-color:#080807;
+  background-image:linear-gradient(rgba(0,0,0,.27),rgba(0,0,0,.38)),var(--desk-plastic-texture);
+  box-shadow:inset 0 7px 22px rgba(0,0,0,.50),inset 0 0 0 2px rgba(82,74,61,.20),0 3px 8px rgba(0,0,0,.22);
+}
+/* A downward-pulled drawer exposes its handle on the lower front face, not at the desk seam. */
+.desk-tools-hardware {
+  z-index:4;
+  top:auto;
+  bottom:8px;
+}
+.desk-tools-hardware > span {
+  height:11px;
+  border-radius:8px 8px 3px 3px;
+  box-shadow:0 -1px 2px rgba(255,255,255,.07),0 2px 4px rgba(0,0,0,.38);
+}
+.desk-tools-tray .private-room-drawer,
+.desk-tools-tray .alpha-session-strip,
+.desk-tools-tray .rules-primer,
+.desk-tools-tray .lobby-playtest-drawer {
+  border-color:#b2946c;
+  box-shadow:3px 4px 9px rgba(0,0,0,.31),inset 0 1px rgba(255,255,255,.32);
+}
+
+/* Quick Match should feel like hardware built into the desk, not a legacy form dropped into a dark card. */
+.desk-agenda-sheet {
+  border-color:#070807;
+  background-image:linear-gradient(90deg,rgba(255,255,255,.035),transparent 45%,rgba(0,0,0,.16)),var(--desk-metal-texture);
+  box-shadow:inset 0 1px rgba(255,255,255,.055),inset 0 -2px 3px rgba(0,0,0,.42),0 2px 5px rgba(0,0,0,.20);
+}
+.desk-quick-controls select {
+  border-color:#555047;
+  background-image:linear-gradient(rgba(255,255,255,.025),rgba(0,0,0,.16)),var(--desk-plastic-texture);
+  background-size:auto,190px 190px;
+}
+
+@media (min-width:2200px) and (min-height:1100px) {
+  .executive-lobby { padding-inline:0; }
+  .executive-desk-surface {
+    width:100%;
+    max-width:none;
+    min-height:calc(100vh - 58px);
+    padding:clamp(28px,2.2vw,72px) clamp(34px,3.2vw,118px) 34px;
+    grid-template-columns:clamp(260px,9vw,350px) minmax(900px,1fr) clamp(390px,13vw,520px);
+    gap:clamp(24px,1.6vw,54px);
+  }
+  .executive-desk-center { padding:clamp(30px,2vw,58px); }
+  .desk-deck-showcase { grid-template-columns:minmax(330px,.72fr) minmax(620px,1.5fr); }
+  .desk-card-fan-item { width:clamp(250px,7.4vw,300px); }
+  .executive-desk-tools {
+    width:100%;
+    max-width:none;
+    padding-inline:clamp(34px,3.2vw,118px);
+  }
+}
+
+@media (max-width:760px) {
+  .executive-lobby { padding:0; }
+  .executive-desk-surface {
+    width:100%;
+    min-height:0;
+    padding:8px 7px 10px;
+    border-left:0;
+    border-right:0;
+    border-radius:0;
+  }
+  .executive-desk-right { gap:7px; }
+  .desk-bureaucracy { padding:22px 7px 7px; }
+  .desk-bureaucracy-title { margin-bottom:6px; }
+  .desk-bureaucracy .profile-strip { gap:5px; padding:6px; }
+  .desk-bureaucracy .profile-identity small { display:none; }
+  .desk-bureaucracy .profile-stats {
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:3px;
+  }
+  .desk-bureaucracy .profile-stats span { min-width:0; padding:4px 3px; font-size:7px; text-align:center; }
+  .desk-bureaucracy .profile-rename { grid-template-columns:minmax(0,1fr) auto; gap:4px; }
+  .desk-bureaucracy .profile-rename button { width:auto; min-width:84px; }
+  .desk-bureaucracy .ranked-standing { margin-top:5px; padding:6px; gap:5px; }
+  .desk-bureaucracy .ranked-standing > div:first-child > strong { font-size:16px; }
+  .desk-bureaucracy .ranked-standing-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:3px; }
+  .desk-bureaucracy .ranked-standing-stats span { padding:4px; font-size:7px; }
+  .executive-desk-tools {
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:12px 7px 31px;
+    border-left:0;
+    border-right:0;
+    border-radius:0;
+  }
+  .desk-tools-hardware { width:132px; bottom:7px; }
+  .desk-tools-tray { margin:0; }
+}

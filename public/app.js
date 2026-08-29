@@ -2308,12 +2308,19 @@ function deckHudState(deckCount) {
   return { label:'CARDS', tone:'stable' };
 }
 
+function directAttackDefenderId(match = state.view?.match) {
+  const attack = match?.pendingAttack;
+  if (!attack || attack.cancelled || attack.targetId !== null) return null;
+  return attack.controllerId === 'P1' ? 'P2' : attack.controllerId === 'P2' ? 'P1' : null;
+}
+
 function renderPlayerVitals(player) {
   const rep = reputationHudState(player.reputation);
   const deck = deckHudState(player.deckCount);
   const handTone = player.handCount >= 8 ? 'limit' : 'stable';
+  const directDefender = directAttackDefenderId();
   return `<div class="player-vitals" aria-label="Live match resources">
-    <span class="vital rep ${esc(rep.tone)}"><small>REP</small><b>${esc(player.reputation)}</b></span>
+    <span class="vital rep reputation-target-anchor ${esc(rep.tone)} ${directDefender === player.id ? 'attack-destination' : ''} ${reputationImpactClass(player.id)}" data-reputation-player="${esc(player.id)}"><small>REP</small><b>${esc(player.reputation)}</b>${reputationImpactAmount(player.id) ? `<em class="vital-reputation-delta ${reputationImpactAmount(player.id) < 0 ? 'loss' : 'gain'}">${reputationImpactAmount(player.id) > 0 ? '+' : ''}${esc(reputationImpactAmount(player.id))}</em>` : ''}</span>
     <span class="vital cap"><small>CAP</small><b>${esc(player.availableCapacity)}/${esc(player.maxCapacity)}</b></span>
     <span class="vital hand ${handTone}"><small>HAND</small><b>${esc(player.handCount)}/8</b></span>
     <span class="vital deck ${esc(deck.tone)}"><small>DECK</small><b>${esc(player.deckCount)}</b></span>
@@ -2324,8 +2331,7 @@ function renderResources(player) {
   const repPct = Math.max(0, Math.min(100, (player.reputation / 30) * 100));
   const repState = reputationHudState(player.reputation);
   const handPct = Math.max(0, Math.min(100, (player.handCount / 8) * 100));
-  const attack = state.view?.match?.pendingAttack;
-  const directDefender = attack?.targetId === null && !attack.cancelled ? (attack.controllerId === 'P1' ? 'P2' : 'P1') : null;
+  const directDefender = directAttackDefenderId();
   return `<div class="resource-cluster">
     <div class="resource-card reputation-resource tone-${esc(repState.tone)} ${directDefender === player.id ? 'attack-destination' : ''} ${reputationImpactClass(player.id)}" data-reputation-player="${esc(player.id)}">
       <span>COMPANY REPUTATION</span><div class="resource-value"><strong>${player.reputation}</strong><small>/ 30</small></div><b class="resource-state">${esc(repState.label)}</b>
@@ -2364,8 +2370,9 @@ function drawAttackConnector() {
   const glowPath = document.querySelector('#attackGlowPath');
   if (!svg || !path || !attack || attack.cancelled) return;
   const source = document.querySelector(`[data-card-ref="${CSS.escape(attack.attackerId)}"]`);
+  const defenderId = directAttackDefenderId(match);
   const target = attack.targetId === null
-    ? document.querySelector(`[data-reputation-player="${CSS.escape(match.viewerId === attack.controllerId ? (attack.controllerId === 'P1' ? 'P2' : 'P1') : match.viewerId)}"]`)
+    ? document.querySelector(`.reputation-target-anchor[data-reputation-player="${CSS.escape(defenderId ?? '')}"]`)
     : document.querySelector(`[data-card-ref="${CSS.escape(attack.targetId)}"]`);
   if (!source || !target) return;
   const a = source.getBoundingClientRect();
@@ -2374,7 +2381,9 @@ function drawAttackConnector() {
   const x2 = b.left + b.width / 2, y2 = b.top + b.height / 2;
   const bend = Math.max(36, Math.abs(y2-y1) * .18);
   const cy = (y1 + y2) / 2 - (y2 < y1 ? bend : -bend);
-  path.setAttribute('d', `M ${x1} ${y1} Q ${(x1+x2)/2} ${cy} ${x2} ${y2}`);
+  const connector = `M ${x1} ${y1} Q ${(x1+x2)/2} ${cy} ${x2} ${y2}`;
+  path.setAttribute('d', connector);
+  glowPath?.setAttribute('d', connector);
 }
 
 function departmentMark(department) {
@@ -4702,7 +4711,7 @@ function renderStarterDeckGuide() {
 }
 
 function renderExecutiveAlphaMemo() {
-  const version = state.serverInfo?.version ?? '7.69.4';
+  const version = state.serverInfo?.version ?? '7.69.5';
   return `<section class="desk-alpha-memo"><span>${lobbyCopy('ALPHA UPDATE','ALPHA-UPDATE')}</span><strong>v${esc(version)}</strong><p>${lobbyCopy('Executive Desk lobby, safer rematches and the board-first match interface are active on this server.','Executive-Desk-Lobby, sichere Rematches und das Board-First-Matchinterface sind auf diesem Server aktiv.')}</p><small>${lobbyCopy('Alpha systems and balance remain provisional.','Alpha-Systeme und Balance bleiben vorläufig.')}</small></section>`;
 }
 
