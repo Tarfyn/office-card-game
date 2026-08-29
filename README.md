@@ -1604,3 +1604,27 @@ The normal tester path is quieter: the top bar uses an `External Alpha` label in
 ## v7.66 — Human Playtest Data Pass
 
 Adds human-match-only balance evidence without changing any card or rules values. Persisted room records now derive anonymous per-card activity from authoritative match events, aggregate deck opener/second-player splits, card observed/played usage, win rate when played, resign counts and long-turn/long-response friction signals. Admin analytics requests/exports now send the protected admin header correctly, with separate Match CSV and Card CSV exports. Starting-hand cards that never produce an authoritative card event are intentionally not claimed as observed; this telemetry is directional evidence, not a complete hidden-information reconstruction.
+
+
+## v7.67 — Hosted Sync / Tab-Control Hotfix
+
+v7.67 is a hosted-play reliability hotfix. It does not change card rules, balance, decks or the 107-card Alpha pool.
+
+- A browser tab now keeps the same controller `clientId` across reloads via `sessionStorage`, preventing a normal reload from looking like a second browser session.
+- Live SSE connections are generation-owned so overlapping reconnect attempts cannot leave orphaned EventSource instances behind.
+- EventSource native retry is explicitly closed on error; the client uses one bounded backoff path instead of two competing reconnect systems.
+- SSE heartbeats are real `heartbeat` events, allowing the client to distinguish a healthy quiet stream from a stale stream.
+- If SSE is unavailable or repeatedly interrupted, an authoritative HTTP polling fallback keeps the room current while live sync recovers.
+- Intent responses preserve the submitting `clientId` when projecting `viewerSession`, so controller state remains consistent immediately after moves.
+
+
+## v7.68 — Hosted Live-Sync Safety Hotfix
+
+v7.68 hardens hosted two-player state delivery after real external-alpha testing exposed delayed SSE state events during mulligan, turn handoffs and Priority transitions. The server remains strictly authoritative; stale-state validation is not relaxed.
+
+- A lightweight authoritative `/state` safety poll now remains armed even while SSE reports `LIVE`, so buffered or half-open proxy streams cannot leave the inactive player stuck on an old state.
+- Safety polling is faster during active/setup matches and slower outside live play; SSE remains the primary low-latency channel.
+- If observable SSE heartbeats become stale for multiple heartbeat intervals, the client rebuilds the stream while HTTP state sync keeps the match current.
+- Every submitted intent performs a best-effort authoritative state preflight, and every accepted intent performs an immediate post-commit refresh to catch turn/Priority transitions.
+- A P2 mulligan that races P1 and receives `STALE_STATE` is silently resynchronized and retried exactly once with a fresh intent id, only while mulligan remains legal and all chosen cards are still in that player's hand.
+- Ordinary non-mulligan intents are never auto-replayed after `STALE_STATE`; server idempotency and legality remain the final authority.

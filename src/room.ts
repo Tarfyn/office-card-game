@@ -662,7 +662,7 @@ export class RoomService {
     if (cached) {
       return {
         response: structuredClone(cached.response),
-        view: this.projectRoom(room, token, cached.response.lastEventSeq),
+        view: this.projectRoom(room, token, cached.response.lastEventSeq, clientId || undefined),
         replayed: true
       };
     }
@@ -701,7 +701,7 @@ export class RoomService {
     }
     return {
       response: execution.response,
-      view: this.projectRoom(room, token, beforeSeq),
+      view: this.projectRoom(room, token, beforeSeq, clientId || undefined),
       replayed: false
     };
   }
