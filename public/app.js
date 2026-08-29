@@ -5976,8 +5976,9 @@ function renderGame() {
   const guidanceTip = currentGuidanceTip(match);
   const guidanceMode = guidanceTip ? ` guidance-active guidance-focus-${guidanceTip.focus}` : '';
   const busyMode = state.intentBusy ? ' intent-submitting' : '';
+  const resultsMode = match.status === 'ENDED' && state.matchEndOverlayDismissedRoomId === state.view?.roomId ? ' results-view' : '';
   const arena = matchArenaStyle();
-  app.innerHTML = `<div class="game-shell board-first-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}" data-arena-id="${esc(arena.id)}" style="${arena.style}">
+  app.innerHTML = `<div class="game-shell board-first-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}${resultsMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}" data-arena-id="${esc(arena.id)}" style="${arena.style}">
     <div class="arena-background-layer" aria-hidden="true"></div>
     <div class="game-main">
       ${renderMatchOpening(match)}
