@@ -12,6 +12,7 @@ const html=root("public/index.html");
 const app=root("public/app.js");
 const css=root("public/styles.css");
 const readme=root("README.md");
+const cards:any[]=JSON.parse(root("data/cards.json"));
 
 function sliceBetween(source:string,start:string,end:string){
   const a=source.indexOf(start);
@@ -22,10 +23,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.4");
-  assert.match(server,/version: "7\.69\.4"/);
-  assert.match(server,/Office Card Game v7\.69\.4 server/);
-  assert.match(html,/v7\.69\.4 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.5");
+  assert.match(server,/version: "7\.69\.5"/);
+  assert.match(server,/Office Card Game v7\.69\.5 server/);
+  assert.match(html,/v7\.69\.5 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.5 — Full-Desk Lobby Geometry, Artwork Rollout \+ Match HUD Fixes/);
   assert.match(readme,/## v7\.69\.3 — Executive Desk Lobby \+ Rematch Gate/);
 });
 
@@ -331,6 +333,59 @@ test("v7.69.4 scales useful lobby surfaces on 4K and keeps all real controls on 
   assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.executive-desk-surface \{ display:flex; flex-direction:column/);
   assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.desk-card-fan-item \{ width:104px/);
   assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.desk-tools-tray \{ display:flex; flex-direction:column/);
+});
+
+
+test("v7.69.5 keeps Office Coach readable inside the narrow Match HUD rail",()=>{
+  assert.match(css,/\.arena-sidepanel \.guidance-coach \{[\s\S]*?grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css,/\.arena-sidepanel \.guidance-copy strong,[\s\S]*?word-break:normal/);
+  assert.match(css,/\.arena-sidepanel \.guidance-actions \{[\s\S]*?flex-wrap:wrap/);
+});
+
+test("v7.69.5 anchors direct attacks to the visible REP vital",()=>{
+  const vitals=sliceBetween(app,"function directAttackDefenderId", "function renderResources");
+  assert.match(vitals,/targetId !== null/);
+  assert.match(vitals,/reputation-target-anchor/);
+  assert.match(vitals,/data-reputation-player/);
+  assert.match(vitals,/attack-destination/);
+  const connector=sliceBetween(app,"function drawAttackConnector", "function departmentMark");
+  assert.match(connector,/directAttackDefenderId\(match\)/);
+  assert.match(connector,/\.reputation-target-anchor\[data-reputation-player/);
+  assert.match(connector,/glowPath\?\.setAttribute\('d', connector\)/);
+  assert.match(css,/body\.match-mode \.player-vitals \.vital\.rep\.reputation-target-anchor\.attack-destination/);
+});
+
+test("v7.69.5 makes the desk and downward drawer one flush full-viewport object",()=>{
+  const geometry=css.slice(css.lastIndexOf("/* v7.69.5 — full-viewport Executive Desk geometry"));
+  assert.match(geometry,/\.executive-lobby \{[\s\S]*?padding:0/);
+  assert.match(geometry,/\.executive-desk-surface \{[\s\S]*?width:100%;[\s\S]*?max-width:none;[\s\S]*?margin:0;[\s\S]*?border-left:0;[\s\S]*?border-right:0/);
+  assert.match(geometry,/\.executive-desk-tools \{[\s\S]*?width:100%;[\s\S]*?max-width:none;[\s\S]*?margin:0;[\s\S]*?border-left:0;[\s\S]*?border-right:0/);
+  assert.match(geometry,/\.desk-tools-hardware \{[\s\S]*?top:auto;[\s\S]*?bottom:8px/);
+  assert.match(geometry,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?\.executive-desk-surface \{[\s\S]*?width:100%;[\s\S]*?max-width:none/);
+  assert.match(geometry,/@media \(max-width:760px\)[\s\S]*?\.desk-bureaucracy \.profile-stats \{[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+});
+
+test("v7.69.5 integrates the supplied card artwork batch with canonical web slugs",()=>{
+  const illustrated=cards.filter(card=>Boolean(card.artId));
+  const supplied=cards.filter(card=>String(card.artId??'').endsWith('.webp'));
+  const missing=cards.filter(card=>!card.artId);
+  assert.equal(cards.length,107);
+  assert.equal(illustrated.length,82);
+  assert.equal(supplied.length,81);
+  assert.equal(missing.length,25);
+  assert.equal(cards.find(card=>card.id==='CS-002')?.artId,'alpha/call-center-agent.webp');
+  assert.equal(cards.find(card=>card.id==='IT-006')?.artId,'alpha/erp-specialist.webp');
+  assert.equal(cards.find(card=>card.id==='IT-014')?.artId,'alpha/server-cluster.webp');
+  assert.equal(cards.find(card=>card.id==='MKT-003')?.artId,'alpha/performance-marketer.webp');
+  assert.equal(cards.find(card=>card.id==='N-009')?.artId,'alpha/coffee-chat.webp');
+  assert.equal(cards.find(card=>card.id==='N-013')?.artId,'alpha/coffee-machine.webp');
+  assert.equal(cards.find(card=>card.id==='OFC-007')?.artId,'alpha/approval-required.png');
+  assert.ok(supplied.every(card=>!String(card.artId).includes('_')));
+  for(const card of supplied){
+    const asset=fileURLToPath(new URL(`../../public/art/${card.artId}`,import.meta.url));
+    assert.ok(readFileSync(asset).length>1000,`missing artwork asset for ${card.id}`);
+  }
+  assert.match(root("scripts/artwork-audit.mjs"),/ratioTolerance=0\.015/);
 });
 
 console.log(`\n${passed}/${passed} v7.69 tests passed.`);

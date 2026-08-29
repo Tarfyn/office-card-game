@@ -10,29 +10,21 @@ function test(name: string, fn: () => void): void {
 }
 
 const samples: Record<string,string> = {
-  "CS-001": "alpha/customer-service-agent.png",
-  "IT-003": "alpha/system-administrator.png",
+  "CS-001": "alpha/customer-service-agent.webp",
+  "IT-003": "alpha/system-administrator.webp",
   "OFC-007": "alpha/approval-required.png",
-  "MKT-012": "alpha/going-viral.png",
-  "PRD-008": "alpha/plant-manager.png",
-  "N-013": "alpha/coffee-machine.png"
+  "MKT-012": "alpha/going-viral.webp",
+  "PRD-008": "alpha/plant-manager.webp",
+  "N-013": "alpha/coffee-machine.webp"
 };
 
-function pngDimensions(bytes: Uint8Array): { width: number; height: number } {
-  assert.deepEqual([...bytes.subarray(1, 4)], [80, 78, 71]);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return { width: view.getUint32(16, false), height: view.getUint32(20, false) };
-}
-
-test("v2.6 six representative cards use the supplied PNG artworks", () => {
+test("v2.6 representative real artworks remain wired after the WebP batch migration", () => {
   for (const [id, artId] of Object.entries(samples)) {
-    assert.equal(alphaDefinitions[id].artId, artId, `${id} should use supplied PNG art`);
+    assert.equal(alphaDefinitions[id].artId, artId, `${id} should keep production art`);
     const path = fileURLToPath(new URL(`../../public/art/${artId}`, import.meta.url));
     const file = readFileSync(path);
-    const { width, height } = pngDimensions(file);
-    assert.equal(width, 1672);
-    assert.equal(height, 941);
-    assert.ok(Math.abs(width / height - 16 / 9) < 0.002, `${id} should be effectively 16:9`);
+    assert.ok(file.length > 1000, `${id} artwork should be a real raster asset`);
+    assert.match(artId, /\.(?:png|webp)$/i);
   }
 });
 

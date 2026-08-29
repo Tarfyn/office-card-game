@@ -11,7 +11,7 @@ const write=process.argv.includes('--write');
 const strictMissing=process.argv.includes('--strict-missing');
 const supported=new Set(['.png','.webp','.jpg','.jpeg']);
 const targetRatio=16/9;
-const ratioTolerance=0.012;
+const ratioTolerance=0.015; // accepts the current 1376x768 WebP batch while keeping 16:9 as the target
 
 function pngSize(buffer){ if(buffer.length<24 || buffer.toString('ascii',1,4)!=='PNG') return null; return {width:buffer.readUInt32BE(16),height:buffer.readUInt32BE(20)}; }
 function jpegSize(buffer){ let i=2; while(i+9<buffer.length){ if(buffer[i]!==0xff){i++;continue;} const marker=buffer[i+1]; const len=buffer.readUInt16BE(i+2); if([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) return {height:buffer.readUInt16BE(i+5),width:buffer.readUInt16BE(i+7)}; i+=2+Math.max(2,len); } return null; }

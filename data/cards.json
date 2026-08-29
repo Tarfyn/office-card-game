@@ -43,7 +43,7 @@
         ]
       }
     ],
-    "artId": "alpha/customer-service-agent.png"
+    "artId": "alpha/customer-service-agent.webp"
   },
   {
     "id": "CS-002",
@@ -94,7 +94,8 @@
         ]
       }
     ],
-    "flavorText": "Your call is very important to someone."
+    "flavorText": "Your call is very important to someone.",
+    "artId": "alpha/call-center-agent.webp"
   },
   {
     "id": "CS-003",
@@ -138,7 +139,8 @@
     ],
     "rulesText": "The first time a Ticket card causes an Employee to return from your Archive each turn, draw 1 card.",
     "flavorText": "Closed? According to whom?",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/ticket-specialist.webp"
   },
   {
     "id": "CS-004",
@@ -186,7 +188,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/escalation-specialist.webp"
   },
   {
     "id": "CS-005",
@@ -261,7 +264,8 @@
     ],
     "rulesText": "Once per turn, when another Customer Service Employee you control is targeted by an attack or opponent effect, redirect it to this Employee if legal.",
     "flavorText": "I’ll handle this one.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/customer-advocate.webp"
   },
   {
     "id": "CS-006",
@@ -314,7 +318,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/team-lead-customer-service.webp"
   },
   {
     "id": "CS-007",
@@ -380,7 +385,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/head-of-customer-service.webp"
   },
   {
     "id": "CS-008",
@@ -445,7 +451,8 @@
     ],
     "rulesText": "Target 1 Customer Service Staff Employee in your Archive; return it to the field in Onboarding. At the end of your next turn, Archive it.",
     "flavorText": "The customer has replied.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/ticket-reopened.webp"
   },
   {
     "id": "CS-009",
@@ -522,7 +529,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/escalated-ticket.webp"
   },
   {
     "id": "CS-010",
@@ -553,7 +561,8 @@
     ],
     "rulesText": "When an opponent’s Employee declares an attack: end that attack.",
     "flavorText": "Your estimated wait time is…",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/please-hold.webp"
   },
   {
     "id": "CS-011",
@@ -601,7 +610,8 @@
     ],
     "rulesText": "When a Customer Service Employee you control is targeted by an attack, redirect that attack to another legal Employee.",
     "flavorText": "Sorry, I was in another call.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/call-dodged.webp"
   },
   {
     "id": "CS-012",
@@ -653,7 +663,8 @@
     ],
     "rulesText": "When an opponent’s targeted Action or effect targets your Employee, redirect it to another legal Employee on the field.",
     "flavorText": "I’m afraid you’ve reached the wrong department.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/wrong-department.webp"
   },
   {
     "id": "CS-013",
@@ -691,7 +702,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/review-portal.webp"
   },
   {
     "id": "CS-014",
@@ -741,7 +753,8 @@
     ],
     "rulesText": "Restore 3 Reputation. If you control a Review System, draw 1 card.",
     "flavorText": "Very helpful… Five stars.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/five-star-review.webp"
   },
   {
     "id": "CS-015",
@@ -775,7 +788,8 @@
     ],
     "rulesText": "When your opponent activates an Action, delay it until the start of their next Main Phase.",
     "flavorText": "Please send the request again. By fax.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/complaint-by-fax.webp"
   },
   {
     "id": "CS-016",
@@ -841,7 +855,8 @@
     "rulesText": "Search your Deck for a Customer Service Lead or Executive Employee and add it to your hand. If a Customer Service Employee was destroyed by your opponent last turn, your next Customer Service Promotion this turn requires 1 fewer Employee, minimum 1.",
     "flavorText": "I’d like to speak to your manager.",
     "implementationStatus": "FULL",
-    "implementationNotes": "Search and conditional next-Promotion reduction are both implemented."
+    "implementationNotes": "Search and conditional next-Promotion reduction are both implemented.",
+    "artId": "alpha/id-like-to-speak-to-your-manager.webp"
   },
   {
     "id": "CS-017",
@@ -889,7 +904,8 @@
     ],
     "rulesText": "Target 1 Ticket Action in your Archive, except Follow-Up Email; return it to your hand. You cannot play that card this turn.",
     "implementationStatus": "FULL",
-    "flavorText": "Just circling back on the below."
+    "flavorText": "Just circling back on the below.",
+    "artId": "alpha/follow-up-email.webp"
   },
   {
     "id": "CS-018",
@@ -945,7 +961,8 @@
     ],
     "rulesText": "When an opponent’s targeted Action or effect targets a Customer Service Employee you control, return that Employee to your hand.",
     "flavorText": "I will have limited access to my inbox.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/out-of-office.webp"
   },
   {
     "id": "CS-019",
@@ -990,7 +1007,8 @@
     ],
     "rulesText": "The first Ticket Incident you set each turn costs 1 less.",
     "implementationStatus": "FULL",
-    "flavorText": "Current queue: yes."
+    "flavorText": "Current queue: yes.",
+    "artId": "alpha/ticket-backlog.webp"
   },
   {
     "id": "CS-020",
@@ -1041,7 +1059,8 @@
         ]
       }
     ],
-    "flavorText": "Please rate how delighted you are."
+    "flavorText": "Please rate how delighted you are.",
+    "artId": "alpha/customer-satisfaction-survey.webp"
   },
   {
     "id": "CS-021",
@@ -1173,7 +1192,8 @@
     "teams": [
       "IT_SERVICE"
     ],
-    "flavorText": "Have you opened a ticket?"
+    "flavorText": "Have you opened a ticket?",
+    "artId": "alpha/it-service-agent.webp"
   },
   {
     "id": "IT-002",
@@ -1238,7 +1258,8 @@
         ]
       }
     ],
-    "flavorText": "If it isn’t in the queue, it doesn’t exist."
+    "flavorText": "If it isn’t in the queue, it doesn’t exist.",
+    "artId": "alpha/service-desk-lead.webp"
   },
   {
     "id": "IT-003",
@@ -1285,7 +1306,7 @@
     ],
     "rulesText": "The first IT System you play each turn costs 1 less.",
     "implementationStatus": "FULL",
-    "artId": "alpha/system-administrator.png",
+    "artId": "alpha/system-administrator.webp",
     "flavorText": "I have root access and no patience."
   },
   {
@@ -1335,7 +1356,8 @@
         ]
       }
     ],
-    "flavorText": "It passed the pipeline."
+    "flavorText": "It passed the pipeline.",
+    "artId": "alpha/devops-engineer.webp"
   },
   {
     "id": "IT-005",
@@ -1378,7 +1400,8 @@
         ]
       }
     ],
-    "flavorText": "The button is working. On Chrome."
+    "flavorText": "The button is working. On Chrome.",
+    "artId": "alpha/frontend-developer.webp"
   },
   {
     "id": "IT-006",
@@ -1424,7 +1447,8 @@
         ]
       }
     ],
-    "flavorText": "Nobody touch it. It still runs."
+    "flavorText": "Nobody touch it. It still runs.",
+    "artId": "alpha/erp-specialist.webp"
   },
   {
     "id": "IT-007",
@@ -1510,7 +1534,8 @@
     ],
     "rulesText": "Promotion 2 — IT. The first IT System you play each turn costs 1 less. Other IT Employees you control get +1 Power while you control at least 2 IT Systems.",
     "implementationStatus": "FULL",
-    "flavorText": "We need a ticket for that."
+    "flavorText": "We need a ticket for that.",
+    "artId": "alpha/head-of-it.webp"
   },
   {
     "id": "IT-008",
@@ -1566,7 +1591,8 @@
     ],
     "rulesText": "Target 1 IT Employee you control and 1 opposing Employee. Your IT Employee gets +1 Power and the opposing Employee gets -1 Power until end of turn.",
     "implementationStatus": "FULL",
-    "flavorText": "Now we can troubleshoot."
+    "flavorText": "Now we can troubleshoot.",
+    "artId": "alpha/first-coffee.webp"
   },
   {
     "id": "IT-009",
@@ -1613,7 +1639,8 @@
         ]
       }
     ],
-    "flavorText": "Resolved. Please do not reply."
+    "flavorText": "Resolved. Please do not reply.",
+    "artId": "alpha/ticket-closed.webp"
   },
   {
     "id": "IT-010",
@@ -1662,7 +1689,8 @@
     ],
     "rulesText": "Target 1 Employee or System; remove its temporary Power changes and temporary effects.",
     "flavorText": "No, seriously.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/have-you-tried-turning-it-off-and-on-again.webp"
   },
   {
     "id": "IT-011",
@@ -1724,7 +1752,8 @@
     ],
     "rulesText": "Play an IT System with printed cost 4 or less from your hand without paying its Capacity cost. It counts as played through Deploy. If it leaves the field before the start of your next turn, lose 3 Reputation.",
     "implementationStatus": "FULL",
-    "flavorText": "What could possibly go wrong before the weekend?"
+    "flavorText": "What could possibly go wrong before the weekend?",
+    "artId": "alpha/friday-deployment.webp"
   },
   {
     "id": "IT-012",
@@ -1787,7 +1816,8 @@
     ],
     "rulesText": "When an IT Employee or System you control would be destroyed by an opponent’s Action or effect, it is not destroyed. This does not negate the rest of that effect.",
     "implementationStatus": "FULL",
-    "flavorText": "Deploying the fix for the fix."
+    "flavorText": "Deploying the fix for the fix.",
+    "artId": "alpha/emergency-patch.webp"
   },
   {
     "id": "IT-013",
@@ -1824,7 +1854,8 @@
     ],
     "rulesText": "When an opponent’s targeted Action or effect targets an IT Employee or System you control: negate that effect.",
     "flavorText": "Works on my machine.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/works-on-my-machine.webp"
   },
   {
     "id": "IT-014",
@@ -1871,7 +1902,8 @@
     ],
     "rulesText": "Once per turn during your Main Phase, if you control an IT Employee, gain 1 Capacity.",
     "implementationStatus": "FULL",
-    "flavorText": "We call it redundancy. Finance calls it expensive."
+    "flavorText": "We call it redundancy. Finance calls it expensive.",
+    "artId": "alpha/server-cluster.webp"
   },
   {
     "id": "IT-015",
@@ -1939,7 +1971,8 @@
     "rulesText": "The first IT Action you play each turn costs 1 less. While this is active, you cannot play more than 2 Actions per turn.",
     "implementationStatus": "FULL",
     "implementationNotes": "First IT Action discount and two-Action-per-turn cap are implemented.",
-    "flavorText": "Migration is planned for Q4. Which year?"
+    "flavorText": "Migration is planned for Q4. Which year?",
+    "artId": "alpha/legacy-erp.webp"
   },
   {
     "id": "IT-016",
@@ -1992,7 +2025,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/backend-developer.webp"
   },
   {
     "id": "IT-018",
@@ -2035,7 +2069,8 @@
     ],
     "rulesText": "Target 1 IT System you control. The first time it would be destroyed by an opponent’s Action or effect before your next turn, it is not destroyed.",
     "implementationStatus": "FULL",
-    "flavorText": "Small fix. Very small."
+    "flavorText": "Small fix. Very small.",
+    "artId": "alpha/hotfix.webp"
   },
   {
     "id": "IT-019",
@@ -2080,7 +2115,8 @@
     ],
     "rulesText": "Search your Deck for an IT Service Employee or any Ticket card and add it to your hand.",
     "implementationStatus": "FULL",
-    "flavorText": "Everything is priority critical."
+    "flavorText": "Everything is priority critical.",
+    "artId": "alpha/priority-critical.webp"
   },
   {
     "id": "IT-020",
@@ -2139,7 +2175,8 @@
         ]
       }
     ],
-    "flavorText": "Basically production, but with less panic."
+    "flavorText": "Basically production, but with less panic.",
+    "artId": "alpha/staging-environment.webp"
   },
   {
     "id": "IT-021",
@@ -3174,7 +3211,8 @@
         ]
       }
     ],
-    "flavorText": "Can we make this more thumb-stopping?"
+    "flavorText": "Can we make this more thumb-stopping?",
+    "artId": "alpha/social-media-manager.webp"
   },
   {
     "id": "MKT-002",
@@ -3227,7 +3265,8 @@
         ]
       }
     ],
-    "flavorText": "I changed the headline. Again."
+    "flavorText": "I changed the headline. Again.",
+    "artId": "alpha/content-manager.webp"
   },
   {
     "id": "MKT-003",
@@ -3268,7 +3307,8 @@
     ],
     "rulesText": "The first time your opponent loses Reputation from a Marketing card effect each turn, they lose 1 additional Reputation.",
     "implementationStatus": "FULL",
-    "flavorText": "What’s the conversion rate?"
+    "flavorText": "What’s the conversion rate?",
+    "artId": "alpha/performance-marketer.webp"
   },
   {
     "id": "MKT-004",
@@ -3306,7 +3346,8 @@
         }
       }
     ],
-    "flavorText": "Off the record, this is on the record."
+    "flavorText": "Off the record, this is on the record.",
+    "artId": "alpha/pr-manager.webp"
   },
   {
     "id": "MKT-005",
@@ -3354,7 +3395,8 @@
     ],
     "rulesText": "The first Campaign Action you play each turn costs 1 less.",
     "implementationStatus": "FULL",
-    "flavorText": "Is the tracking live?"
+    "flavorText": "Is the tracking live?",
+    "artId": "alpha/campaign-manager.webp"
   },
   {
     "id": "MKT-006",
@@ -3432,7 +3474,8 @@
         ]
       }
     ],
-    "flavorText": "Can we make it pop, but strategic?"
+    "flavorText": "Can we make it pop, but strategic?",
+    "artId": "alpha/marketing-lead.webp"
   },
   {
     "id": "MKT-007",
@@ -3519,7 +3562,8 @@
     ],
     "rulesText": "Promotion 2 — Marketing. The first Campaign Action you play each turn costs 1 less. The first time you play your third Marketing Action in a turn, your opponent loses 1 Reputation.",
     "implementationStatus": "FULL",
-    "flavorText": "What’s the big idea?"
+    "flavorText": "What’s the big idea?",
+    "artId": "alpha/chief-marketing-officer.webp"
   },
   {
     "id": "MKT-008",
@@ -3562,7 +3606,8 @@
     ],
     "rulesText": "Look at the top 3 cards of your Deck. You may reveal a Campaign or Content card and add it to your hand. Put the rest on the bottom in any order.",
     "implementationStatus": "FULL",
-    "flavorText": "Launch is tomorrow. Quick one."
+    "flavorText": "Launch is tomorrow. Quick one.",
+    "artId": "alpha/last-minute-briefing.webp"
   },
   {
     "id": "MKT-009",
@@ -3622,7 +3667,8 @@
     ],
     "rulesText": "Target 1 Marketing Employee you control; it gets +1 Power until end of turn. If this is your second Marketing Action this turn, it gets +2 instead.",
     "implementationStatus": "FULL",
-    "flavorText": "More energy. Less explanation."
+    "flavorText": "More energy. Less explanation.",
+    "artId": "alpha/make-it-pop.webp"
   },
   {
     "id": "MKT-010",
@@ -3672,7 +3718,8 @@
     "rulesText": "Target 1 Marketing Employee you control; it gets +1 Power until end of turn. If it deals direct Reputation damage this turn, your opponent loses 1 additional Reputation.",
     "implementationStatus": "FULL",
     "implementationNotes": "Power buff and additional Reputation loss after direct damage are implemented.",
-    "flavorText": "Organic is doing great. Now put budget behind it."
+    "flavorText": "Organic is doing great. Now put budget behind it.",
+    "artId": "alpha/boost-the-post.webp"
   },
   {
     "id": "MKT-011",
@@ -3720,7 +3767,8 @@
     ],
     "rulesText": "Target 1 Marketing Action in your Archive, except One More Feedback Round; return it to your hand. You cannot play it this turn.",
     "implementationStatus": "FULL",
-    "flavorText": "Final_final_v7."
+    "flavorText": "Final_final_v7.",
+    "artId": "alpha/one-more-feedback-round.webp"
   },
   {
     "id": "MKT-012",
@@ -3767,7 +3815,7 @@
     ],
     "rulesText": "Your opponent loses 2 Reputation. If this is your third Marketing Action this turn, they lose 2 additional Reputation.",
     "implementationStatus": "FULL",
-    "artId": "alpha/going-viral.png",
+    "artId": "alpha/going-viral.webp",
     "flavorText": "The comments are moving faster than approvals."
   },
   {
@@ -3806,7 +3854,8 @@
         ]
       }
     ],
-    "flavorText": "Love it! Just one tiny thing…"
+    "flavorText": "Love it! Just one tiny thing…",
+    "artId": "alpha/client-feedback.webp"
   },
   {
     "id": "MKT-014",
@@ -3851,7 +3900,8 @@
     ],
     "rulesText": "The first Content Action you play each turn costs 1 less.",
     "implementationStatus": "FULL",
-    "flavorText": "Scheduled until someone changes the plan."
+    "flavorText": "Scheduled until someone changes the plan.",
+    "artId": "alpha/content-calendar.webp"
   },
   {
     "id": "MKT-015",
@@ -3903,7 +3953,8 @@
         ]
       }
     ],
-    "flavorText": "Green means good. Mostly."
+    "flavorText": "Green means good. Mostly.",
+    "artId": "alpha/campaign-dashboard.webp"
   },
   {
     "id": "MKT-016",
@@ -4030,7 +4081,8 @@
     ],
     "rulesText": "",
     "flavorText": "Which line am I on today?",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/production-worker.webp"
   },
   {
     "id": "PRD-002",
@@ -4069,7 +4121,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/temporary-worker.webp"
   },
   {
     "id": "PRD-003",
@@ -4124,7 +4177,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/machine-operator.webp"
   },
   {
     "id": "PRD-004",
@@ -4179,7 +4233,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/warehouse-worker.webp"
   },
   {
     "id": "PRD-005",
@@ -4232,7 +4287,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/production-planner.webp"
   },
   {
     "id": "PRD-006",
@@ -4304,7 +4360,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/maintenance-technician.webp"
   },
   {
     "id": "PRD-007",
@@ -4368,7 +4425,8 @@
     ],
     "rulesText": "Promotion 1 — Production. During your Battle Phase, other Production Staff Employees you control get +1 Power while you control at least 3 Production Employees.",
     "flavorText": "Nobody leaves until the target is met.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/shift-lead.webp"
   },
   {
     "id": "PRD-008",
@@ -4455,7 +4513,7 @@
     "rulesText": "Promotion 2 — Production. Other Production Employees you control get +1 Power during your Battle Phase. The first Production Employee you control that destroys an opposing Employee by battle each turn deals Breakthrough damage for that battle.",
     "flavorText": "I want full output.",
     "implementationStatus": "FULL",
-    "artId": "alpha/plant-manager.png"
+    "artId": "alpha/plant-manager.webp"
   },
   {
     "id": "PRD-009",
@@ -4535,7 +4593,8 @@
         ]
       }
     ],
-    "flavorText": "Every line. Full speed."
+    "flavorText": "Every line. Full speed.",
+    "artId": "alpha/full-production.webp"
   },
   {
     "id": "PRD-010",
@@ -4581,7 +4640,8 @@
         ]
       }
     ],
-    "flavorText": "Same targets. Fewer people."
+    "flavorText": "Same targets. Fewer people.",
+    "artId": "alpha/night-shift.webp"
   },
   {
     "id": "PRD-011",
@@ -4640,7 +4700,8 @@
     ],
     "rulesText": "Target 1 Production Staff Employee you control; it may attack one additional time this turn. If it attacks twice this turn, Archive it during your End Phase.",
     "implementationStatus": "FULL",
-    "flavorText": "Just one more hour."
+    "flavorText": "Just one more hour.",
+    "artId": "alpha/overtime.webp"
   },
   {
     "id": "PRD-012",
@@ -4696,7 +4757,8 @@
         ]
       }
     ],
-    "flavorText": "Can you come in? It’s urgent."
+    "flavorText": "Can you come in? It’s urgent.",
+    "artId": "alpha/cover-the-shift.webp"
   },
   {
     "id": "PRD-013",
@@ -4751,7 +4813,8 @@
     ],
     "rulesText": "During your Battle Phase, Production Staff Employees you control get +1 Power while you control at least 3 Production Staff Employees.",
     "implementationStatus": "FULL",
-    "flavorText": "Keep it moving."
+    "flavorText": "Keep it moving.",
+    "artId": "alpha/assembly-line.webp"
   },
   {
     "id": "PRD-014",
@@ -4796,7 +4859,8 @@
         ]
       }
     ],
-    "flavorText": "No bottlenecks. In theory."
+    "flavorText": "No bottlenecks. In theory.",
+    "artId": "alpha/conveyor-belt.webp"
   },
   {
     "id": "PRD-015",
@@ -4966,7 +5030,8 @@
     "power": 1,
     "rulesText": "",
     "flavorText": "Happy to help. What does this button do?",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/intern.webp"
   },
   {
     "id": "N-002",
@@ -5018,7 +5083,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/office-assistant.webp"
   },
   {
     "id": "N-003",
@@ -5066,7 +5132,8 @@
     ],
     "rulesText": "The first Meeting Action you play each turn costs 1 less.",
     "flavorText": "Let’s put a quick meeting…",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/project-manager.webp"
   },
   {
     "id": "N-004",
@@ -5132,7 +5199,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/interim-team-lead.webp"
   },
   {
     "id": "N-005",
@@ -5197,7 +5265,8 @@
     ],
     "rulesText": "Target 1 Employee you control; it gets +2 Power until end of turn. If it is a Lead or Executive, restore 1 Reputation.",
     "flavorText": "I made a few slides.",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/presentation.webp"
   },
   {
     "id": "N-006",
@@ -5235,7 +5304,8 @@
     ],
     "rulesText": "Target 1 opposing Employee; it gets -1 Power until end of turn.",
     "implementationStatus": "FULL",
-    "flavorText": "I thought someone was ordering."
+    "flavorText": "I thought someone was ordering.",
+    "artId": "alpha/forgot-my-lunch.webp"
   },
   {
     "id": "N-007",
@@ -5273,7 +5343,8 @@
     ],
     "rulesText": "Target up to 2 Employees you control; they each get +1 Power until end of turn.",
     "implementationStatus": "FULL",
-    "flavorText": "Put me down for the usual."
+    "flavorText": "Put me down for the usual.",
+    "artId": "alpha/order-takeout.webp"
   },
   {
     "id": "N-008",
@@ -5320,7 +5391,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/office-gossip.webp"
   },
   {
     "id": "N-009",
@@ -5372,7 +5444,8 @@
     ],
     "rulesText": "Both players draw 1 card. Target 1 Employee you control; it gets +1 Power until end of turn.",
     "flavorText": "Do you have five minutes?",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/coffee-chat.webp"
   },
   {
     "id": "N-010",
@@ -5429,7 +5502,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/quick-meeting.webp"
   },
   {
     "id": "N-011",
@@ -5473,7 +5547,8 @@
     ],
     "rulesText": "When an Employee you control would be destroyed by battle, return it to your hand instead.",
     "implementationStatus": "FULL",
-    "flavorText": "I’m not coming in tomorrow."
+    "flavorText": "I’m not coming in tomorrow.",
+    "artId": "alpha/sick-leave.webp"
   },
   {
     "id": "N-013",
@@ -5518,7 +5593,7 @@
     "rulesText": "The first Coffee card you play each turn costs 1 less.",
     "flavorText": "Business-critical infrastructure.",
     "implementationStatus": "FULL",
-    "artId": "alpha/coffee-machine.png"
+    "artId": "alpha/coffee-machine.webp"
   },
   {
     "id": "N-014",
@@ -5555,7 +5630,8 @@
     ],
     "rulesText": "Once per turn during your Main Phase, look at the top 2 cards of your Deck. Put one on top and the other on the bottom.",
     "implementationStatus": "FULL",
-    "flavorText": "There’s a tab for that."
+    "flavorText": "There’s a tab for that.",
+    "artId": "alpha/spreadsheet.webp"
   },
   {
     "id": "N-015",
