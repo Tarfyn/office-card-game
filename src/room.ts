@@ -147,6 +147,10 @@ interface RoomRecord {
   connectionCounts: Record<PlayerId, number>;
   activeClientIds: Record<PlayerId, string | null>;
   rematchTargetRoomId?: string | null;
+  rematchSourceRoomId?: string | null;
+  rematchConfirmedSeats?: Partial<Record<PlayerId, boolean>>;
+  rematchAlternateFirstPlayer?: boolean;
+  rematchExpiresAt?: number | null;
 }
 
 export interface PersistedRoomRecord {
@@ -161,6 +165,10 @@ export interface PersistedRoomRecord {
   timer?: RoomTimerRuntime;
   telemetry?: RoomTelemetryState;
   rematchTargetRoomId?: string | null;
+  rematchSourceRoomId?: string | null;
+  rematchConfirmedSeats?: Partial<Record<PlayerId, boolean>>;
+  rematchAlternateFirstPlayer?: boolean;
+  rematchExpiresAt?: number | null;
 }
 
 export interface RoomStoreSnapshot {
@@ -197,6 +205,10 @@ export interface RoomClientView {
   telemetry: RoomTelemetryView;
   viewerSession: RoomViewerSessionView;
   rematchAvailable: boolean;
+  rematchSourceRoomId: string | null;
+  rematchConfirmedByViewer: boolean;
+  rematchConfirmedByOpponent: boolean;
+  rematchExpiresAt: number | null;
   match: ClientGameState | null;
   events: ClientEvent[];
 }
@@ -249,6 +261,7 @@ export interface RematchRoomResult {
   playerId: PlayerId;
   view: RoomClientView;
   created: boolean;
+  waiting: boolean;
   alternateFirstPlayer: boolean;
 }
 
@@ -289,6 +302,7 @@ const DEFAULT_TIMER_PROFILES: Record<string, TimerProfileConfig> = {
   UNTIMED: { id:"UNTIMED", enabled:false, turnSeconds:null, responseSeconds:null, timeBankSeconds:null, reconnectGraceSeconds:null },
   RANKED_STANDARD_TBD: { id:"RANKED_STANDARD_TBD", enabled:false, turnSeconds:null, responseSeconds:null, timeBankSeconds:null, reconnectGraceSeconds:null, status:"TUNING_REQUIRED" }
 };
+const REMATCH_REQUEST_TIMEOUT_MS = 90_000;
 
 function normalizeRoomSettings(selection: RoomSettingsSelection = {}, timerProfiles: Record<string, TimerProfileConfig> = DEFAULT_TIMER_PROFILES): RoomMatchSettings {
   const mode: RoomMatchMode = selection.mode === "RANKED" ? "RANKED" : "FRIENDLY";
@@ -434,7 +448,10 @@ export class RoomService {
       telemetry: createRoomTelemetry(this.nowFactory()),
       connectionCounts: { P1: 0, P2: 0 },
       activeClientIds: { P1: null, P2: null },
-      rematchTargetRoomId: null
+      rematchTargetRoomId: null,
+      rematchSourceRoomId: null,
+      rematchConfirmedSeats: {},
+      rematchAlternateFirstPlayer: false
     };
     this.rooms.set(roomId, room);
     this.persist();
@@ -477,10 +494,48 @@ export class RoomService {
     if (source.settings.ratingActive) throw new RoomError("RATED_REMATCH_DISABLED", "Rated Ranked matches must return to matchmaking for another rated opponent.");
 
     if (source.rematchTargetRoomId && this.rooms.has(source.rematchTargetRoomId)) {
-      const existing = this.getRoom(source.rematchTargetRoomId);
-      const seat = sourceSeat.playerId === "P1" ? existing.host : existing.guest;
+      const target = this.getRoom(source.rematchTargetRoomId);
+      const now = this.nowFactory();
+      if (!target.state && target.rematchExpiresAt && now >= target.rematchExpiresAt) {
+        source.rematchTargetRoomId = null;
+        source.roomVersion += 1;
+        this.rooms.delete(target.id);
+        this.persist();
+        this.notify(source);
+        throw new RoomError("REMATCH_NOT_READY", "Rematch request expired. Start a new rematch request if both players still want to play again.");
+      }
+      const seat = sourceSeat.playerId === "P1" ? target.host : target.guest;
       if (!seat) throw new RoomError("REMATCH_NOT_READY", "Rematch seat is not available.");
-      return { roomId:existing.id, token:seat.token, playerId:seat.playerId, view:this.projectRoom(existing, seat.token, 0), created:false, alternateFirstPlayer:existing.state?.firstPlayerId !== source.state.firstPlayerId };
+      target.rematchConfirmedSeats = { ...(target.rematchConfirmedSeats ?? {}), [sourceSeat.playerId]:true };
+
+      if (!target.state && target.rematchConfirmedSeats.P1 && target.rematchConfirmedSeats.P2 && target.guest) {
+        const firstPlayerId: PlayerId = target.rematchAlternateFirstPlayer ? (source.state.firstPlayerId === "P1" ? "P2" : "P1") : source.state.firstPlayerId;
+        target.state = createMatch({
+          matchId:`match-${target.id}`, seed:this.seedFactory(), firstPlayerId, definitions:this.definitions,
+          p1Deck:target.host.cards, p2Deck:target.guest.cards, format:ALPHA_FORMAT
+        });
+        const now = this.nowFactory();
+        target.lifecycle.matchStartedAt = now;
+        target.lifecycle.turnStartedAt = now;
+        target.lifecycle.responseStartedAt = target.state.responseWindow ? now : null;
+        target.rematchExpiresAt = null;
+        synchronizeTimerRuntime(target.timer, this.effectiveTimerProfile(target.settings), null, target.state, now);
+        synchronizeRoomTelemetry(target.telemetry, target.state, now);
+        addDiagnostic(target.telemetry, now, "MATCH_STARTED", undefined, { firstPlayerId, rematchOf:source.id });
+      }
+
+      target.roomVersion += 1;
+      this.persist();
+      this.notify(target);
+      return {
+        roomId:target.id,
+        token:seat.token,
+        playerId:seat.playerId,
+        view:this.projectRoom(target, seat.token, 0),
+        created:false,
+        waiting:!target.state,
+        alternateFirstPlayer:Boolean(target.rematchAlternateFirstPlayer)
+      };
     }
 
     let nextRoomId = this.roomIdFactory().toUpperCase();
@@ -492,28 +547,21 @@ export class RoomService {
     const p1Token = this.tokenFactory();
     const p2Token = this.tokenFactory();
     const alternateFirstPlayer = options.alternateFirstPlayer === true;
-    const firstPlayerId: PlayerId = alternateFirstPlayer ? (source.state.firstPlayerId === "P1" ? "P2" : "P1") : source.state.firstPlayerId;
     const now = this.nowFactory();
     const lifecycle = this.newLifecycle();
     const settings = structuredClone(source.settings);
-    const state = createMatch({
-      matchId:`match-${nextRoomId}`, seed:this.seedFactory(), firstPlayerId, definitions:this.definitions,
-      p1Deck:source.host.cards, p2Deck:source.guest.cards, format:ALPHA_FORMAT
-    });
-    lifecycle.matchStartedAt = now;
-    lifecycle.turnStartedAt = now;
-    lifecycle.responseStartedAt = state.responseWindow ? now : null;
     const timer = createTimerRuntime(this.effectiveTimerProfile(settings), null, now);
-    synchronizeTimerRuntime(timer, this.effectiveTimerProfile(settings), null, state, now);
     const telemetry = createRoomTelemetry(now);
-    synchronizeRoomTelemetry(telemetry, state, now);
-    addDiagnostic(telemetry, now, "MATCH_STARTED", undefined, { firstPlayerId, rematchOf:source.id });
     const room: RoomRecord = {
       id:nextRoomId, roomVersion:1,
       host:{ ...structuredClone(source.host), token:p1Token },
       guest:{ ...structuredClone(source.guest), token:p2Token },
-      state, processedIntents:new Map(), listeners:new Set(), settings, lifecycle, timer, telemetry,
-      connectionCounts:{ P1:0, P2:0 }, activeClientIds:{ P1:null, P2:null }, rematchTargetRoomId:null
+      state:null, processedIntents:new Map(), listeners:new Set(), settings, lifecycle, timer, telemetry,
+      connectionCounts:{ P1:0, P2:0 }, activeClientIds:{ P1:null, P2:null }, rematchTargetRoomId:null,
+      rematchSourceRoomId:source.id,
+      rematchConfirmedSeats:{ [sourceSeat.playerId]:true },
+      rematchAlternateFirstPlayer:alternateFirstPlayer,
+      rematchExpiresAt:now + REMATCH_REQUEST_TIMEOUT_MS
     };
     this.rooms.set(nextRoomId, room);
     source.rematchTargetRoomId = nextRoomId;
@@ -521,7 +569,15 @@ export class RoomService {
     this.persist();
     this.notify(source);
     const seat = sourceSeat.playerId === "P1" ? room.host : room.guest!;
-    return { roomId:room.id, token:seat.token, playerId:seat.playerId, view:this.projectRoom(room, seat.token, 0), created:true, alternateFirstPlayer };
+    return {
+      roomId:room.id,
+      token:seat.token,
+      playerId:seat.playerId,
+      view:this.projectRoom(room, seat.token, 0),
+      created:true,
+      waiting:true,
+      alternateFirstPlayer
+    };
   }
 
   getView(roomId: string, token: string, afterEventSeq = 0, clientId?: string): RoomClientView {
@@ -631,6 +687,17 @@ export class RoomService {
     const room = this.getRoom(roomId);
     const seat = this.resolveSeat(room, token);
     if (!room.state) {
+      if (room.rematchSourceRoomId) {
+        const source = this.rooms.get(room.rematchSourceRoomId);
+        if (source?.rematchTargetRoomId === room.id) {
+          source.rematchTargetRoomId = null;
+          source.roomVersion += 1;
+          this.notify(source);
+        }
+        this.rooms.delete(room.id);
+        this.persist();
+        return { roomId: room.id, matchEnded: false, view: null };
+      }
       if (seat.playerId !== "P1") throw new RoomError("MATCH_NOT_READY", "Only the room host can abandon a waiting room.");
       this.rooms.delete(room.id);
       this.persist();
@@ -731,7 +798,11 @@ export class RoomService {
         lifecycle: structuredClone(room.lifecycle),
         timer: structuredClone(room.timer),
         telemetry: structuredClone(room.telemetry),
-        rematchTargetRoomId: room.rematchTargetRoomId ?? null
+        rematchTargetRoomId: room.rematchTargetRoomId ?? null,
+        rematchSourceRoomId: room.rematchSourceRoomId ?? null,
+        rematchConfirmedSeats: structuredClone(room.rematchConfirmedSeats ?? {}),
+        rematchAlternateFirstPlayer: Boolean(room.rematchAlternateFirstPlayer),
+        rematchExpiresAt: room.rematchExpiresAt ?? null
       }))
     };
   }
@@ -755,7 +826,11 @@ export class RoomService {
         telemetry: createRoomTelemetry(this.nowFactory()),
         connectionCounts: { P1: 0, P2: 0 },
         activeClientIds: { P1: null, P2: null },
-        rematchTargetRoomId: saved.rematchTargetRoomId ?? null
+        rematchTargetRoomId: saved.rematchTargetRoomId ?? null,
+        rematchSourceRoomId: saved.rematchSourceRoomId ?? null,
+        rematchConfirmedSeats: structuredClone(saved.rematchConfirmedSeats ?? {}),
+        rematchAlternateFirstPlayer: Boolean(saved.rematchAlternateFirstPlayer),
+        rematchExpiresAt: saved.rematchExpiresAt ?? null
       };
       room.timer = restoreTimerRuntime(saved.timer, this.effectiveTimerProfile(room.settings), room.state, snapshot.savedAt ?? null, this.nowFactory());
       room.telemetry = restoreRoomTelemetry(saved.telemetry, room.state, snapshot.savedAt ?? null, this.nowFactory());
@@ -874,6 +949,10 @@ export class RoomService {
       telemetry: projectRoomTelemetry(room.telemetry, this.nowFactory()),
       viewerSession: this.projectViewerSession(room, seat.playerId, clientId),
       rematchAvailable: Boolean(room.rematchTargetRoomId && this.rooms.has(room.rematchTargetRoomId)),
+      rematchSourceRoomId: room.rematchSourceRoomId ?? null,
+      rematchConfirmedByViewer: Boolean(room.rematchConfirmedSeats?.[seat.playerId]),
+      rematchConfirmedByOpponent: Boolean(room.rematchConfirmedSeats?.[seat.playerId === "P1" ? "P2" : "P1"]),
+      rematchExpiresAt: room.rematchExpiresAt ?? null,
       match: room.state ? projectStateForViewer(room.state, seat.playerId) : null,
       events: room.state ? projectEventsSince(room.state, seat.playerId, afterEventSeq) : []
     };
@@ -894,6 +973,19 @@ export class RoomService {
   tickTimers(): Array<{ roomId: string; type: "AUTO_PASS" | "TURN_TIMEOUT" | "DECISION_TIMEOUT" | "RECONNECT_TIMEOUT"; playerId: PlayerId }> {
     const now = this.nowFactory();
     const actions: Array<{ roomId: string; type: "AUTO_PASS" | "TURN_TIMEOUT" | "DECISION_TIMEOUT" | "RECONNECT_TIMEOUT"; playerId: PlayerId }> = [];
+    let rematchCleanup = false;
+    for (const room of [...this.rooms.values()]) {
+      if (room.state || !room.rematchSourceRoomId || !room.rematchExpiresAt || now < room.rematchExpiresAt) continue;
+      const source = this.rooms.get(room.rematchSourceRoomId);
+      if (source?.rematchTargetRoomId === room.id) {
+        source.rematchTargetRoomId = null;
+        source.roomVersion += 1;
+        this.notify(source);
+      }
+      this.rooms.delete(room.id);
+      rematchCleanup = true;
+    }
+    if (rematchCleanup) this.persist();
     for (const room of this.rooms.values()) {
       if (!room.settings.timerActive || !room.timer.active || !room.state || room.state.status === "ENDED") continue;
 
