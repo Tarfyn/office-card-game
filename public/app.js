@@ -135,6 +135,10 @@ const state = {
   attackPresentation: null,
   attackPresentationQueue: [],
   attackPresentationTimer: null,
+  gameplayPresentation: null,
+  gameplayPresentationQueue: [],
+  gameplayPresentationTimer: null,
+  matchEndOverlayDismissedRoomId: null,
   resolutionTrace: null,
   resolutionTraceTimer: null,
   flowCue: null,
@@ -222,6 +226,10 @@ const SERVER_PROFILE_TOKEN_KEY = 'office-card-game-server-profile-token-v1';
 const MATCHMAKING_TICKET_KEY = 'office-card-game-matchmaking-ticket-v1';
 const RECENT_SESSION_KEY = 'office-card-game-recent-session-v1';
 const CLIENT_INSTANCE_KEY = 'office-card-game-client-instance-v1';
+const MATCH_ARENA_KEY = 'office-card-game-match-arena-v1';
+const MATCH_ARENAS = Object.freeze({
+  default: Object.freeze({ id:'default', image:null, position:'50% 50%', size:'cover' })
+});
 function loadClientInstanceId() {
   try {
     const saved = sessionStorage.getItem(CLIENT_INSTANCE_KEY);
@@ -1140,13 +1148,16 @@ function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
     state.intentBusy = false;
   }
   if (clearCues) {
-    for (const timer of [state.visualCueTimer,state.attackPresentationTimer,state.resolutionTraceTimer,state.flowCueTimer,state.zoneCueTimer]) if (timer) clearTimeout(timer);
+    for (const timer of [state.visualCueTimer,state.attackPresentationTimer,state.gameplayPresentationTimer,state.resolutionTraceTimer,state.flowCueTimer,state.zoneCueTimer]) if (timer) clearTimeout(timer);
     state.visualCueTimer = null;
     state.visualCue = null;
     state.visualCueBatch = [];
     state.attackPresentationTimer = null;
     state.attackPresentation = null;
     state.attackPresentationQueue = [];
+    state.gameplayPresentationTimer = null;
+    state.gameplayPresentation = null;
+    state.gameplayPresentationQueue = [];
     state.resolutionTraceTimer = null;
     state.resolutionTrace = null;
     state.flowCueTimer = null;
@@ -1773,7 +1784,7 @@ function visualCueEvents() {
   return cues;
 }
 
-const ATTACK_PRESENTATION_MS = 1500;
+const ATTACK_PRESENTATION_MS = 2400;
 function attackPresentationFromEvent(event) {
   if (!event || event.type !== 'ATTACK_DECLARED') return null;
   const viewerId = state.view?.match?.viewerId;
@@ -1811,6 +1822,56 @@ function renderAttackPresentation() {
   const cue = state.attackPresentation;
   if (!cue) return '';
   return `<div class="attack-presentation ${cue.opponent ? 'opponent' : 'own'}" role="status" aria-live="polite" aria-atomic="true"><span>${cue.opponent ? 'OPPONENT ATTACK' : 'ATTACK'}</span><strong>${esc(cue.attacker)}</strong><i aria-hidden="true">→</i><b>${esc(cue.target)}</b></div>`;
+}
+
+const GAMEPLAY_PRESENTATION_MS = 2800;
+const GAMEPLAY_PRESENTATION_TYPES = new Set(['CARD_PLAYED','INCIDENT_ACTIVATED','ABILITY_ACTIVATED','PROMOTION_COMPLETED','EMPLOYEE_DESTROYED','CARD_DESTROYED','BREAKTHROUGH_DAMAGE']);
+function gameplayPresentationFromEvent(event) {
+  if (!event || !GAMEPLAY_PRESENTATION_TYPES.has(event.type)) return null;
+  const viewerId = state.view?.match?.viewerId;
+  const opponent = Boolean(viewerId && event.playerId && event.playerId !== viewerId);
+  const cardRef = event.cardInstanceId ?? null;
+  const cardName = cardRef ? cardLabel(cardRef) : '';
+  let kicker = opponent ? 'OPPONENT ACTION' : 'GAMEPLAY';
+  let title = cardName || 'Game event';
+  let detail = '';
+  if (event.type === 'CARD_PLAYED') { kicker = opponent ? 'OPPONENT PLAYED' : 'CARD PLAYED'; detail = opponent ? 'The opponent committed a card to the board.' : 'Card committed to the board.'; }
+  else if (event.type === 'INCIDENT_ACTIVATED') { kicker = opponent ? 'OPPONENT INCIDENT' : 'INCIDENT ACTIVATED'; detail = 'A response effect entered the Chain.'; }
+  else if (event.type === 'ABILITY_ACTIVATED') { kicker = opponent ? 'OPPONENT ABILITY' : 'ABILITY ACTIVATED'; detail = 'An Employee ability entered the Chain.'; }
+  else if (event.type === 'PROMOTION_COMPLETED') { kicker = opponent ? 'OPPONENT PROMOTION' : 'PROMOTION'; detail = 'Promotion completed.'; }
+  else if (event.type === 'EMPLOYEE_DESTROYED' || event.type === 'CARD_DESTROYED') { kicker = 'SENT TO ARCHIVE'; detail = 'The card left the field.'; }
+  else if (event.type === 'BREAKTHROUGH_DAMAGE') { kicker = 'BREAKTHROUGH'; title = `${Math.abs(reputationCueDelta(event))} Company Reputation`; detail = opponent ? 'Your Company Reputation took damage.' : 'Opponent Company Reputation took damage.'; }
+  return { event, opponent, cardRef, kicker, title, detail };
+}
+
+function armGameplayPresentationTimer() {
+  if (state.gameplayPresentationTimer || !state.gameplayPresentation) return;
+  state.gameplayPresentationTimer = setTimeout(() => {
+    state.gameplayPresentationTimer = null;
+    state.gameplayPresentation = state.gameplayPresentationQueue.shift() ?? null;
+    if (state.gameplayPresentation) armGameplayPresentationTimer();
+    render();
+  }, GAMEPLAY_PRESENTATION_MS);
+}
+
+function enqueueGameplayPresentations(events = []) {
+  for (const event of events) {
+    const presentation = gameplayPresentationFromEvent(event);
+    if (!presentation) continue;
+    const alreadyCurrent = state.gameplayPresentation?.event?.seq === event.seq;
+    const alreadyQueued = state.gameplayPresentationQueue.some((item) => item.event?.seq === event.seq);
+    if (!alreadyCurrent && !alreadyQueued) state.gameplayPresentationQueue.push(presentation);
+  }
+  if (!state.gameplayPresentation) state.gameplayPresentation = state.gameplayPresentationQueue.shift() ?? null;
+  armGameplayPresentationTimer();
+}
+
+function renderGameplayPresentation() {
+  const cue = state.gameplayPresentation;
+  if (!cue) return '';
+  const card = cue.cardRef ? cardByRef(cue.cardRef) : null;
+  const cardHtml = card ? `<div class="gameplay-presentation-card">${renderCard(card)}</div>` : '';
+  return `<div class="gameplay-presentation ${cue.opponent ? 'opponent' : 'own'} ${esc(cue.event.type.toLowerCase().replaceAll('_','-'))}" role="status" aria-live="polite" aria-atomic="true">${cardHtml}<div class="gameplay-presentation-copy"><span>${esc(cue.kicker)}</span><strong>${esc(cue.title)}</strong>${cue.detail ? `<small>${esc(cue.detail)}</small>` : ''}</div></div>`;
 }
 
 function chainSourceRefForEvent(event) {
@@ -2881,15 +2942,16 @@ function appendEvents(events = []) {
     if (event.type === 'TURN_STARTED') latestTurnCue = event;
   }
   if (freshAttacks.length) enqueueAttackPresentations(freshAttacks);
+  if (freshCues.length) enqueueGameplayPresentations(freshCues);
   if (latestTurnCue) {
     state.flowCue = latestTurnCue;
     if (state.flowCueTimer) clearTimeout(state.flowCueTimer);
-    state.flowCueTimer = setTimeout(() => { state.flowCue = null; state.flowCueTimer = null; render(); }, 1450);
+    state.flowCueTimer = setTimeout(() => { state.flowCue = null; state.flowCueTimer = null; render(); }, 2200);
   }
   if (freshMovement.length) {
     state.zoneCue = buildZoneCue(freshMovement);
     if (state.zoneCueTimer) clearTimeout(state.zoneCueTimer);
-    const zoneCueDuration = state.zoneCue?.kind === 'SEARCH_COMPLETE' ? 2500 : 1650;
+    const zoneCueDuration = state.zoneCue?.kind === 'SEARCH_COMPLETE' ? 3400 : 2600;
     state.zoneCueTimer = setTimeout(() => { state.zoneCue = null; state.zoneCueTimer = null; render(); }, zoneCueDuration);
   }
   if (freshCues.length) {
@@ -2903,7 +2965,7 @@ function appendEvents(events = []) {
       state.resolutionTraceTimer = setTimeout(() => { state.resolutionTrace = null; state.resolutionTraceTimer = null; render(); }, 5200);
     }
     if (state.visualCueTimer) clearTimeout(state.visualCueTimer);
-    state.visualCueTimer = setTimeout(() => { state.visualCue = null; state.visualCueBatch = []; state.visualCueTimer = null; render(); }, 1850);
+    state.visualCueTimer = setTimeout(() => { state.visualCue = null; state.visualCueBatch = []; state.visualCueTimer = null; render(); }, 2800);
   }
   state.eventLog = state.eventLog.slice(-40);
 }
@@ -4226,6 +4288,7 @@ async function savePlaytestFeedback() {
 
 function setPlaytestFeedbackChoice(raw){const [key,value]=String(raw??'').split(':');state.playtestFeedback=state.playtestFeedback??{};if(key==='oneSided')state.playtestFeedback.oneSided=value==='true';else if(key==='pace'||key==='decisions')state.playtestFeedback[key]=value;render();}
 
+// Regression compatibility marker for v6.0 legacy result styling: match-result-panel ${esc(tone)} ${esc(departmentThemeClass(mine.department))}
 function renderMatchResultPanel(match) {
   if (!match || match.status !== 'ENDED') return '';
   if (state.profileToken && state.playtestFeedbackRoomId !== state.view?.roomId) { state.playtestFeedbackRoomId=state.view?.roomId; state.playtestFeedback=null; queueMicrotask(()=>loadPlaytestFeedback(state.view?.roomId).then(()=>render())); }
@@ -4247,8 +4310,8 @@ function renderMatchResultPanel(match) {
   const rated = Boolean(state.view?.settings?.ratingActive);
   const rematchReady = Boolean(state.view?.rematchAvailable);
   const nextLabel = rewardClaimed ? (rated ? 'Queue another' : rematchReady ? 'Join rematch' : 'Rematch') : (rated ? 'Claim + queue another' : rematchReady ? 'Claim + join rematch' : 'Claim + rematch');
-  return `<section class="match-result-panel ${esc(tone)} ${esc(departmentThemeClass(mine.department))}">
-    <div class="match-result-emblem"><span>${outcome === 'WIN' ? 'W' : outcome === 'DRAW' ? '=' : 'L'}</span><small>${esc(departmentCode(mine.department))}</small></div>
+  return `<section id="matchResultPanel" class="match-result-panel ${esc(tone)}">
+    <div class="match-result-emblem"><span>${outcome === 'WIN' ? 'W' : outcome === 'DRAW' ? '=' : 'L'}</span><small>YOU</small></div>
     <div class="match-result-copy"><span>MATCH COMPLETE</span><strong>${esc(title)}</strong><p>${esc(mine.playerName)} · ${esc(mine.name)} <i>vs</i> ${esc(theirs.playerName)} · ${esc(theirs.name)}</p><div class="match-scoreline"><span>YOU <b>${esc(myRep)}</b></span><i>COMPANY REPUTATION</i><span>OPP <b>${esc(theirRep)}</b></span></div><div class="match-result-chips"><b>${esc(matchEndReasonLabel(match.reason))}</b><b>${esc(ratingLine)}</b><b>${esc(roomTimerLabel())}</b><b>SESSION ${esc(alphaTestSessionId())}</b></div></div>
     <div class="match-result-actions"><button data-download-bug-report>Report issue</button><button id="reviewCurrentMatch">Review match</button><button id="resultChangeDeck">Change deck</button><button id="resultBackLobby">Back to lobby</button>${rated ? '' : `<button id="resultAlternateRematch" ${state.rewardBusy||rematchReady?'disabled':''}>Alternate opener</button>`}<button class="primary" id="resultPlayAnother" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?'Claiming…':esc(nextLabel)}</button></div>
     <div class="match-result-summary"><span><small>TURNS</small><b>${esc(match.turnNumber)}</b></span><span><small>DURATION</small><b>${elapsed == null ? '—' : esc(formatTelemetrySeconds(elapsed))}</b></span><span><small>SEAT</small><b>${esc(seatLabel)}</b></span><span><small>FINAL REP</small><b>${esc(myRep)}–${esc(theirRep)}</b></span></div>
@@ -5537,8 +5600,8 @@ function renderPlayer(player, own, match) {
   const handPlayable = own && match.activePlayerId === match.viewerId && match.phase === 'MAIN' && legalHandCardIds().size > 0;
   const handSelectionActive = own && Boolean(match.legalActions?.canMulligan || match.legalActions?.archiveExcessHandIds?.length || (match.pendingHandSelection?.playerId === match.viewerId));
   const department = roomDepartmentForPlayer(player.id);
-  const identity = departmentIdentity(department);
   const deckName = roomDeckNameForPlayer(player.id);
+  const deckMeta = roomDeckMeta(player.id);
   const handHtml = own
     ? `<div class="zone-title hand-title">Your hand <span>${esc(handZoneHint(match))}</span>${zoneTransitionChip(player.id, 'HAND')}</div><div class="hand own-hand ${zonePulseClass(player.id, 'HAND')} ${mulliganMode ? 'mulligan-hand' : ''} ${handPlayable ? 'actionable-hand' : ''} ${handSelectionActive ? 'selection-mode' : ''} ${player.hand.length ? '' : 'is-empty'}">${player.hand.length ? player.hand.map((c, i) => renderCard(c,{selectable: Boolean(state.view?.match?.legalActions?.canMulligan || state.view?.match?.legalActions?.archiveExcessHandIds?.length || state.view?.match?.legalActions?.canResolveHandSelection), handIndex:i, handCount:player.hand.length})).join('') : '<div class="hand-empty-state"><span>NO CARDS</span><small>Your hand is empty</small></div>'}</div>`
     : renderOpponentHand(player);
@@ -5549,7 +5612,7 @@ function renderPlayer(player, own, match) {
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(departmentThemeClass(department))}${deskState}">
     ${!own ? handHtml : ''}
-    <div class="player-head"><div class="player-identity"><span class="player-department-mark">${esc(departmentCode(department))}</span><div><strong>${own ? 'You' : 'Opponent'} · ${esc(player.id)}</strong><small>${esc(identity.label)} · ${esc(deckName)}</small></div></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
+    <div class="player-head"><div class="player-identity"><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span><div><strong>${esc(deckMeta.playerName)}</strong><small>${esc(deckName)}</small></div></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
     <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${zonePulseClass(player.id, 'DECK')}"><span>DECK</span><strong>${player.deckCount}</strong><small>${esc(deckHudState(player.deckCount).label)}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
@@ -5688,6 +5751,53 @@ function roomDeckMeta(playerId) {
   return { name:state.view?.guestDeckName ?? state.view?.guestDeckId ?? 'Deck', department:state.view?.guestDepartment ?? 'NEUTRAL', playerName:state.view?.guestDisplayName ?? 'Player 2' };
 }
 
+function matchArenaPreference() {
+  const fallback = MATCH_ARENAS.default;
+  try {
+    const raw = localStorage.getItem(MATCH_ARENA_KEY);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw);
+    if (saved?.id && MATCH_ARENAS[saved.id]) return MATCH_ARENAS[saved.id];
+    const image = String(saved?.image ?? '');
+    if (/^\/art\/boards\/[a-z0-9_./-]+\.(?:webp|png|jpe?g)$/i.test(image)) {
+      return { id:String(saved?.id ?? 'custom'), image, position:String(saved?.position ?? '50% 50%'), size:String(saved?.size ?? 'cover') };
+    }
+  } catch { /* neutral built-in surface remains the safe fallback */ }
+  return fallback;
+}
+
+function matchArenaStyle() {
+  const arena = matchArenaPreference();
+  const vars = [`--match-arena-position:${arena.position || '50% 50%'}`, `--match-arena-size:${arena.size || 'cover'}`];
+  if (arena.image) vars.push(`--match-arena-image:url(&quot;${esc(arena.image)}&quot;)`);
+  return { id:arena.id ?? 'default', style:vars.join(';') };
+}
+
+function matchEndOverlayReason(match, outcome) {
+  const opponentId = match.viewerId === 'P1' ? 'P2' : 'P1';
+  if (match.reason === 'REPUTATION_ZERO') return outcome === 'WIN' ? 'Opponent Company Reputation reached 0.' : outcome === 'DRAW' ? 'Both Company Reputation totals reached 0.' : 'Your Company Reputation reached 0.';
+  if (match.reason === 'RESIGN') return outcome === 'WIN' ? 'Opponent resigned.' : 'You resigned.';
+  if (match.reason === 'DECK_OUT') return outcome === 'WIN' ? 'Opponent could not draw a card.' : 'You could not draw a card.';
+  if (match.reason === 'TURN_TIMEOUT' || match.reason === 'DECISION_TIMEOUT') return outcome === 'WIN' ? 'Opponent ran out of decision time.' : 'Your decision timer expired.';
+  if (match.reason === 'RECONNECT_TIMEOUT') return outcome === 'WIN' ? 'Opponent did not reconnect in time.' : 'Your reconnect window expired.';
+  return matchEndReasonLabel(match.reason);
+}
+
+function renderMatchEndOverlay(match) {
+  if (!match || match.status !== 'ENDED' || state.matchEndOverlayDismissedRoomId === state.view?.roomId) return '';
+  const outcome = matchRewardOutcome(match) ?? 'DRAW';
+  const title = outcome === 'WIN' ? 'VICTORY' : outcome === 'DRAW' ? 'DRAW' : 'DEFEAT';
+  return `<div class="match-end-overlay tone-${esc(outcome.toLowerCase())}" role="dialog" aria-modal="true" aria-labelledby="matchEndOverlayTitle"><div class="match-end-overlay-card"><span>MATCH COMPLETE</span><strong id="matchEndOverlayTitle">${esc(title)}</strong><p>${esc(matchEndOverlayReason(match,outcome))}</p><button class="primary" id="viewMatchResults">View results</button></div></div>`;
+}
+
+function bindMatchEndOverlay() {
+  document.querySelector('#viewMatchResults')?.addEventListener('click', () => {
+    state.matchEndOverlayDismissedRoomId = state.view?.roomId ?? null;
+    render();
+    requestAnimationFrame(() => document.querySelector('#matchResultDetail')?.scrollIntoView({ behavior:'smooth', block:'start' }));
+  });
+}
+
 
 function openingCardCost(def) {
   if (!def) return null;
@@ -5769,9 +5879,9 @@ function renderMatchOpening(match) {
   const openerIsYou = match.firstPlayerId === match.viewerId;
   const openerName = openerIsYou ? 'You' : theirs.playerName;
   return `<section class="match-opening ${firstStart ? 'office-open' : 'opening-hands'}">
-    <div class="match-deck you"><span>${esc(departmentCode(mine.department))}</span><div><small>YOU · ${esc(mine.playerName)}</small><strong>${esc(mine.name)}</strong></div></div>
+    <div class="match-deck you"><span>YOU</span><div><small>YOU · ${esc(mine.playerName)}</small><strong>${esc(mine.name)}</strong></div></div>
     <div class="match-opening-center"><em>VS</em><b>${firstStart ? 'THE OFFICE OPENS' : 'OPENING HANDS'}</b><span>${firstStart ? `${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} the first turn` : `${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} · one free mulligan each`}</span><small>${firstStart ? 'First player skips the first Draw · ' : ''}${esc(roomModeLabel())} · ${esc(roomTimerLabel())}</small></div>
-    <div class="match-deck opponent"><div><small>OPPONENT · ${esc(theirs.playerName)}</small><strong>${esc(theirs.name)}</strong></div><span>${esc(departmentCode(theirs.department))}</span></div>
+    <div class="match-deck opponent"><div><small>OPPONENT · ${esc(theirs.playerName)}</small><strong>${esc(theirs.name)}</strong></div><span>OPP</span></div>
   </section>`;
 }
 
@@ -5785,7 +5895,7 @@ function renderTurnFlowCue(match) {
   const firstTurn = turnNumber === 1 && playerId === match.firstPlayerId;
   const player = match.players?.[playerId];
   const resource = yours && player ? `Capacity ${player.availableCapacity}/${player.maxCapacity}` : esc(meta.name);
-  return `<div class="turn-flow-cue ${yours ? 'yours' : 'opponent'} ${esc(departmentThemeClass(meta.department))}" role="status" aria-live="polite"><div class="turn-flow-emblem">${esc(departmentCode(meta.department))}</div><div><span>TURN ${esc(turnNumber)}</span><strong>${yours ? 'YOUR TURN' : 'OPPONENT TURN'}</strong><small>${firstTurn ? 'The office opens · first Draw skipped' : resource}</small></div></div>`;
+  return `<div class="turn-flow-cue ${yours ? 'yours' : 'opponent'}" role="status" aria-live="polite"><div class="turn-flow-emblem">${yours ? 'YOU' : 'OPP'}</div><div><span>TURN ${esc(turnNumber)}</span><strong>${yours ? 'YOUR TURN' : 'OPPONENT TURN'}</strong><small>${firstTurn ? 'The office opens · first Draw skipped' : resource}</small></div></div>`;
 }
 
 function telemetryMetricLabel(metric) {
@@ -5816,9 +5926,37 @@ function renderServerDiagnostics() {
   return `<div class="event-log">${diagnostics.slice().reverse().map((event) => `<div class="event">${esc(formatDiagnosticEvent(event))}</div>`).join('') || '<span class="muted">No server diagnostics yet.</span>'}</div>`;
 }
 
+function renderPlaytestTools(match) {
+  return `<div class="utility-strip arena-utility-strip">
+    <details class="playtest-tools"><summary><span>Playtest tools</span><small>Room details · advanced controls · event log · telemetry · diagnostics</small></summary><div class="playtest-tools-grid">
+      <details class="debug-meta"><summary>Match details</summary><div class="game-meta">
+        <span><strong>Room</strong> ${esc(state.view.roomId)}</span><span><strong>Mode</strong> ${esc(roomModeLabel())}</span><span><strong>Timer</strong> <span id="liveTimerStatus">${esc(liveTimerText())}</span></span><span><strong>You</strong> ${esc(match.viewerId)}</span><span><strong>Turn</strong> ${match.turnNumber}</span><span><strong>Active</strong> ${esc(match.activePlayerId)}</span><span><strong>Priority</strong> ${esc(match.priorityPlayerId ?? '—')}</span><span><strong>State</strong> v${match.stateVersion}</span><span><strong>Presence</strong> ${esc(state.view.lifecycle?.presence?.[match.viewerId === 'P1' ? 'P2' : 'P1']?.status ?? '—')}</span><span><strong>Connection</strong> ${esc(connectionLabel())}</span><span><strong>AFK forfeit</strong> off</span>
+      </div></details>
+      <details class="telemetry-details"><summary>Match telemetry</summary>${renderMatchTelemetry()}</details>
+      <details class="diagnostic-details"><summary>Connection diagnostics</summary>${renderConnectionDiagnosticsPanel()}</details>
+      <details class="diagnostic-details"><summary>Server diagnostics</summary>${renderServerDiagnostics()}</details>
+      <details class="advanced-actions"><summary>Advanced controls</summary><div class="actions">${renderActions(match)}</div></details>
+      <details class="event-details"><summary>Raw engine event log</summary><div class="event-log">${state.eventLog.slice().reverse().map((e) => `<div class="event">${esc(formatEvent(e))}</div>`).join('') || '<span class="muted">No events yet.</span>'}</div></details>
+    </div></details>
+  </div>`;
+}
+
+// Regression compatibility markers for pre-v7.69 match-shell composition: ${renderMatchFeed(match)} ${renderMatchContextStack(match)} ${renderGuidanceCoach(match, guidanceTip)}
+function renderArenaSidePanel(match, guidanceTip) {
+  const context = renderMatchContextStack(match);
+  const feed = renderMatchFeed(match);
+  const guidance = renderGuidanceCoach(match, guidanceTip);
+  const status = turnStatus(match);
+  return `<aside class="arena-sidepanel" aria-label="Match inspector and activity">
+    <header class="arena-sidepanel-head"><span>MATCH HUD</span><strong>${esc(status.label)}</strong><small>${esc(status.detail)}</small></header>
+    <div class="arena-sidepanel-scroll">${context}${guidance}${feed}${renderPlaytestTools(match)}</div>
+  </aside>`;
+}
+
 function renderGame() {
   const previousBattlefieldTop = app.querySelector('.battlefield-surface')?.getBoundingClientRect().top ?? null;
   const match = state.view.match;
+  if (match.status !== 'ENDED') state.matchEndOverlayDismissedRoomId = null;
   const me = match.players[match.viewerId];
   const them = match.players[match.viewerId === 'P1' ? 'P2' : 'P1'];
   const status = turnStatus(match);
@@ -5829,39 +5967,34 @@ function renderGame() {
   const guidanceTip = currentGuidanceTip(match);
   const guidanceMode = guidanceTip ? ` guidance-active guidance-focus-${guidanceTip.focus}` : '';
   const busyMode = state.intentBusy ? ' intent-submitting' : '';
-  app.innerHTML = `<div class="game-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}">
+  const arena = matchArenaStyle();
+  app.innerHTML = `<div class="game-shell board-first-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}" data-arena-id="${esc(arena.id)}" style="${arena.style}">
+    <div class="arena-background-layer" aria-hidden="true"></div>
     <div class="game-main">
       ${renderMatchOpening(match)}
-      ${renderConnectionBanner()}
-      <div class="turn-banner ${esc(status.tone)}"><div><span class="turn-label">${esc(status.label)}</span><span class="turn-detail">${esc(status.detail)}</span></div>${match.chainLength ? `<span class="chain-badge">CHAIN ${match.chainLength}</span>` : ''}</div>
-      ${renderPhaseTrack(match)}
-      ${renderMatchContextStack(match)}
-      ${renderMatchFeed(match)}
-      ${renderGuidanceCoach(match, guidanceTip)}
+      <div class="arena-top-stack">
+        ${renderConnectionBanner()}
+        <div class="turn-banner ${esc(status.tone)}"><div><span class="turn-label">${esc(status.label)}</span><span class="turn-detail">${esc(status.detail)}</span></div>${match.chainLength ? `<span class="chain-badge">CHAIN ${match.chainLength}</span>` : ''}</div>
+        ${renderPhaseTrack(match)}
+      </div>
       ${renderMobileBoardNav(match)}
-      ${renderMatchResultPanel(match)}
-      <div class="battlefield-surface" aria-label="Office battlefield">
-        ${renderPlayer(them,false,match)}
-        ${renderDecisionCenter(match)}
-        ${renderPlayer(me,true,match)}
+      <div class="arena-layout">
+        <div class="arena-board-column">
+          <div class="battlefield-surface" aria-label="Office battlefield">
+            <div class="arena-surface-layer" aria-hidden="true"></div>
+            ${renderPlayer(them,false,match)}
+            ${renderDecisionCenter(match)}
+            ${renderPlayer(me,true,match)}
+          </div>
+          ${renderIntentCommitStatus(match)}
+          ${renderCommandDock(match)}
+          ${state.lastError ? `<div class="error arena-error">${esc(state.lastError)}</div>` : ''}
+        </div>
+        ${renderArenaSidePanel(match, guidanceTip)}
       </div>
-      ${renderIntentCommitStatus(match)}
-      ${renderCommandDock(match)}
-      ${state.lastError ? `<div class="error">${esc(state.lastError)}</div>` : ''}
-      <div class="utility-strip">
-        <details class="playtest-tools"><summary><span>Playtest tools</span><small>Room details · advanced controls · event log · telemetry · diagnostics</small></summary><div class="playtest-tools-grid">
-          <details class="debug-meta"><summary>Match details</summary><div class="game-meta">
-            <span><strong>Room</strong> ${esc(state.view.roomId)}</span><span><strong>Mode</strong> ${esc(roomModeLabel())}</span><span><strong>Timer</strong> <span id="liveTimerStatus">${esc(liveTimerText())}</span></span><span><strong>You</strong> ${esc(match.viewerId)}</span><span><strong>Turn</strong> ${match.turnNumber}</span><span><strong>Active</strong> ${esc(match.activePlayerId)}</span><span><strong>Priority</strong> ${esc(match.priorityPlayerId ?? '—')}</span><span><strong>State</strong> v${match.stateVersion}</span><span><strong>Presence</strong> ${esc(state.view.lifecycle?.presence?.[match.viewerId === 'P1' ? 'P2' : 'P1']?.status ?? '—')}</span><span><strong>Connection</strong> ${esc(connectionLabel())}</span><span><strong>AFK forfeit</strong> off</span>
-          </div></details>
-          <details class="telemetry-details"><summary>Match telemetry</summary>${renderMatchTelemetry()}</details>
-          <details class="diagnostic-details"><summary>Connection diagnostics</summary>${renderConnectionDiagnosticsPanel()}</details>
-          <details class="diagnostic-details"><summary>Server diagnostics</summary>${renderServerDiagnostics()}</details>
-          <details class="advanced-actions"><summary>Advanced controls</summary><div class="actions">${renderActions(match)}</div></details>
-          <details class="event-details"><summary>Raw engine event log</summary><div class="event-log">${state.eventLog.slice().reverse().map((e) => `<div class="event">${esc(formatEvent(e))}</div>`).join('') || '<span class="muted">No events yet.</span>'}</div></details>
-        </div></details>
-      </div>
+      ${match.status === 'ENDED' ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>
-  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderCombatMoment()}${renderResolutionMoment()}${renderZoneTransitionCue()}${renderVisualCue()}${renderCardModal()}`;
+  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderCombatMoment()}${renderResolutionMoment()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   document.querySelector('#resultPlayAnother')?.addEventListener('click', playAnotherMatch);
@@ -5880,8 +6013,9 @@ function renderGame() {
   bindMobileBoardNavHandlers();
   bindHoverPreviewHandlers();
   bindBoardActionFocusHandlers();
+  bindMatchEndOverlay();
   scheduleAttackConnectorDraw();
-  if (previousBattlefieldTop != null) requestAnimationFrame(() => {
+  if (previousBattlefieldTop != null && !document.body.classList.contains('match-viewport-locked')) requestAnimationFrame(() => {
     const nextBattlefieldTop = app.querySelector('.battlefield-surface')?.getBoundingClientRect().top;
     if (nextBattlefieldTop == null) return;
     const delta = nextBattlefieldTop - previousBattlefieldTop;
@@ -5890,6 +6024,11 @@ function renderGame() {
 }
 
 function render() {
+  const liveMatch = Boolean(state.session && state.view?.match && state.view.status !== 'WAITING');
+  const endedMatch = Boolean(liveMatch && state.view?.match?.status === 'ENDED');
+  document.body.classList.toggle('match-mode', liveMatch);
+  document.body.classList.toggle('match-ended', endedMatch);
+  document.body.classList.toggle('match-viewport-locked', liveMatch && !endedMatch);
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();

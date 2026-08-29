@@ -17,11 +17,11 @@ const app=root("public/app.js");
 const css=root("public/styles.css");
 const readme=root("README.md");
 
-test("v7.68 version markers are current",()=>{
-  assert.equal(pkg.version,"7.68.4");
-  assert.match(server,/version: "7\.68\.4"/);
-  assert.match(server,/Office Card Game v7\.68\.4 server/);
-  assert.match(html,/v7\.68\.4 Alpha Playtest/);
+test("current version markers keep the v7.68 safety line and advance to v7.69",()=>{
+  assert.equal(pkg.version,"7.69.0");
+  assert.match(server,/version: "7\.69\.0"/);
+  assert.match(server,/Office Card Game v7\.69\.0 server/);
+  assert.match(html,/v7\.69\.0 Alpha Playtest/);
   assert.match(readme,/## v7\.68 — Hosted Live-Sync Safety Hotfix/);
 });
 
@@ -228,7 +228,7 @@ test("v7.68.3 keeps archive cards proportional and makes deck searches readable"
   const cue=app.slice(app.indexOf("function renderZoneTransitionCue"),app.indexOf("function zonePulseClass"));
   assert.match(cue,/cue\?\.kind === 'SEARCH_COMPLETE'/);
   assert.match(cue,/zone-search-card/);
-  assert.match(app,/zoneCueDuration = state\.zoneCue\?\.kind === 'SEARCH_COMPLETE' \? 2500 : 1650/);
+  assert.match(app,/zoneCueDuration = state\.zoneCue\?\.kind === 'SEARCH_COMPLETE' \? 3400 : 2600/);
   assert.match(css,/\.zone-transition-cue\.with-card/);
 });
 
@@ -264,7 +264,7 @@ test("v7.68.4 removes transient server acknowledgements from battlefield layout 
 });
 
 test("v7.68.4 queues attack presentation independently from authoritative auto-pass",()=>{
-  assert.match(app,/const ATTACK_PRESENTATION_MS = 1500/);
+  assert.match(app,/const ATTACK_PRESENTATION_MS = 2400/);
   assert.match(app,/function enqueueAttackPresentations\(events = \[\]\)/);
   assert.match(app,/event\.type === 'ATTACK_DECLARED'\) freshAttacks\.push\(event\)/);
   assert.match(app,/if \(freshAttacks\.length\) enqueueAttackPresentations\(freshAttacks\)/);
