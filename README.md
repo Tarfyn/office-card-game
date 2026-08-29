@@ -1604,3 +1604,15 @@ The normal tester path is quieter: the top bar uses an `External Alpha` label in
 ## v7.66 — Human Playtest Data Pass
 
 Adds human-match-only balance evidence without changing any card or rules values. Persisted room records now derive anonymous per-card activity from authoritative match events, aggregate deck opener/second-player splits, card observed/played usage, win rate when played, resign counts and long-turn/long-response friction signals. Admin analytics requests/exports now send the protected admin header correctly, with separate Match CSV and Card CSV exports. Starting-hand cards that never produce an authoritative card event are intentionally not claimed as observed; this telemetry is directional evidence, not a complete hidden-information reconstruction.
+
+
+## v7.67 — Hosted Sync / Tab-Control Hotfix
+
+v7.67 is a hosted-play reliability hotfix. It does not change card rules, balance, decks or the 107-card Alpha pool.
+
+- A browser tab now keeps the same controller `clientId` across reloads via `sessionStorage`, preventing a normal reload from looking like a second browser session.
+- Live SSE connections are generation-owned so overlapping reconnect attempts cannot leave orphaned EventSource instances behind.
+- EventSource native retry is explicitly closed on error; the client uses one bounded backoff path instead of two competing reconnect systems.
+- SSE heartbeats are real `heartbeat` events, allowing the client to distinguish a healthy quiet stream from a stale stream.
+- If SSE is unavailable or repeatedly interrupted, an authoritative HTTP polling fallback keeps the room current while live sync recovers.
+- Intent responses preserve the submitting `clientId` when projecting `viewerSession`, so controller state remains consistent immediately after moves.

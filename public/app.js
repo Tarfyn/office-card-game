@@ -1,3 +1,5 @@
+// Regression compatibility marker for v7.52 diagnostics label: LIVE SYNC
+// Regression compatibility marker for v7.52 diagnostics age label: Last live:
 // Regression compatibility marker for v4.8 drawer label: Developer-facing tools
 // Regression compatibility marker for v4.6 auth label: GUEST_LOCAL
 // Regression compatibility marker for v4.6 profile identity: profile.playerId ?? profile.profileId
@@ -104,6 +106,9 @@ const state = {
   connectionStatus: 'IDLE',
   reconnectTimer: null,
   reconnectAttempt: 0,
+  streamGeneration: 0,
+  syncPollTimer: null,
+  lastSyncAt: null,
   mobileNavObserver: null,
   lastLiveAt: null,
   selectedHand: new Set(),
@@ -207,7 +212,19 @@ const META_PROFILE_KEY = 'office-card-game-meta-profile-v1';
 const SERVER_PROFILE_TOKEN_KEY = 'office-card-game-server-profile-token-v1';
 const MATCHMAKING_TICKET_KEY = 'office-card-game-matchmaking-ticket-v1';
 const RECENT_SESSION_KEY = 'office-card-game-recent-session-v1';
-const CLIENT_INSTANCE_ID = globalThis.crypto?.randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const CLIENT_INSTANCE_KEY = 'office-card-game-client-instance-v1';
+function loadClientInstanceId() {
+  try {
+    const saved = sessionStorage.getItem(CLIENT_INSTANCE_KEY);
+    if (saved && saved.length >= 8 && saved.length <= 160) return saved;
+    const created = globalThis.crypto?.randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem(CLIENT_INSTANCE_KEY, created);
+    return created;
+  } catch {
+    return globalThis.crypto?.randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+const CLIENT_INSTANCE_ID = loadClientInstanceId();
 const GUIDANCE_KEY = 'office-card-game-guidance-v1';
 const NEW_COLLECTION_KEY = 'office-card-game-new-collection-v1';
 const ALPHA_ONBOARDING_KEY = 'office-card-game-alpha-onboarding-v1';
@@ -886,6 +903,7 @@ function acceptView(view) {
   const serverNow = Number(view?.timer?.serverNow ?? view?.lifecycle?.serverNow);
   if (Number.isFinite(serverNow) && serverNow > 0) state.serverClockOffsetMs = Date.now() - serverNow;
   if (view?.viewerSession?.activeElsewhere) state.connectionStatus = 'SUPERSEDED';
+  else if (state.connectionStatus === 'SUPERSEDED') state.connectionStatus = 'CONNECTING';
   return view;
 }
 
@@ -894,6 +912,7 @@ function viewerHasControl() { return state.view?.viewerSession?.activeElsewhere 
 function connectionLabel() {
   if (state.view?.viewerSession?.activeElsewhere) return 'READ-ONLY';
   if (state.connectionStatus === 'LIVE') return 'LIVE';
+  if (state.connectionStatus === 'POLLING') return 'HTTP SYNC';
   if (navigator.onLine === false || state.connectionStatus === 'OFFLINE') return 'OFFLINE';
   if (state.connectionStatus === 'RECONNECTING') return 'RECONNECTING';
   return 'CONNECTING';
@@ -913,8 +932,9 @@ function browserSummary() {
   return navigator.userAgentData?.brands?.[0]?.brand || 'Browser';
 }
 function liveAgeLabel() {
-  if (!state.lastLiveAt) return 'No live event yet';
-  const seconds=Math.max(0,Math.round((Date.now()-state.lastLiveAt)/1000));
+  const lastSync=state.lastSyncAt ?? state.lastLiveAt;
+  if (!lastSync) return 'No sync yet';
+  const seconds=Math.max(0,Math.round((Date.now()-lastSync)/1000));
   return seconds < 2 ? 'just now' : `${seconds}s ago`;
 }
 async function refreshConnectionDiagnostics() {
@@ -972,7 +992,7 @@ function renderConnectionDiagnosticsPanel({ compact=false }={}) {
   return `<details class="connection-diagnostics ${compact?'compact':''}"><summary><div><span>CONNECTION</span><strong>${esc(connectionLabel())} · ${esc(ping)}</strong></div><small>${esc(state.serverInfo?.version ?? 'server ?')} · ${esc(browserSummary())}</small></summary><div class="connection-diagnostics-grid">
     <span><small>SERVER</small><b>${esc(state.serverInfo?.serverMode ?? 'SERVER')}</b><em>v${esc(state.serverInfo?.version ?? '—')}</em></span>
     <span><small>NETWORK</small><b>${esc(online)}</b><em>${esc(location.protocol.replace(':','').toUpperCase())} · ${esc(location.host)}</em></span>
-    <span><small>LIVE SYNC</small><b>${esc(connectionLabel())}</b><em>Last live: ${esc(liveAgeLabel())}</em></span>
+    <span><small>ROOM SYNC</small><b>${esc(connectionLabel())}</b><em>Last sync: ${esc(liveAgeLabel())}</em></span>
     <span><small>ROUND TRIP</small><b>${esc(ping)}</b><em>${diag.checkedAt?'Health probe':'Run check'}</em></span>
     ${state.session?`<span><small>ROOM</small><b>${esc(state.session.roomId)}</b><em>${match?`state v${esc(match.stateVersion)}`:'waiting'}</em></span>`:''}
     ${match?`<span><small>CONTROL</small><b>${viewerHasControl()?'THIS TAB':'READ ONLY'}</b><em>${esc(match.viewerId)}</em></span>`:''}
@@ -992,7 +1012,8 @@ function renderConnectionBanner() {
   const superseded = state.view?.viewerSession?.activeElsewhere;
   if (superseded) return `<div class="connection-banner superseded"><div><strong>Match open elsewhere</strong><span>This tab is read-only so the same seat cannot send moves from two browser sessions.</span></div><button id="takeSessionControl" class="primary">Take control here</button></div>`;
   if (navigator.onLine === false || state.connectionStatus === 'OFFLINE') return `<div class="connection-banner offline"><div><strong>You are offline</strong><span>Your server-authoritative match is preserved. This page will resync when the network returns.</span></div><button id="retryLiveConnection">Retry</button></div>`;
-  if (state.connectionStatus === 'RECONNECTING') return `<div class="connection-banner reconnecting"><div><strong>Reconnecting…</strong><span>Live updates were interrupted. State resynchronization is automatic; do not repeat your last move.</span></div><button id="retryLiveConnection">Reconnect now</button></div>`;
+  if (state.connectionStatus === 'POLLING') return `<div class="connection-banner reconnecting"><div><strong>Live stream recovering</strong><span>HTTP fallback sync is active. You can keep playing; the client is still reading authoritative room state.</span></div><button id="retryLiveConnection">Retry live stream</button></div>`;
+  if (state.connectionStatus === 'RECONNECTING') return `<div class="connection-banner reconnecting"><div><strong>Reconnecting…</strong><span>Live updates were interrupted. HTTP fallback sync will keep the room current while the live stream recovers.</span></div><button id="retryLiveConnection">Reconnect now</button></div>`;
   if (state.connectionStatus === 'CONNECTING') return `<div class="connection-banner connecting"><div><strong>Connecting…</strong><span>Synchronizing the current room state.</span></div></div>`;
   return '';
 }
@@ -1105,16 +1126,17 @@ function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
 
 function resetLiveSessionState() {
   stopMatchmakingPoll();
-  state.stream?.close();
-  state.stream = null;
-  clearTimeout(state.reconnectTimer);
-  state.reconnectTimer = null;
+  state.streamGeneration += 1;
+  closeCurrentStream();
+  clearStreamReconnectTimer();
+  clearSyncPollTimer();
   state.connectionStatus = 'IDLE';
   clearTransientMatchUi();
   state.session = null;
   state.view = null;
   state.eventLog = [];
   state.lastLiveAt = null;
+  state.lastSyncAt = null;
   state.rankedRefreshRoomId = null;
   state.rewardMessage = null;
   state.lastRewardReceipt = null;
@@ -4660,7 +4682,7 @@ async function exportPlaytestAnalytics(format) {
     const response=await fetch(`/api/playtest/analytics/export?${query}`,{headers:adminAuthHeaders()});
     if(!response.ok)throw new Error(`Analytics export failed (HTTP ${response.status}).`);
     const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
-    link.href=url; link.download=format==='cards-csv'?'office-card-game-card-activity-v7.66.csv':format==='csv'?'office-card-game-playtest-matches.csv':'office-card-game-playtest.json'; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    link.href=url; link.download=format==='cards-csv'?'office-card-game-card-activity-v7.67.csv':format==='csv'?'office-card-game-playtest-matches.csv':'office-card-game-playtest.json'; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   } catch(error){ state.analyticsMessage=error.message; renderLobby(); }
 }
 
@@ -5783,6 +5805,7 @@ async function refreshState(renderAfter = true) {
     acceptView(view);
     state.interaction = null;
     appendEvents(view.events);
+    state.lastSyncAt = Date.now();
     state.lastError = null;
     if (renderAfter) render();
     return view;
@@ -5801,64 +5824,124 @@ function streamReconnectDelay() {
   const jitter=Math.round(Math.random()*Math.min(900,base*.18));
   return Math.round(base+jitter);
 }
-function scheduleStreamReconnect(source=null) {
+function clearStreamReconnectTimer() {
   clearTimeout(state.reconnectTimer);
+  state.reconnectTimer=null;
+}
+function closeCurrentStream() {
+  const current=state.stream;
+  state.stream=null;
+  current?.close?.();
+}
+function clearSyncPollTimer() {
+  clearTimeout(state.syncPollTimer);
+  state.syncPollTimer=null;
+}
+function scheduleSyncPoll(delay=1200) {
+  clearSyncPollTimer();
+  if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere || state.connectionStatus==='LIVE') return;
+  state.syncPollTimer=setTimeout(async()=>{
+    state.syncPollTimer=null;
+    if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere || state.connectionStatus==='LIVE') return;
+    try {
+      await refreshState(false);
+      if (state.view?.viewerSession?.activeElsewhere) state.connectionStatus='SUPERSEDED';
+      else if (state.connectionStatus!=='LIVE') state.connectionStatus='POLLING';
+      render();
+    } catch { /* stream banner keeps the actionable error */ }
+    if (state.session && navigator.onLine!==false && !state.view?.viewerSession?.activeElsewhere && state.connectionStatus!=='LIVE') scheduleSyncPoll(3000);
+  },delay);
+}
+function scheduleStreamReconnect(expectedGeneration=state.streamGeneration) {
+  clearStreamReconnectTimer();
   const delay=streamReconnectDelay();
   state.reconnectAttempt=Math.min(8,Number(state.reconnectAttempt||0)+1);
-  state.reconnectTimer=setTimeout(()=>{ source?.close?.(); if (state.session && navigator.onLine!==false) startStream(); },delay);
+  state.reconnectTimer=setTimeout(()=>{
+    state.reconnectTimer=null;
+    if (expectedGeneration !== state.streamGeneration) return;
+    if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere) return;
+    startStream();
+  },delay);
   return delay;
 }
-function liveConnectionLooksStale(maxAgeMs=30000) { return !state.lastLiveAt || Date.now()-state.lastLiveAt>maxAgeMs; }
+function liveConnectionLooksStale(maxAgeMs=45000) { return !state.lastLiveAt || Date.now()-state.lastLiveAt>maxAgeMs; }
 async function startStream() {
-  state.stream?.close();
-  clearTimeout(state.reconnectTimer);
-  if (!state.session) return;
+  const sessionAtStart=state.session ? { roomId:state.session.roomId, token:state.session.token } : null;
+  const generation=++state.streamGeneration;
+  clearStreamReconnectTimer();
+  clearSyncPollTimer();
+  closeCurrentStream();
+  if (!sessionAtStart) return;
   state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'CONNECTING';
   const after = state.view?.match?.lastEventSeq ?? 0;
   let streamTicket;
   try {
-    streamTicket = await api(`/api/rooms/${state.session.roomId}/stream-ticket`, { method:'POST', headers:roomAuthHeaders(), body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID }) });
+    streamTicket = await api(`/api/rooms/${sessionAtStart.roomId}/stream-ticket`, { method:'POST', headers:roomAuthHeaders(sessionAtStart.token), body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID }) });
   } catch (error) {
+    if (generation !== state.streamGeneration) return;
     state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
     state.lastError = error.message || 'Could not authorize live updates.';
-    scheduleStreamReconnect();
+    scheduleStreamReconnect(generation);
+    scheduleSyncPoll();
     render();
     return;
   }
-  if (!state.session) return;
-  const source = new EventSource(`/api/rooms/${state.session.roomId}/stream?ticket=${encodeURIComponent(streamTicket.ticket)}&after=${after}`);
+  if (generation !== state.streamGeneration || !state.session || state.session.roomId !== sessionAtStart.roomId || state.session.token !== sessionAtStart.token) return;
+  const source = new EventSource(`/api/rooms/${sessionAtStart.roomId}/stream?ticket=${encodeURIComponent(streamTicket.ticket)}&after=${after}`);
+  state.stream = source;
+  const isCurrent=()=>generation===state.streamGeneration && state.stream===source;
   source.addEventListener('open', () => {
+    if (!isCurrent()) { source.close(); return; }
+    clearStreamReconnectTimer();
+    clearSyncPollTimer();
     const hadLiveConnection = Boolean(state.lastLiveAt);
-    const wasRecovering = state.connectionStatus === 'RECONNECTING' || state.connectionStatus === 'OFFLINE';
+    const wasRecovering = state.connectionStatus === 'RECONNECTING' || state.connectionStatus === 'OFFLINE' || state.connectionStatus === 'CONNECTING';
     if (!state.view?.viewerSession?.activeElsewhere) state.connectionStatus = 'LIVE';
     state.lastLiveAt = Date.now();
+    state.lastSyncAt = state.lastLiveAt;
     state.reconnectAttempt = 0;
     if (hadLiveConnection && wasRecovering) showFeedback('success','Back online','Authoritative match state synchronized.',{ duration:2200 });
     state.lastError = null;
     refreshState(false).catch(() => {});
     render();
   });
+  source.addEventListener('heartbeat', () => {
+    if (!isCurrent()) return;
+    clearStreamReconnectTimer();
+    clearSyncPollTimer();
+    state.lastLiveAt=Date.now();
+    state.lastSyncAt=state.lastLiveAt;
+    state.reconnectAttempt=0;
+    if (!state.view?.viewerSession?.activeElsewhere && navigator.onLine!==false) state.connectionStatus='LIVE';
+  });
   source.addEventListener('state', (event) => {
+    if (!isCurrent()) return;
+    clearStreamReconnectTimer();
+    clearSyncPollTimer();
     const view = JSON.parse(event.data);
     acceptView(view);
     state.interaction = null;
     appendEvents(view.events);
     state.connectionStatus = view?.viewerSession?.activeElsewhere ? 'SUPERSEDED' : 'LIVE';
     state.lastLiveAt = Date.now();
+    state.lastSyncAt = state.lastLiveAt;
     state.reconnectAttempt = 0;
     state.lastError = null;
     render();
   });
   source.addEventListener('error', () => {
+    if (!isCurrent()) { source.close(); return; }
     const wasLive = state.connectionStatus === 'LIVE';
+    // EventSource retries by itself. Close it here so only our bounded backoff owns reconnect timing.
+    source.close();
+    if (state.stream === source) state.stream=null;
     if (state.view?.viewerSession?.activeElsewhere) state.connectionStatus = 'SUPERSEDED';
     else state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
     state.lastError = navigator.onLine === false ? 'You are offline. The match is preserved and will reconnect automatically.' : 'Live updates were interrupted. Reconnecting and resynchronizing automatically.';
     if (wasLive) showFeedback('warning',navigator.onLine === false ? 'You are offline' : 'Live updates interrupted',state.lastError,{ duration:3600 });
-    scheduleStreamReconnect(source);
+    if (state.connectionStatus === 'RECONNECTING') { scheduleStreamReconnect(generation); scheduleSyncPoll(); }
     render();
   });
-  state.stream = source;
 }
 
 async function sendIntent(intent) {
@@ -6212,10 +6295,10 @@ window.addEventListener('pageshow', (event) => {
   if (!state.session || state.view?.viewerSession?.activeElsewhere) return;
   if (event.persisted || state.connectionStatus!=='LIVE' || liveConnectionLooksStale()) forceConnectionRecovery();
 });
-window.addEventListener('pagehide', (event) => {
-  if (!event.persisted) return;
-  state.stream?.close();
-  state.stream=null;
+window.addEventListener('pagehide', () => {
+  state.streamGeneration += 1;
+  clearStreamReconnectTimer();
+  closeCurrentStream();
   if (state.session && state.connectionStatus!=='SUPERSEDED') state.connectionStatus='RECONNECTING';
 });
 window.addEventListener('orientationchange', () => setTimeout(()=>scheduleAttackConnectorDraw(),120));
