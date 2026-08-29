@@ -1113,12 +1113,13 @@ function loadRecentSession() {
   } catch { localStorage.removeItem(RECENT_SESSION_KEY); }
 }
 
-function roomViewIsActiveMatch(view) {
-  return Boolean(view?.status === 'ACTIVE' && view?.match?.status === 'ACTIVE');
+function roomViewHasLiveMatch(view) {
+  const matchStatus = view?.match?.status;
+  return Boolean(view?.status === 'ACTIVE' && (matchStatus === 'SETUP' || matchStatus === 'ACTIVE'));
 }
 
 function roomViewIsResumable(view) {
-  return Boolean(view?.status === 'WAITING' || roomViewIsActiveMatch(view));
+  return Boolean(view?.status === 'WAITING' || roomViewHasLiveMatch(view));
 }
 
 function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
@@ -1230,7 +1231,7 @@ async function resumeRecentSession() {
   const session = { ...state.recentSession };
   try {
     // Never trust the local resume shortcut by itself. Confirm that the room still exists
-    // and is either waiting for its second seat or owns a genuinely ACTIVE match.
+    // and is either waiting for its second seat or owns a live SETUP/ACTIVE match.
     const serverView = await api(`/api/rooms/${session.roomId}/state?after=0&${clientQuery()}`, { headers:roomAuthHeaders(session.token) });
     if (!roomViewIsResumable(serverView)) {
       saveRecentSession(null);
@@ -6072,7 +6073,7 @@ async function sendIntent(intent) {
     try { await refreshState(false, { preserveLiveOnError:true }); } catch { /* the POST still gets one chance */ }
     match = state.view?.match ?? match;
     submittedVersion = match.stateVersion;
-    if (!roomViewIsActiveMatch(state.view)) {
+    if (!roomViewHasLiveMatch(state.view)) {
       saveRecentSession(null);
       throw Object.assign(new Error(lobbyCopy('This match is no longer active. No move was sent.','Dieses Match ist nicht mehr aktiv. Es wurde kein Zug gesendet.')), { code:'MATCH_NOT_ACTIVE' });
     }
