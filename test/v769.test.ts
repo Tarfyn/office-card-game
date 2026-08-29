@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { RoomService } from "../src/room.js";
 
 let passed=0;
 function test(name:string, fn:()=>void){ fn(); passed+=1; console.log(`✓ ${name}`); }
@@ -21,11 +22,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.2");
-  assert.match(server,/version: "7\.69\.2"/);
-  assert.match(server,/Office Card Game v7\.69\.2 server/);
-  assert.match(html,/v7\.69\.2 Alpha Playtest/);
-  assert.match(readme,/## v7\.69\.2 — Collision-Free HUD \+ Responsive Rail Geometry/);
+  assert.equal(pkg.version,"7.69.3");
+  assert.match(server,/version: "7\.69\.3"/);
+  assert.match(server,/Office Card Game v7\.69\.3 server/);
+  assert.match(html,/v7\.69\.3 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.3 — Executive Desk Lobby \+ Rematch Gate/);
 });
 
 test("v7.69 separates arena artwork from code-native battlefield geometry",()=>{
@@ -189,6 +190,102 @@ test("v7.69.2 uses compact mobile phase HUD and hides battlefield chrome in deta
   assert.match(css,/body\.match-mode \.mobile-board-nav \{[\s\S]*?display:block !important/);
   assert.match(app,/resultsMode = match\.status === 'ENDED'/);
   assert.match(css,/board-first-shell\.results-view \.arena-layout,[\s\S]*?display:none !important/);
+});
+
+
+test("v7.69.3 gates Friendly rematch until both players explicitly join",()=>{
+  let room=0,token=0;
+  const service=new RoomService({roomIdFactory:()=>`R69${++room}X`,tokenFactory:()=>`tok69-${++token}`,seedFactory:()=>6900+room,firstPlayerFactory:()=>"P1"});
+  const host=service.createRoom("customer-service-starter",{mode:"FRIENDLY"});
+  const guest=service.joinRoom(host.roomId,"it-starter");
+  const version=service.getView(host.roomId,host.token).match!.stateVersion;
+  service.submitIntent(host.roomId,host.token,{intentId:"resign-7693",expectedStateVersion:version,intent:{type:"RESIGN"}});
+  const first=service.rematchRoom(host.roomId,host.token);
+  assert.equal(first.waiting,true);
+  assert.equal(first.view.status,"WAITING");
+  assert.equal(first.view.match,null);
+  assert.equal(first.view.rematchConfirmedByViewer,true);
+  assert.equal(first.view.rematchConfirmedByOpponent,false);
+  const second=service.rematchRoom(host.roomId,guest.token);
+  assert.equal(second.roomId,first.roomId);
+  assert.equal(second.waiting,false);
+  assert.equal(second.view.status,"ACTIVE");
+  assert.ok(second.view.match);
+  assert.equal(service.getView(first.roomId,first.token).status,"ACTIVE");
+});
+
+test("v7.69.3 persists a pending rematch handshake across server restart",()=>{
+  let snapshot:any=null,room=0,token=0;
+  const persistence={storageLabel:"REMATCH_TEST",load:()=>snapshot,save:(value:any)=>{snapshot=structuredClone(value)}};
+  const options={persistence,roomIdFactory:()=>`P69${++room}X`,tokenFactory:()=>`ptok69-${++token}`,seedFactory:()=>76930+room,firstPlayerFactory:()=>"P1" as const};
+  const service=new RoomService(options);
+  const host=service.createRoom("customer-service-starter",{mode:"FRIENDLY"});
+  const guest=service.joinRoom(host.roomId,"it-starter");
+  const version=service.getView(host.roomId,host.token).match!.stateVersion;
+  service.submitIntent(host.roomId,host.token,{intentId:"resign-persist-7693",expectedStateVersion:version,intent:{type:"RESIGN"}});
+  const first=service.rematchRoom(host.roomId,host.token);
+  assert.equal(first.view.status,"WAITING");
+  const restored=new RoomService(options);
+  const second=restored.rematchRoom(host.roomId,guest.token);
+  assert.equal(second.roomId,first.roomId);
+  assert.equal(second.view.status,"ACTIVE");
+  assert.equal(restored.getView(first.roomId,first.token).status,"ACTIVE");
+});
+
+test("v7.69.3 keeps mobile results scrollable and the hand clear of the local profile",()=>{
+  assert.match(css,/board-first-shell\.results-view[^{]*\{[\s\S]*?height:auto !important;[\s\S]*?overflow:visible !important/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?body\.match-mode \.own-hand \{[\s\S]*?left:50%;[\s\S]*?bottom:47px;[\s\S]*?transform:translateX\(-50%\)/);
+  assert.match(css,/width:58px; min-width:58px; max-width:58px/);
+});
+
+test("v7.69.3 uses available desktop space for a readable hand",()=>{
+  assert.match(css,/@media \(min-width:761px\) and \(max-height:1000px\)[\s\S]*?width:82px; min-width:82px; max-width:82px/);
+  assert.match(css,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?width:110px; min-width:110px; max-width:110px/);
+});
+
+test("v7.69.3 makes the desktop Match HUD reflow instead of clipping",()=>{
+  assert.match(css,/body\.match-mode \.arena-layout \{ grid-template-columns:minmax\(0,1fr\) clamp\(330px,19vw,430px\); \}/);
+  assert.match(css,/\.arena-sidepanel \.match-feed-list \{ grid-template-columns:1fr !important; \}/);
+  assert.match(css,/\.arena-sidepanel \.telemetry-kpis,[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\) !important/);
+  assert.match(css,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?clamp\(560px,20vw,700px\)/);
+});
+
+test("v7.69.3 expires pending rematches and allows the requester to cancel",()=>{
+  let now=1_000_000,room=0,token=0;
+  const service=new RoomService({nowFactory:()=>now,roomIdFactory:()=>`E69${++room}X`,tokenFactory:()=>`etok69-${++token}`,seedFactory:()=>76940+room,firstPlayerFactory:()=>"P1"});
+  const host=service.createRoom("customer-service-starter",{mode:"FRIENDLY"});
+  const guest=service.joinRoom(host.roomId,"it-starter");
+  const version=service.getView(host.roomId,host.token).match!.stateVersion;
+  service.submitIntent(host.roomId,host.token,{intentId:"resign-expire-7693",expectedStateVersion:version,intent:{type:"RESIGN"}});
+  const pending=service.rematchRoom(host.roomId,guest.token);
+  assert.equal(pending.waiting,true);
+  assert.equal(pending.view.rematchExpiresAt,now+90_000);
+  const cancelled=service.abandonRoom(pending.roomId,pending.token);
+  assert.equal(cancelled.view,null);
+  assert.equal(service.getView(host.roomId,host.token).rematchAvailable,false);
+  const pendingAgain=service.rematchRoom(host.roomId,host.token);
+  now+=90_001;
+  assert.throws(()=>service.rematchRoom(host.roomId,guest.token),/Rematch request expired/);
+  assert.equal(service.getView(host.roomId,host.token).rematchAvailable,false);
+  assert.ok(pendingAgain.roomId);
+  assert.match(app,/Cancel rematch & lobby/);
+  assert.match(app,/Rematch request expired/);
+});
+
+test("v7.69.3 rebuilds the lobby as one Executive Desk hierarchy without duplicate Deckbuilder",()=>{
+  const lobby=sliceBetween(app,"function renderLobby()","function renderWaiting()");
+  assert.match(lobby,/executive-desk-surface/);
+  assert.match(lobby,/desk-meeting-agenda/);
+  assert.match(lobby,/desk-bureaucracy/);
+  assert.match(lobby,/desk-private-room/);
+  assert.equal((lobby.match(/id="openCollection"/g)??[]).length,1);
+  assert.equal((lobby.match(/id="quickMatchBtn"/g)??[]).length,1);
+  assert.match(lobby,/data-starter-deck/);
+  assert.doesNotMatch(lobby,/>Social</);
+  assert.match(css,/body\.lobby-mode[\s\S]*?repeating-linear-gradient/);
+  assert.match(css,/\.desk-collection-drawer/);
+  assert.match(css,/\.desk-starter-tray \.starter-guide-grid/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.executive-desk-surface \{ display:flex; flex-direction:column/);
 });
 
 console.log(`\n${passed}/${passed} v7.69 tests passed.`);

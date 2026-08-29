@@ -8401,3 +8401,596 @@ body.match-mode .board-first-shell.results-view .match-result-detail {
   }
   body.match-mode .board-first-shell.results-view .match-result-actions button { width:100%; }
 }
+
+/* v7.69.3 — rematch gate + hand scale + rail containment
+   Hosted QA showed the previous collision pass was still too conservative with the hand and too permissive inside the Match HUD rail. */
+body.match-mode.match-ended .game-shell.board-first-shell.results-view {
+  height:auto;
+  min-height:calc(100dvh - 46px);
+  overflow:visible;
+}
+body.match-mode .board-first-shell.results-view .match-result-detail,
+body.match-mode .board-first-shell.results-view .match-result-panel {
+  overflow:visible;
+  max-height:none;
+}
+
+.rematch-waiting-stage { text-align:center; }
+.rematch-waiting-pulse {
+  width:min(420px,100%);
+  margin:18px auto;
+  padding:14px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  border:1px solid rgba(74,225,118,.22);
+  border-radius:12px;
+  background:rgba(74,225,118,.06);
+}
+.rematch-waiting-pulse i {
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#4ae176;
+  box-shadow:0 0 0 5px rgba(74,225,118,.10);
+}
+.rematch-waiting-pulse span { font-weight:800; }
+
+/* Use more of the available board width for the hand on desktop. */
+body.match-mode .own-board { padding-bottom:142px; }
+body.match-mode .own-hand {
+  bottom:31px;
+  width:min(68%,840px);
+  height:104px;
+}
+body.match-mode .own-hand .hand-fan-card {
+  width:78px;
+  min-width:78px;
+  max-width:78px;
+  height:109px;
+  min-height:109px;
+  max-height:109px;
+  margin-left:-13px;
+}
+
+/* The Match HUD is a rail, not a horizontal document. All internal dashboards reflow vertically. */
+body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) clamp(330px,19vw,430px); }
+.arena-sidepanel,
+.arena-sidepanel-scroll { width:100%; max-width:100%; }
+.arena-sidepanel-scroll { overscroll-behavior:contain; }
+.arena-sidepanel .match-feed-list { grid-template-columns:1fr !important; }
+.arena-sidepanel .match-feed-item,
+.arena-sidepanel .match-feed-item:nth-child(n) { min-width:0; width:100%; max-width:100%; }
+.arena-sidepanel .opening-readiness-stats,
+.arena-sidepanel .main-phase-context-stats,
+.arena-sidepanel .battle-phase-context-stats,
+.arena-sidepanel .end-phase-context-stats,
+.arena-sidepanel .response-desk-stats,
+.arena-sidepanel .decision-desk-stats,
+.arena-sidepanel .telemetry-kpis,
+.arena-sidepanel .telemetry-table,
+.arena-sidepanel .connection-diagnostics-grid {
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  width:100%;
+  max-width:100%;
+}
+.arena-sidepanel .telemetry-kpis > span,
+.arena-sidepanel .telemetry-table > div,
+.arena-sidepanel .connection-diagnostics-grid > span,
+.arena-sidepanel .game-meta,
+.arena-sidepanel details,
+.arena-sidepanel summary { min-width:0; max-width:100%; }
+.arena-sidepanel .game-meta { gap:6px 8px; }
+.arena-sidepanel .human-playtest-row,
+.arena-sidepanel .connection-diagnostics-actions { flex-wrap:wrap; overflow-x:visible; }
+.arena-sidepanel .human-playtest-row > *,
+.arena-sidepanel .connection-diagnostics-actions > * { min-width:0; max-width:100%; }
+.arena-sidepanel pre,
+.arena-sidepanel code { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+
+/* 1K / short desktop still has enough room for readable cards; do not miniaturize the hand. */
+@media (min-width:761px) and (max-height:1000px) {
+  body.match-mode .own-board { padding-bottom:146px; }
+  body.match-mode .own-hand { bottom:29px; width:min(70%,860px); height:110px; }
+  body.match-mode .own-hand .hand-fan-card {
+    width:82px; min-width:82px; max-width:82px;
+    height:115px; min-height:115px; max-height:115px;
+    margin-left:-14px;
+  }
+  body.match-mode .own-board .board-resource-row { bottom:48px; }
+}
+
+/* Large / 4K: spend abundant horizontal room on the rail and the hand instead of clipping or miniaturizing them. */
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) clamp(560px,20vw,700px); gap:12px; }
+  body.match-mode .own-board { padding-bottom:196px; }
+  body.match-mode .own-hand { bottom:46px; width:min(72%,1220px); height:152px; }
+  body.match-mode .own-hand .hand-fan-card {
+    width:110px; min-width:110px; max-width:110px;
+    height:154px; min-height:154px; max-height:154px;
+    margin-left:-18px;
+  }
+  body.match-mode .own-board .board-resource-row { bottom:66px; }
+}
+@media (min-width:3200px) and (min-height:1500px) {
+  body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) clamp(640px,18vw,760px); }
+  body.match-mode .own-hand { width:min(72%,1380px); height:168px; }
+  body.match-mode .own-hand .hand-fan-card {
+    width:120px; min-width:120px; max-width:120px;
+    height:168px; min-height:168px; max-height:168px;
+    margin-left:-20px;
+  }
+}
+
+/* Mobile hand is centered above the profile instead of sharing the same bottom baseline. */
+@media (max-width:760px) {
+  body.match-mode .own-board { padding-bottom:152px; }
+  body.match-mode .own-hand {
+    left:50%;
+    bottom:47px;
+    transform:translateX(-50%);
+    width:min(88%,700px);
+    height:86px;
+    padding:0 4px;
+    justify-content:center;
+  }
+  body.match-mode .own-hand .hand-fan-card,
+  body.match-mode .own-hand .hand-fan-card:first-child {
+    width:58px; min-width:58px; max-width:58px;
+    height:81px; min-height:81px; max-height:81px;
+    margin-left:-10px !important;
+  }
+  body.match-mode .own-hand .hand-fan-card:first-child { margin-left:0 !important; }
+  body.match-mode .own-board .player-head { bottom:3px; }
+  body.match-mode .own-board .board-resource-row { right:3px; bottom:139px; width:31px; }
+  body.match-mode .own-board .pending-lane { bottom:139px; }
+  body.match-mode .command-dock { right:3px; bottom:137px; width:112px; }
+  body.match-mode .board-first-shell.results-view,
+  body.match-mode.match-ended .game-shell.board-first-shell.results-view,
+  body.match-mode .board-first-shell.results-view .game-main,
+  body.match-mode .board-first-shell.results-view .match-result-detail {
+    height:auto !important;
+    max-height:none !important;
+    overflow:visible !important;
+  }
+}
+
+/* v7.69.3 — Executive Desk lobby
+   Stitch is a visual reference only: real controls stay code-native and the actual OCG lobby flows remain authoritative. */
+body.lobby-mode {
+  --desk-wood:#4b2615;
+  --desk-wood-dark:#2b140c;
+  --desk-leather:#171512;
+  --desk-paper:#f4ead7;
+  --desk-paper-2:#e8d7bd;
+  --desk-ink:#2b2119;
+  --desk-brass:#a87a43;
+  --desk-red:#9a4038;
+  --desk-green:#45c56d;
+  min-height:100vh;
+  color:var(--desk-ink);
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.02),transparent 18%,rgba(0,0,0,.08) 49%,transparent 72%),
+    repeating-linear-gradient(2deg,#3c1e11 0 3px,#482313 3px 7px,#3b1d10 7px 10px,#522a17 10px 16px);
+}
+body.lobby-mode .topbar {
+  position:sticky;
+  top:0;
+  z-index:70;
+  min-height:54px;
+  padding:0 16px;
+  color:#f5ead9;
+  border-bottom:1px solid rgba(255,231,198,.16);
+  background:
+    linear-gradient(180deg,rgba(24,12,7,.72),rgba(39,18,10,.92)),
+    repeating-linear-gradient(2deg,#4b2615 0 4px,#3d1d10 4px 8px);
+  box-shadow:0 6px 20px rgba(0,0,0,.25);
+  backdrop-filter:blur(10px);
+}
+body.lobby-mode .topbar > div:first-child { display:flex; align-items:center; gap:10px; }
+body.lobby-mode .topbar > div:first-child strong {
+  padding:7px 12px 6px;
+  border:1px solid rgba(255,235,202,.25);
+  border-radius:5px;
+  background:linear-gradient(#25211d,#12100e);
+  box-shadow:inset 0 1px rgba(255,255,255,.12),0 3px 8px rgba(0,0,0,.35);
+  color:#f1e4ce;
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:16px;
+  letter-spacing:.045em;
+  text-transform:uppercase;
+  text-shadow:0 1px #000;
+}
+body.lobby-mode .topbar .muted {
+  padding:3px 6px;
+  border:1px solid rgba(207,100,87,.55);
+  border-radius:3px;
+  color:#f0c3b8;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  transform:rotate(-2deg);
+}
+body.lobby-mode .language-switcher { color:#eadcc9; }
+body.lobby-mode .language-switcher select,
+body.lobby-mode .topbar button {
+  border-color:rgba(236,216,186,.28);
+  background:#211712;
+  color:#f5ead9;
+}
+body.lobby-mode .app { max-width:none; margin:0; padding:0; }
+.executive-lobby { width:100%; min-height:calc(100vh - 54px); padding:14px clamp(10px,1.5vw,24px) 34px; }
+.executive-desk-surface {
+  width:min(1540px,100%);
+  min-height:690px;
+  margin:0 auto;
+  padding:14px;
+  display:grid;
+  grid-template-columns:clamp(150px,13vw,205px) minmax(520px,1fr) clamp(250px,24vw,350px);
+  gap:14px;
+  align-items:stretch;
+  border:1px solid rgba(25,10,4,.75);
+  border-radius:12px;
+  background:
+    radial-gradient(circle at 55% -10%,rgba(255,229,185,.12),transparent 30%),
+    linear-gradient(90deg,rgba(255,255,255,.025),transparent 25%,rgba(0,0,0,.06) 50%,transparent 76%),
+    repeating-linear-gradient(1deg,#4c2716 0 4px,#3c1d10 4px 9px,#522b18 9px 14px,#442112 14px 19px);
+  box-shadow:0 18px 48px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.08);
+  overflow:hidden;
+}
+.executive-desk-left,.executive-desk-center,.executive-desk-right { min-width:0; }
+.executive-desk-left { display:flex; flex-direction:column; gap:10px; }
+.executive-desk-center { display:grid; grid-template-rows:auto 1fr; gap:12px; }
+.executive-desk-right { display:flex; flex-direction:column; gap:12px; }
+
+.desk-collection-drawer {
+  position:relative;
+  min-height:260px;
+  padding:22px 14px 70px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  border:6px solid #3a1b0d;
+  border-radius:4px;
+  color:#ead6b8;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.06),transparent 18%,rgba(0,0,0,.12) 80%),
+    repeating-linear-gradient(0deg,#63351f 0 8px,#542a18 8px 15px,#6c3a22 15px 22px);
+  box-shadow:inset 0 0 0 2px #8a5332,inset 0 0 18px rgba(0,0,0,.5),0 7px 12px rgba(0,0,0,.25);
+  text-shadow:0 1px 1px #160a05;
+}
+.desk-collection-drawer span { font-size:12px; font-weight:800; letter-spacing:.05em; }
+.desk-collection-drawer strong { margin-top:3px; font-size:17px; line-height:1.05; }
+.desk-collection-drawer small { margin-top:8px; color:#c4aa8c; font-size:8px; }
+.desk-collection-drawer i {
+  position:absolute;
+  left:50%;
+  bottom:24px;
+  width:60px;
+  height:18px;
+  transform:translateX(-50%);
+  border:2px solid #4b2a19;
+  border-radius:4px 4px 10px 10px;
+  background:linear-gradient(#c69b65,#75502e);
+  box-shadow:inset 0 2px rgba(255,255,255,.25),0 2px 3px rgba(0,0,0,.35);
+}
+.desk-collection-drawer:hover { transform:translateY(-2px); filter:brightness(1.06); }
+.desk-file-button {
+  min-height:66px;
+  display:grid;
+  gap:3px;
+  text-align:left;
+  color:#433024;
+  border:1px solid #ad987c;
+  border-radius:3px;
+  background:linear-gradient(160deg,#f7eddc,#dfcbb0);
+  box-shadow:2px 3px 8px rgba(0,0,0,.25),inset 0 0 0 1px rgba(255,255,255,.45);
+}
+.desk-file-button span { color:#8f6d52; font-size:7px; font-weight:950; letter-spacing:.12em; }
+.desk-file-button strong { font-family:Georgia,"Times New Roman",serif; font-size:13px; }
+.executive-desk-left .lobby-connection-status { margin-top:auto; border-color:#1d271f; background:#171a16; color:#f1eadf; box-shadow:0 3px 7px rgba(0,0,0,.28); }
+.executive-desk-left .lobby-connection-status small { color:#9db5a3; }
+
+.desk-meeting-agenda {
+  margin:0;
+  padding:14px;
+  max-width:none;
+  border:1px solid #7d4a2f;
+  border-radius:9px;
+  background:linear-gradient(145deg,#6a3a22,#3d2115);
+  box-shadow:inset 0 0 0 3px #2c1810,inset 0 0 0 4px #916143,0 9px 18px rgba(0,0,0,.3);
+}
+.desk-agenda-sheet {
+  position:relative;
+  min-height:278px;
+  padding:20px clamp(16px,3vw,34px) 16px;
+  display:grid;
+  align-content:start;
+  gap:10px;
+  border:1px solid #c8b99f;
+  border-radius:2px;
+  background:
+    linear-gradient(90deg,transparent 0 44px,rgba(171,74,67,.13) 44px 46px,transparent 46px),
+    repeating-linear-gradient(0deg,transparent 0 27px,rgba(86,105,111,.08) 27px 28px),
+    linear-gradient(150deg,#faf3e7,#efe1c9);
+  box-shadow:0 4px 12px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.8);
+}
+.desk-agenda-sheet::after {
+  content:'';
+  position:absolute;
+  right:0;
+  bottom:0;
+  width:34px;
+  height:34px;
+  background:linear-gradient(135deg,rgba(255,255,255,.12) 49%,#d2c1a6 50%,#fbf1e2 76%);
+  filter:drop-shadow(-2px -2px 2px rgba(0,0,0,.12));
+}
+.desk-agenda-heading { display:flex; justify-content:space-between; align-items:start; gap:16px; }
+.desk-agenda-heading > div { display:grid; gap:2px; }
+.desk-agenda-heading span { color:#7c6858; font-size:9px; font-weight:950; letter-spacing:.12em; }
+.desk-agenda-heading strong { font-family:Georgia,"Times New Roman",serif; font-size:clamp(24px,3vw,34px); line-height:1; }
+.desk-agenda-heading > b {
+  padding:7px 12px;
+  border:3px solid rgba(142,50,45,.7);
+  border-radius:3px;
+  color:#9b3f37;
+  font-family:ui-monospace,monospace;
+  font-size:clamp(15px,2vw,22px);
+  letter-spacing:.08em;
+  transform:rotate(-6deg);
+  opacity:.9;
+}
+.desk-agenda-sheet > p { max-width:740px; margin:0; color:#635548; font-size:10px; line-height:1.45; }
+.desk-quick-controls { display:grid; grid-template-columns:minmax(180px,1.5fr) minmax(120px,.75fr) auto; gap:8px; align-items:end; }
+.desk-quick-controls label { min-width:0; color:#715f50; font-size:8px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.desk-quick-controls select { width:100%; min-height:38px; border-color:#a58d72; background:#fffaf0; color:#2c2119; }
+.desk-quick-match-button {
+  min-height:40px;
+  min-width:150px;
+  border:1px solid #3b2415;
+  color:#fff2df;
+  background:linear-gradient(#8b522f,#5c321d);
+  box-shadow:inset 0 1px rgba(255,255,255,.25),0 2px 0 #392012,0 4px 9px rgba(0,0,0,.24);
+  font-weight:950;
+  letter-spacing:.045em;
+  text-transform:uppercase;
+}
+.desk-meeting-agenda .lobby-deck-prep { margin:0; border-color:#b8aa95; background:rgba(255,252,244,.72); box-shadow:none; }
+.desk-matchmaking-message { padding:7px 9px; border-left:3px solid #8e493e; background:rgba(255,255,255,.46); color:#6e4c43 !important; font-weight:800; }
+
+.desk-starter-tray {
+  min-height:0;
+  padding:10px;
+  border:1px solid #23211d;
+  border-radius:7px;
+  background:linear-gradient(135deg,#171614,#24211d);
+  box-shadow:inset 0 0 0 2px #4c443a,0 6px 12px rgba(0,0,0,.28);
+}
+.desk-starter-tray .starter-guide-head { margin-bottom:8px; color:#eadcc7; }
+.desk-starter-tray .starter-guide-head span { color:#aa9a85; }
+.desk-starter-tray .starter-guide-head strong { color:#f2e8d9; }
+.desk-starter-tray .starter-guide-head small { color:#a9a092; }
+.desk-starter-tray .starter-guide-grid { grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; }
+.desk-starter-tray .starter-identity {
+  min-height:148px;
+  margin:0;
+  padding:9px;
+  display:flex;
+  text-align:left;
+  color:#302419;
+  border:1px solid color-mix(in srgb,var(--dept) 44%,#a78e6e);
+  border-top:5px solid var(--dept);
+  border-radius:3px;
+  background:linear-gradient(165deg,#f7e7c8,#dfc39c);
+  box-shadow:0 4px 8px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.65);
+}
+.desk-starter-tray .starter-identity:hover { transform:translateY(-3px); filter:brightness(1.04); }
+.desk-starter-tray .starter-identity > div span { background:rgba(255,255,255,.55); }
+.desk-starter-tray .starter-identity > small { color:#695d50; }
+.desk-starter-tray .starter-identity > em { color:#786859; }
+.desk-starter-tray .starter-identity > i { margin-top:4px; color:var(--dept); font-size:7px; font-style:normal; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
+
+.desk-bureaucracy {
+  position:relative;
+  padding:25px 12px 12px;
+  border:1px solid #8a745e;
+  border-radius:4px;
+  color:#1e1b18;
+  background:
+    repeating-linear-gradient(0deg,transparent 0 26px,rgba(73,92,100,.06) 26px 27px),
+    linear-gradient(160deg,#faf8f1,#e5ded0);
+  box-shadow:0 8px 18px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.65);
+}
+.desk-clipboard-clip {
+  position:absolute;
+  top:-11px;
+  left:50%;
+  width:92px;
+  height:28px;
+  transform:translateX(-50%);
+  border:1px solid #635d55;
+  border-radius:7px 7px 3px 3px;
+  background:linear-gradient(#c6c2ba,#78736c 48%,#b7b1a7);
+  box-shadow:0 3px 4px rgba(0,0,0,.26);
+}
+.desk-bureaucracy-title { display:grid; gap:1px; margin-bottom:8px; text-align:center; }
+.desk-bureaucracy-title span { font-family:Georgia,"Times New Roman",serif; font-size:21px; font-weight:800; }
+.desk-bureaucracy-title strong { font-size:8px; letter-spacing:.08em; text-transform:uppercase; }
+.desk-bureaucracy .profile-strip,
+.desk-bureaucracy .ranked-standing {
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:9px;
+  border-radius:3px;
+  border-color:#9d958a;
+  background:rgba(255,255,255,.48);
+  box-shadow:none;
+}
+.desk-bureaucracy .profile-strip { grid-template-columns:1fr; gap:8px; }
+.desk-bureaucracy .profile-identity strong { font-size:15px; }
+.desk-bureaucracy .profile-stats { justify-content:flex-start; gap:4px; }
+.desk-bureaucracy .profile-stats span { padding:4px 5px; background:#f5f0e7; }
+.desk-bureaucracy .profile-rename { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px; }
+.desk-bureaucracy .profile-rename input { min-width:0; }
+.desk-bureaucracy .ranked-standing { margin-top:8px; grid-template-columns:1fr; }
+.desk-bureaucracy .ranked-standing > div:first-child > strong { font-family:Georgia,"Times New Roman",serif; font-size:18px; }
+.desk-bureaucracy .ranked-standing-stats { display:grid; grid-template-columns:1fr 1fr; gap:4px; justify-content:stretch; }
+.desk-bureaucracy .ranked-standing-stats span { min-width:0; padding:5px; }
+.desk-bureaucracy .ranked-standing-note { font-size:7px; }
+.desk-alpha-memo {
+  width:88%;
+  margin:0 auto;
+  padding:13px 14px 16px;
+  border:1px solid #c7b99f;
+  background:linear-gradient(160deg,#fffdf5,#e9dec9);
+  box-shadow:4px 5px 12px rgba(0,0,0,.26);
+  transform:rotate(-1deg);
+}
+.desk-alpha-memo span { color:#7b6858; font-size:7px; font-weight:950; letter-spacing:.12em; }
+.desk-alpha-memo strong { display:block; margin:2px 0 6px; font-family:Georgia,"Times New Roman",serif; font-size:18px; }
+.desk-alpha-memo p { margin:0 0 7px; font-size:9px; line-height:1.35; }
+.desk-alpha-memo small { color:#7e7165; font-size:7px; }
+
+.executive-desk-tools {
+  width:min(1540px,100%);
+  margin:12px auto 0;
+  display:grid;
+  grid-template-columns:minmax(0,1.5fr) minmax(260px,.7fr) minmax(260px,.8fr);
+  gap:10px;
+  align-items:start;
+}
+.executive-desk-tools > * { min-width:0; margin:0 !important; }
+.executive-desk-tools .private-room-drawer,
+.executive-desk-tools .alpha-session-strip,
+.executive-desk-tools .rules-primer,
+.executive-lobby .lobby-playtest-drawer {
+  border-color:#8d6d52;
+  background:linear-gradient(160deg,#efe1c7,#d9c19f);
+  color:#32251b;
+  box-shadow:0 5px 13px rgba(0,0,0,.24);
+}
+.executive-lobby .lobby-playtest-drawer { width:min(1540px,100%); margin:10px auto 0; }
+.executive-desk-tools .private-room-drawer > summary,
+.executive-lobby .lobby-playtest-drawer > summary { background:transparent; }
+.executive-desk-tools .private-room-drawer[open] > summary,
+.executive-lobby .lobby-playtest-drawer[open] > summary { background:rgba(255,255,255,.2); }
+.executive-desk-tools .private-room-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.executive-desk-tools .box { background:#fbf3e6; }
+.executive-desk-tools .alpha-session-strip { display:grid; grid-template-columns:1fr; gap:7px; padding:11px; }
+.executive-desk-tools .alpha-session-strip button { width:100%; }
+.executive-desk-tools .rules-primer { border-radius:14px; overflow:hidden; }
+.executive-lobby .resume-session-box {
+  width:min(1540px,100%);
+  margin:0 auto 10px;
+  border-color:#b68b4b;
+  background:linear-gradient(160deg,#fff1b8,#eacb68);
+  color:#3b2e18;
+  box-shadow:0 5px 15px rgba(0,0,0,.22);
+}
+
+@media (max-width:1180px) {
+  .executive-desk-surface { grid-template-columns:150px minmax(470px,1fr) minmax(240px,300px); gap:10px; padding:10px; }
+  .desk-quick-controls { grid-template-columns:minmax(160px,1.4fr) minmax(110px,.65fr); }
+  .desk-quick-controls .desk-quick-match-button,
+  .desk-quick-controls #cancelQuickMatch { grid-column:1/-1; width:100%; }
+  .desk-starter-tray .starter-guide-head { align-items:start; flex-direction:column; gap:3px; }
+  .desk-starter-tray .starter-guide-head small { text-align:left; }
+  .desk-starter-tray .starter-identity { min-height:136px; padding:7px; }
+  .desk-bureaucracy .profile-stats { display:grid; grid-template-columns:1fr 1fr; }
+  .executive-desk-tools { grid-template-columns:1fr 1fr; }
+  .executive-desk-tools .desk-private-room { grid-column:1/-1; }
+}
+
+@media (max-width:900px) {
+  .executive-desk-surface { grid-template-columns:130px minmax(0,1fr); }
+  .executive-desk-right { grid-column:1/-1; display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,.55fr); }
+  .desk-bureaucracy { min-width:0; }
+  .desk-alpha-memo { width:100%; transform:none; align-self:start; }
+  .desk-starter-tray .starter-guide-grid { display:flex; overflow-x:auto; scroll-snap-type:x proximity; }
+  .desk-starter-tray .starter-identity { min-width:170px; scroll-snap-align:start; }
+}
+
+@media (max-width:760px) {
+  body.lobby-mode .topbar { min-height:58px; padding:6px 10px; gap:7px; }
+  body.lobby-mode .topbar > div:first-child strong { padding:5px 7px; font-size:12px; }
+  body.lobby-mode .topbar .muted { display:none; }
+  body.lobby-mode .language-switcher { margin-left:auto; font-size:0; }
+  body.lobby-mode .language-switcher select { min-height:38px; font-size:12px; }
+  .executive-lobby { min-height:calc(100dvh - 58px); padding:8px 7px 24px; }
+  .executive-desk-surface { display:flex; flex-direction:column; min-height:0; padding:8px; gap:10px; border-radius:8px; }
+  .executive-desk-center { order:1; display:flex; flex-direction:column; }
+  .executive-desk-left { order:2; display:grid; grid-template-columns:1.45fr 1fr; gap:7px; }
+  .executive-desk-right { order:3; display:flex; flex-direction:column; }
+  .desk-meeting-agenda { padding:8px; }
+  .desk-agenda-sheet { min-height:0; padding:15px 12px 12px; gap:8px; }
+  .desk-agenda-heading strong { font-size:25px; }
+  .desk-agenda-heading > b { padding:5px 7px; font-size:13px; border-width:2px; }
+  .desk-agenda-sheet > p { font-size:9px; }
+  .desk-quick-controls { grid-template-columns:1fr 1fr; gap:6px; }
+  .desk-quick-controls .desk-quick-match-button,
+  .desk-quick-controls #cancelQuickMatch { grid-column:1/-1; min-height:46px; }
+  .desk-meeting-agenda .lobby-deck-prep { display:none; }
+  .desk-starter-tray { order:2; padding:8px; }
+  .desk-starter-tray .starter-guide-head { margin-bottom:6px; }
+  .desk-starter-tray .starter-guide-head strong { font-size:10px; }
+  .desk-starter-tray .starter-guide-head small { display:none; }
+  .desk-starter-tray .starter-guide-grid { display:flex; gap:7px; overflow-x:auto; padding-bottom:5px; scroll-snap-type:x mandatory; }
+  .desk-starter-tray .starter-identity { min-width:145px; min-height:124px; scroll-snap-align:start; }
+  .desk-starter-tray .starter-identity > small { display:none; }
+  .desk-starter-tray .starter-identity > em { font-size:6px; }
+  .desk-collection-drawer { min-height:118px; padding:14px 8px 44px; border-width:4px; }
+  .desk-collection-drawer span { font-size:9px; }
+  .desk-collection-drawer strong { font-size:13px; }
+  .desk-collection-drawer small { display:none; }
+  .desk-collection-drawer i { bottom:12px; width:44px; height:14px; }
+  .desk-file-button { min-height:54px; padding:7px 8px; }
+  .executive-desk-left .lobby-connection-status { grid-column:1/-1; margin:0; }
+  .desk-bureaucracy { padding:23px 8px 8px; }
+  .desk-bureaucracy-title span { font-size:18px; }
+  .desk-bureaucracy .profile-strip { padding:7px; }
+  .desk-bureaucracy .profile-rename { grid-template-columns:1fr; }
+  .desk-bureaucracy .profile-rename button { width:100%; }
+  .desk-bureaucracy .ranked-standing { padding:7px; }
+  .desk-bureaucracy .ranked-standing > div:first-child > small,
+  .desk-bureaucracy .ranked-standing-note { display:none; }
+  .desk-alpha-memo { display:none; }
+  .executive-desk-tools { display:flex; flex-direction:column; gap:8px; }
+  .executive-desk-tools > * { width:100%; }
+  .executive-desk-tools .private-room-grid { grid-template-columns:1fr; }
+  .executive-lobby .lobby-playtest-drawer { width:100%; }
+  .executive-lobby .resume-session-box { margin-bottom:8px; }
+}
+
+/* v7.69.3 final hosted geometry follow-up */
+body.match-mode.match-ended { height:auto !important; min-height:100dvh; overflow-y:auto !important; overflow-x:hidden !important; }
+body.match-mode.match-ended .app { height:auto !important; min-height:calc(100dvh - 46px); overflow:visible !important; }
+body.match-mode .arena-sidepanel { overflow:hidden; }
+body.match-mode .arena-sidepanel-scroll { min-width:0; width:100%; overflow-y:auto !important; overflow-x:hidden !important; }
+body.match-mode .arena-sidepanel * { max-width:100%; }
+@media (min-width:761px) and (max-height:1000px) {
+  body.match-mode .own-hand { width:min(74%,940px); height:116px; }
+  body.match-mode .own-hand .hand-fan-card { width:86px; min-width:86px; max-width:86px; height:120px; min-height:120px; max-height:120px; margin-left:-15px; }
+}
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) minmax(620px,22vw); }
+  body.match-mode .arena-sidepanel { min-width:0; }
+  body.match-mode .own-hand { width:min(76%,1360px); }
+}
+@media (min-width:3200px) and (min-height:1500px) {
+  body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) minmax(720px,20vw); }
+}
+@media (max-width:760px) {
+  body.match-mode .own-board { padding-bottom:158px; }
+  body.match-mode .own-hand { left:50%; bottom:48px; transform:translateX(-50%); width:min(82%,520px); height:88px; padding:0; }
+  body.match-mode .own-hand .hand-fan-card,
+  body.match-mode .own-hand .hand-fan-card:first-child { width:58px; min-width:58px; max-width:58px; height:81px; min-height:81px; max-height:81px; margin-left:-10px !important; }
+  body.match-mode .own-hand .hand-fan-card:first-child { margin-left:0 !important; }
+  body.match-mode .own-board .player-head { bottom:3px; z-index:12; }
+  body.match-mode .own-board .board-resource-row { bottom:141px; }
+  body.match-mode .command-dock { bottom:139px; }
+  body.match-mode .board-first-shell.results-view .match-result-panel { overflow:visible !important; }
+}

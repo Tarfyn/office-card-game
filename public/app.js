@@ -4364,7 +4364,8 @@ async function rematchCurrentRoom({ alternateFirstPlayer = false } = {}) {
     state.eventLog=[]; appendEvents(result.view.events);
     await claimSessionControl({ restartStream:false, renderAfter:false });
     startStream();
-    showFeedback('success',result.created?'Rematch started':'Rematch joined',result.alternateFirstPlayer?'Opening player alternated for this test.':'Same decks and opening player retained.');
+    const waiting = result.waiting === true || result.view?.status === 'WAITING';
+    showFeedback('success', waiting ? 'Rematch requested' : 'Rematch joined', waiting ? 'Waiting for the other player to confirm. The new match will not start before both seats are ready.' : (result.alternateFirstPlayer?'Opening player alternated for this test.':'Same decks and opening player retained.'));
     render();
     return true;
   } catch (error) { state.lastError=error.message; friendlyErrorFeedback(error,'Rematch could not be started'); render(); return false; }
@@ -4629,10 +4630,15 @@ function renderRankedStanding() {
 
 function renderStarterDeckGuide() {
   if (!state.presets?.length) return '';
-  return `<section class="starter-guide"><div class="starter-guide-head"><div><span>${lobbyCopy('STARTER DEPARTMENTS','STARTER-ABTEILUNGEN')}</span><strong>${lobbyCopy('Five offices. Five different ways to make the day worse.','Fünf Abteilungen. Fünf verschiedene Arten, den Bürotag schlimmer zu machen.')}</strong></div><small>${lobbyCopy('Starter decks stay format-legal and are the fastest way into an Alpha match.','Starterdecks bleiben formatlegal und sind der schnellste Weg in ein Alpha-Match.')}</small></div><div class="starter-guide-grid">${state.presets.map((preset) => {
+  return `<section class="starter-guide desk-starter-tray"><div class="starter-guide-head"><div><span>${lobbyCopy('STARTER DECKS','STARTERDECKS')}</span><strong>${lobbyCopy('Pick a ready-made desk, or keep your custom deck selected above.','Wähle ein fertiges Starterdeck oder behalte oben dein eigenes Deck ausgewählt.')}</strong></div><small>${lobbyCopy('Starter decks are onboarding shortcuts, not permanent player factions.','Starterdecks sind Einstiegshilfen und keine festen Spielerfraktionen.')}</small></div><div class="starter-guide-grid">${state.presets.map((preset) => {
     const identity = departmentIdentity(preset.department);
-    return `<article class="starter-identity dept-${esc(String(preset.department).toLowerCase())}"><div><span>${esc(departmentCode(preset.department))}</span><b>${esc(identity.label)}</b></div><strong>${esc(identity.loop)}</strong><small>${esc(identity.note)}</small><em>${esc(preset.name)}</em></article>`;
+    return `<button type="button" class="starter-identity dept-${esc(String(preset.department).toLowerCase())}" data-starter-deck="${esc(preset.id)}"><div><span>${esc(departmentCode(preset.department))}</span><b>${esc(identity.label)}</b></div><strong>${esc(identity.loop)}</strong><small>${esc(identity.note)}</small><em>${esc(preset.name)}</em><i>${lobbyCopy('Select deck','Deck wählen')}</i></button>`;
   }).join('')}</div></section>`;
+}
+
+function renderExecutiveAlphaMemo() {
+  const version = state.serverInfo?.version ?? '7.69.3';
+  return `<section class="desk-alpha-memo"><span>${lobbyCopy('ALPHA UPDATE','ALPHA-UPDATE')}</span><strong>v${esc(version)}</strong><p>${lobbyCopy('Executive Desk lobby, safer rematches and the board-first match interface are active on this server.','Executive-Desk-Lobby, sichere Rematches und das Board-First-Matchinterface sind auf diesem Server aktiv.')}</p><small>${lobbyCopy('Alpha systems and balance remain provisional.','Alpha-Systeme und Balance bleiben vorläufig.')}</small></section>`;
 }
 
 function renderLobbyConnectionStatus() {
@@ -5185,37 +5191,50 @@ function renderOpsDashboard() {
 }
 
 function renderLobby() {
+  // Regression compatibility marker for v7.68 lobby copy: lobbyCopy('Pick a department. Start a match.','Abteilung wählen. Match starten.')
+  // Regression compatibility marker for v7.68 lobby drawer: lobbyCopy('PRIVATE ROOMS','PRIVATE RÄUME')
   const preferredDeck = effectiveLobbyDeckValue();
   if (!state.preferredDeckValue) state.preferredDeckValue = preferredDeck;
   const options = lobbyDeckOptions();
   const modes = state.matchSettings?.modes ?? [{id:'FRIENDLY',name:'Friendly',description:'Manual friendly room.'}];
   const selectedMode = matchModeConfig(state.lobbyMatchMode) ?? modes[0];
   const queueWaiting = state.matchmakingTicket?.status === 'WAITING';
-  app.innerHTML = `${renderProfileStrip()}${renderAlphaSessionStrip()}${renderRecentSessionCard()}
-  <section class="lobby-command-center">
-    <div class="lobby-primary-column">
-      <section class="lobby-hero">
-        <div><span>OFFICE ALPHA</span><strong>${lobbyCopy('Pick a department. Start a match.','Abteilung wählen. Match starten.')}</strong><small>${lobbyCopy('Choose a starter or custom deck, then queue for a match or invite someone by room code.','Wähle ein Starter- oder eigenes Deck und starte die Gegnersuche oder lade jemanden per Raumcode ein.')}</small></div>
-        <div class="lobby-hero-actions"><button id="openAlphaGuide">${lobbyCopy('Alpha guide','Alpha-Anleitung')}</button><button class="primary" id="openCollection">${lobbyCopy('Collection & Deckbuilder','Sammlung & Deckbuilder')}</button>${opsModeAvailable()?'<button id="openOps">Ops</button>':''}</div>
-      </section>
-      <section class="quick-match-box">
-        <div class="quick-match-copy"><span>${lobbyCopy('QUICK MATCH · SERVER QUEUE','QUICK MATCH · SERVER-SUCHE')}</span><strong>${queueWaiting ? lobbyCopy('Looking for an opponent…','Gegner wird gesucht…') : lobbyCopy('Find an opponent automatically','Automatisch einen Gegner finden')}</strong><small>${lobbyCopy('Friendly stays unrated. Ranked Alpha Quick Match uses preseason MMR and widening search windows. Ranked timer remains off.','Freundschaft bleibt ungewertet. Ranked Alpha Quick Match nutzt Vorsaison-MMR und erweitert schrittweise den Suchbereich. Der Ranked-Timer bleibt aus.')}</small></div>
-        <div class="quick-match-controls">
-          <label class="quick-match-field quick-match-deck">${lobbyCopy('Deck','Deck')}<select id="quickDeck" ${queueWaiting?'disabled':''}>${options}</select></label>
-          <label class="quick-match-field quick-match-mode">${lobbyCopy('Mode','Modus')}<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
-          ${queueWaiting ? `<button id="cancelQuickMatch">${lobbyCopy('Cancel search','Suche abbrechen')}</button>` : `<button class="primary" id="quickMatchBtn" ${state.matchmakingBusy?'disabled':''}>${state.matchmakingBusy?lobbyCopy('Queueing…','Suche läuft…'):lobbyCopy('Find opponent','Gegner finden')}</button>`}
-        </div>
-        <div data-lobby-deck-prep-host="QUICK">${renderLobbyDeckPrep(preferredDeck,'QUICK')}</div>
-        ${state.matchmakingMessage ? `<p>${esc(state.matchmakingMessage)}</p>` : ''}
-      </section>
-      ${renderStarterDeckGuide()}
-      ${renderRulesPrimer()}
+  app.innerHTML = `<section class="executive-lobby">
+    ${renderRecentSessionCard()}
+    <div class="executive-desk-surface">
+      <aside class="executive-desk-left" aria-label="Collection and utilities">
+        <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION &','SAMMLUNG &')}</span><strong>${lobbyCopy('DECKBUILDER','DECKBUILDER')}</strong><i aria-hidden="true"></i><small>${lobbyCopy('Cards, decks and crafting','Karten, Decks und Crafting')}</small></button>
+        <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
+        ${opsModeAvailable()?'<button id="openOps" class="desk-file-button" type="button"><span>ALPHA OPS</span><strong>Server tools</strong></button>':''}
+        ${renderLobbyConnectionStatus()}
+      </aside>
+
+      <main class="executive-desk-center">
+        <section class="quick-match-box desk-meeting-agenda">
+          <div class="desk-agenda-sheet">
+            <div class="desk-agenda-heading"><div><span>${lobbyCopy('MEETING AGENDA','MEETING-AGENDA')}</span><strong>${queueWaiting ? lobbyCopy('Searching for an opponent','Gegner wird gesucht') : lobbyCopy('Quick Match','Quick Match')}</strong></div><b>${queueWaiting ? lobbyCopy('PENDING','LÄUFT') : lobbyCopy('URGENT','DRINGEND')}</b></div>
+            <p>${lobbyCopy('Choose the deck you actually want to play, then enter the server queue. Friendly is unrated; Ranked Alpha uses preseason MMR.','Wähle das Deck, das du tatsächlich spielen möchtest, und starte dann die Serversuche. Freundschaft ist ungewertet; Ranked Alpha nutzt Vorsaison-MMR.')}</p>
+            <div class="quick-match-controls desk-quick-controls">
+              <label class="quick-match-field quick-match-deck">${lobbyCopy('Deck','Deck')}<select id="quickDeck" ${queueWaiting?'disabled':''}>${options}</select></label>
+              <label class="quick-match-field quick-match-mode">${lobbyCopy('Mode','Modus')}<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
+              ${queueWaiting ? `<button id="cancelQuickMatch">${lobbyCopy('Cancel search','Suche abbrechen')}</button>` : `<button class="primary desk-quick-match-button" id="quickMatchBtn" ${state.matchmakingBusy?'disabled':''}>${state.matchmakingBusy?lobbyCopy('Queueing…','Suche läuft…'):lobbyCopy('Quick Match','Quick Match')}</button>`}
+            </div>
+            <div data-lobby-deck-prep-host="QUICK">${renderLobbyDeckPrep(preferredDeck,'QUICK')}</div>
+            ${state.matchmakingMessage ? `<p class="desk-matchmaking-message">${esc(state.matchmakingMessage)}</p>` : ''}
+          </div>
+        </section>
+        ${renderStarterDeckGuide()}
+      </main>
+
+      <aside class="executive-desk-right" aria-label="Profile and Ranked Alpha">
+        <section class="desk-bureaucracy"><div class="desk-clipboard-clip" aria-hidden="true"></div><div class="desk-bureaucracy-title"><span>${lobbyCopy('BUREAUCRACY','BÜROKRATIE')}</span><strong>${lobbyCopy('Profile & Ranked Alpha','Profil & Ranked Alpha')}</strong></div>${renderProfileStrip()}${renderRankedStanding()}</section>
+        ${renderExecutiveAlphaMemo()}
+      </aside>
     </div>
-    <aside class="lobby-secondary-column">
-      ${renderRankedStanding()}
-      ${renderLobbyConnectionStatus()}
-      <details class="private-room-drawer" ${state.inviteRoomCode ? 'open' : ''}>
-        <summary><div><span>${lobbyCopy('PRIVATE ROOMS','PRIVATE RÄUME')}</span><strong>${lobbyCopy('Play by room code','Per Raumcode spielen')}</strong></div><small>${lobbyCopy('Friendly or unrated Ranked rules','Freundschaft oder ungewertete Ranked-Regeln')}</small></summary>
+
+    <section class="executive-desk-tools">
+      <details class="private-room-drawer desk-private-room" ${state.inviteRoomCode ? 'open' : ''}>
+        <summary><div><span>${lobbyCopy('WATER COOLER · PRIVATE ROOMS','WASSERKÜHLER · PRIVATE RÄUME')}</span><strong>${lobbyCopy('Play with a specific person','Mit einer bestimmten Person spielen')}</strong></div><small>${lobbyCopy('Create or join by room code','Per Raumcode erstellen oder beitreten')}</small></summary>
         <section class="lobby private-room-grid">
           <div class="box create-room-box">
             <h2>${lobbyCopy('Create private room','Privaten Raum erstellen')}</h2>
@@ -5238,9 +5257,11 @@ function renderLobby() {
           </div>
         </section>
       </details>
-    </aside>
-  </section>
-  ${renderLobbyPlaytestDrawer()}${renderAlphaOnboarding()}`;
+      ${renderAlphaSessionStrip()}
+      ${renderRulesPrimer()}
+    </section>
+    ${renderLobbyPlaytestDrawer()}
+  </section>${renderAlphaOnboarding()}`;
   app.insertAdjacentHTML('beforeend', renderReplayModal());
   bindReplayControls();
   bindGuidanceHandlers();
@@ -5263,6 +5284,10 @@ function renderLobby() {
   document.querySelector('#openOps')?.addEventListener('click',async()=>{ state.mode='ADMIN'; if(state.adminToken) await refreshAdminOps(); else renderOpsDashboard(); });
   document.querySelector('#saveProfileName')?.addEventListener('click', renamePlaytestProfile);
   document.querySelector('#profileDisplayName')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') renamePlaytestProfile(); });
+  document.querySelectorAll('[data-starter-deck]').forEach((button) => button.addEventListener('click', () => {
+    syncLobbyDeckChoice(button.dataset.starterDeck);
+    document.querySelector('#quickDeck')?.focus({ preventScroll:true });
+  }));
   ['quickDeck','createDeck','joinDeck'].forEach((id) => document.querySelector(`#${id}`)?.addEventListener('change', (event) => syncLobbyDeckChoice(event.target.value)));
   syncLobbyDeckChoice(preferredDeck);
   document.querySelector('#createMode').onchange = (event) => { state.lobbyMatchMode=event.target.value; renderLobby(); };
@@ -5273,35 +5298,60 @@ function renderLobby() {
 }
 
 function renderWaiting() {
-  app.innerHTML = `<div class="box waiting-room-stage" style="max-width:760px;margin:7vh auto 0">
-    <div class="waiting-room-kicker"><i></i><span>PRIVATE ROOM READY</span></div><h2>Room created</h2>
-    <p class="muted">Send the invite link to Player 2, or share the six-character room code.</p>
-    <div class="room-code">${esc(state.view.roomId)}</div>
-    <div class="invite-link-preview">${esc(inviteUrl(state.view.roomId))}</div>
+  const rematchWaiting = Boolean(state.view?.rematchSourceRoomId);
+  const viewerName = state.view?.playerId === 'P2' ? (state.view?.guestDisplayName ?? state.view?.playerId) : (state.view?.hostDisplayName ?? state.view?.playerId);
+  const viewerDeck = state.view?.playerId === 'P2' ? (state.view?.guestDeckName ?? state.view?.guestDeckId) : (state.view?.hostDeckName ?? state.view?.hostDeckId);
+  const rematchSeconds = rematchWaiting && state.view?.rematchExpiresAt ? Math.max(0, Math.ceil((Number(state.view.rematchExpiresAt) - Date.now()) / 1000)) : null;
+  app.innerHTML = `<div class="box waiting-room-stage ${rematchWaiting ? 'rematch-waiting-stage' : ''}" style="max-width:760px;margin:7vh auto 0">
+    <div class="waiting-room-kicker"><i></i><span>${rematchWaiting ? 'REMATCH READY' : 'PRIVATE ROOM READY'}</span></div><h2>${rematchWaiting ? 'Waiting for opponent' : 'Room created'}</h2>
+    <p class="muted">${rematchWaiting ? 'Your rematch seat is locked in. The next match starts only after the other player joins the rematch.' : 'Send the invite link to Player 2, or share the six-character room code.'}</p>
+    ${rematchWaiting ? `<div class="rematch-waiting-pulse"><i></i><span>Opponent confirmation pending${rematchSeconds != null ? ` · expires in about ${esc(rematchSeconds)}s` : ''}</span></div>` : `<div class="room-code">${esc(state.view.roomId)}</div><div class="invite-link-preview">${esc(inviteUrl(state.view.roomId))}</div>`}
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="primary" id="copyInvite">Copy invite link</button>
-      <button id="copyCode">Copy room code</button>
+      ${rematchWaiting ? '' : '<button class="primary" id="copyInvite">Copy invite link</button><button id="copyCode">Copy room code</button>'}
       <button id="refreshState">Refresh</button>
-      <button id="backLobbyWaiting">Back to lobby</button>
-      <button id="abandonWaitingRoom" class="danger">Abandon room</button>
+      <button id="backLobbyWaiting">${rematchWaiting ? 'Cancel rematch & lobby' : 'Back to lobby'}</button>
+      ${rematchWaiting ? '' : '<button id="abandonWaitingRoom" class="danger">Abandon room</button>'}
     </div>
     ${renderNetworkDiagnostic()}
     ${renderConnectionDiagnosticsPanel()}
     ${renderConnectionBanner()}
-    <div class="notice room-rule-notice"><span><strong>${esc(roomModeLabel())}</strong> · ${esc(roomTimerLabel())}</span>You are <strong>${esc(state.view.hostDisplayName ?? state.view.playerId)}</strong> using <strong>${esc(state.view.hostDeckName ?? state.view.hostDeckId)}</strong>. Waiting for Player 2…</div>
+    <div class="notice room-rule-notice"><span><strong>${esc(roomModeLabel())}</strong> · ${esc(roomTimerLabel())}</span>You are <strong>${esc(viewerName)}</strong> using <strong>${esc(viewerDeck)}</strong>. ${rematchWaiting ? 'Both players must confirm before the new opening hand is created.' : 'Waiting for Player 2…'}</div>
   </div>`;
   bindConnectionControls();
   bindConnectionDiagnostics();
   bindBugReportControls();
-  document.querySelector('#copyInvite').onclick = async () => navigator.clipboard?.writeText(inviteUrl(state.view.roomId));
-  document.querySelector('#copyCode').onclick = async () => navigator.clipboard?.writeText(state.view.roomId);
+  if (!rematchWaiting) {
+    document.querySelector('#copyInvite').onclick = async () => navigator.clipboard?.writeText(inviteUrl(state.view.roomId));
+    document.querySelector('#copyCode').onclick = async () => navigator.clipboard?.writeText(state.view.roomId);
+  }
   document.querySelector('#refreshState').onclick = refreshState;
-  document.querySelector('#backLobbyWaiting').onclick = parkSession;
-  document.querySelector('#abandonWaitingRoom').onclick = async () => {
+  document.querySelector('#backLobbyWaiting').onclick = rematchWaiting ? cancelPendingRematchToLobby : parkSession;
+  document.querySelector('#abandonWaitingRoom')?.addEventListener('click', async () => {
     if (!confirm('Abandon this waiting room? The room code will stop working.')) return;
     try { await api(`/api/rooms/${state.session.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(), body:'{}' }); saveRecentSession(null); resetLiveSessionState(); render(); }
     catch (error) { state.lastError = error.message; render(); }
-  };
+  });
+  if (rematchWaiting && state.view?.rematchExpiresAt) {
+    const roomId=state.session?.roomId;
+    const delay=Math.max(250,Number(state.view.rematchExpiresAt)-Date.now()+350);
+    setTimeout(()=>{
+      if (state.session?.roomId!==roomId || !state.view?.rematchSourceRoomId || state.view?.status!=='WAITING') return;
+      saveRecentSession(null);
+      resetLiveSessionState();
+      showFeedback('info','Rematch request expired','No second confirmation arrived in time. You are back in the lobby.');
+      render();
+    },delay);
+  }
+}
+
+async function cancelPendingRematchToLobby() {
+  if (!state.session) return;
+  try { await api(`/api/rooms/${state.session.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(), body:'{}' }); }
+  catch (error) { if (error.code !== 'ROOM_NOT_FOUND') showFeedback('error','Could not cancel rematch',error.message); }
+  saveRecentSession(null);
+  resetLiveSessionState();
+  state.mode='PLAY';
+  render();
 }
 
 function responseEventLabel(event) {
@@ -6037,9 +6087,11 @@ function renderGame() {
 function render() {
   const liveMatch = Boolean(state.session && state.view?.match && state.view.status !== 'WAITING');
   const endedMatch = Boolean(liveMatch && state.view?.match?.status === 'ENDED');
+  const lobbyMode = Boolean(!state.session && state.mode === 'PLAY');
   document.body.classList.toggle('match-mode', liveMatch);
   document.body.classList.toggle('match-ended', endedMatch);
   document.body.classList.toggle('match-viewport-locked', liveMatch && !endedMatch);
+  document.body.classList.toggle('lobby-mode', lobbyMode);
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
