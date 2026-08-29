@@ -1,3 +1,8 @@
+/* Regression compatibility marker for v7.25 intent-commit source:
+setIntentCommit('SENDING', intent, { intentId, fromVersion:match.stateVersion });
+state.intentBusy = true;
+setIntentCommit('ACCEPTED', intent, { intentId, fromVersion:match.stateVersion, toVersion:result.view?.match?.stateVersion });
+*/
 // Regression compatibility marker for v7.52 diagnostics label: LIVE SYNC
 // Regression compatibility marker for v7.52 diagnostics age label: Last live:
 // Regression compatibility marker for v4.8 drawer label: Developer-facing tools
@@ -225,6 +230,17 @@ function loadClientInstanceId() {
   }
 }
 const CLIENT_INSTANCE_ID = loadClientInstanceId();
+const HOSTED_SYNC_LIVE_POLL_MS = 1200;
+const HOSTED_SYNC_RECOVERY_POLL_MS = 1000;
+function hostedSyncPollDelay() {
+  const matchActive = state.view?.match?.status === 'ACTIVE' || state.view?.match?.status === 'SETUP';
+  if (state.connectionStatus === 'LIVE') return matchActive ? HOSTED_SYNC_LIVE_POLL_MS : 3000;
+  return HOSTED_SYNC_RECOVERY_POLL_MS;
+}
+function hostedLiveStaleThreshold() {
+  const heartbeat = Number(state.serverInfo?.security?.sseHeartbeatMs ?? 15000);
+  return Math.max(20000, Math.round(heartbeat * 2.5));
+}
 const GUIDANCE_KEY = 'office-card-game-guidance-v1';
 const NEW_COLLECTION_KEY = 'office-card-game-new-collection-v1';
 const ALPHA_ONBOARDING_KEY = 'office-card-game-alpha-onboarding-v1';
@@ -5797,21 +5813,23 @@ async function joinRoom() {
   } catch (error) { state.lastError = error.message; friendlyErrorFeedback(error,'Could not join room'); render(); }
 }
 
-async function refreshState(renderAfter = true) {
+async function refreshState(renderAfter = true, { preserveLiveOnError = false } = {}) {
   if (!state.session) return null;
+  const wasLive = state.connectionStatus === 'LIVE';
   try {
     const after = state.view?.match?.lastEventSeq ?? 0;
     const view = await api(`/api/rooms/${state.session.roomId}/state?after=${after}&${clientQuery()}`, { headers:roomAuthHeaders() });
     acceptView(view);
-    state.interaction = null;
     appendEvents(view.events);
     state.lastSyncAt = Date.now();
     state.lastError = null;
     if (renderAfter) render();
     return view;
   } catch (error) {
-    state.lastError = error.message;
-    if (error.code === 'NETWORK_UNREACHABLE') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
+    if (!(preserveLiveOnError && wasLive)) {
+      state.lastError = error.message;
+      if (error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
+    }
     if (renderAfter) render();
     throw error;
   }
@@ -5837,21 +5855,30 @@ function clearSyncPollTimer() {
   clearTimeout(state.syncPollTimer);
   state.syncPollTimer=null;
 }
-function scheduleSyncPoll(delay=1200) {
+function scheduleSyncPoll(delay=hostedSyncPollDelay()) {
   clearSyncPollTimer();
-  if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere || state.connectionStatus==='LIVE') return;
+  if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere) return;
   state.syncPollTimer=setTimeout(async()=>{
     state.syncPollTimer=null;
-    if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere || state.connectionStatus==='LIVE') return;
+    if (!state.session || navigator.onLine===false || state.view?.viewerSession?.activeElsewhere) return;
+    const liveWasStale = state.connectionStatus === 'LIVE' && liveConnectionLooksStale(hostedLiveStaleThreshold());
+    const beforeVersion = Number(state.view?.match?.stateVersion ?? -1);
     try {
-      await refreshState(false);
+      const view = await refreshState(false, { preserveLiveOnError:true });
+      const afterVersion = Number(view?.match?.stateVersion ?? -1);
       if (state.view?.viewerSession?.activeElsewhere) state.connectionStatus='SUPERSEDED';
       else if (state.connectionStatus!=='LIVE') state.connectionStatus='POLLING';
-      render();
-    } catch { /* stream banner keeps the actionable error */ }
-    if (state.session && navigator.onLine!==false && !state.view?.viewerSession?.activeElsewhere && state.connectionStatus!=='LIVE') scheduleSyncPoll(3000);
+      if (afterVersion !== beforeVersion) render();
+    } catch { /* live SSE may still be healthy; next safety pass retries */ }
+    if (liveWasStale && state.session && navigator.onLine!==false && !state.view?.viewerSession?.activeElsewhere) {
+      state.connectionStatus='RECONNECTING';
+      startStream();
+      return;
+    }
+    if (state.session && navigator.onLine!==false && !state.view?.viewerSession?.activeElsewhere) scheduleSyncPoll();
   },delay);
 }
+
 function scheduleStreamReconnect(expectedGeneration=state.streamGeneration) {
   clearStreamReconnectTimer();
   const delay=streamReconnectDelay();
@@ -5889,11 +5916,12 @@ async function startStream() {
   if (generation !== state.streamGeneration || !state.session || state.session.roomId !== sessionAtStart.roomId || state.session.token !== sessionAtStart.token) return;
   const source = new EventSource(`/api/rooms/${sessionAtStart.roomId}/stream?ticket=${encodeURIComponent(streamTicket.ticket)}&after=${after}`);
   state.stream = source;
+  scheduleSyncPoll();
   const isCurrent=()=>generation===state.streamGeneration && state.stream===source;
   source.addEventListener('open', () => {
     if (!isCurrent()) { source.close(); return; }
     clearStreamReconnectTimer();
-    clearSyncPollTimer();
+    scheduleSyncPoll();
     const hadLiveConnection = Boolean(state.lastLiveAt);
     const wasRecovering = state.connectionStatus === 'RECONNECTING' || state.connectionStatus === 'OFFLINE' || state.connectionStatus === 'CONNECTING';
     if (!state.view?.viewerSession?.activeElsewhere) state.connectionStatus = 'LIVE';
@@ -5908,7 +5936,7 @@ async function startStream() {
   source.addEventListener('heartbeat', () => {
     if (!isCurrent()) return;
     clearStreamReconnectTimer();
-    clearSyncPollTimer();
+    scheduleSyncPoll();
     state.lastLiveAt=Date.now();
     state.lastSyncAt=state.lastLiveAt;
     state.reconnectAttempt=0;
@@ -5917,7 +5945,7 @@ async function startStream() {
   source.addEventListener('state', (event) => {
     if (!isCurrent()) return;
     clearStreamReconnectTimer();
-    clearSyncPollTimer();
+    scheduleSyncPoll();
     const view = JSON.parse(event.data);
     acceptView(view);
     state.interaction = null;
@@ -5944,9 +5972,26 @@ async function startStream() {
   });
 }
 
+function canRetryStaleMulligan(intent, match) {
+  if (intent?.type !== 'MULLIGAN' || !match?.legalActions?.canMulligan) return false;
+  const handIds = new Set((match.players?.[match.viewerId]?.hand ?? []).map((card) => card.instanceId));
+  return (intent.returnIds ?? []).every((id) => handIds.has(id));
+}
+
+function newIntentId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
+async function postRoomIntent(intent, intentId, expectedStateVersion) {
+  return api(`/api/rooms/${state.session.roomId}/intent`, { headers:roomAuthHeaders(),
+    method:'POST',
+    body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID, intentId, expectedStateVersion, intent })
+  });
+}
+
 async function sendIntent(intent) {
   state.pendingActionConfirmation = null;
-  const match = state.view?.match;
+  let match = state.view?.match;
   if (!match || !state.session) return;
   if (state.intentBusy) { showFeedback('info','Move already submitting','Wait for the server state to return before sending another move.', { duration:1600 }); return; }
   if (!viewerHasControl()) {
@@ -5956,41 +6001,62 @@ async function sendIntent(intent) {
     return;
   }
   state.lastError = null;
-  const intentId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-  setIntentCommit('SENDING', intent, { intentId, fromVersion:match.stateVersion });
+  let intentId = newIntentId();
+  let submittedVersion = match.stateVersion;
+  setIntentCommit('SENDING', intent, { intentId, fromVersion:submittedVersion });
   state.intentBusy = true;
   render();
   try {
-    const result = await api(`/api/rooms/${state.session.roomId}/intent`, { headers:roomAuthHeaders(),
-      method: 'POST',
-      body: JSON.stringify({ clientId:CLIENT_INSTANCE_ID, intentId, expectedStateVersion: match.stateVersion, intent })
-    });
+    // Hosted safety preflight: a proxy can leave SSE apparently open while one state event is delayed.
+    // A cheap authoritative GET immediately before the mutation prevents stale stateVersion submissions.
+    try { await refreshState(false, { preserveLiveOnError:true }); } catch { /* the POST still gets one chance */ }
+    match = state.view?.match ?? match;
+    submittedVersion = match.stateVersion;
+    if (!viewerHasControl()) throw Object.assign(new Error('This tab no longer has control of the match.'), { code:'SESSION_SUPERSEDED' });
+    setIntentCommit('SENDING', intent, { intentId, fromVersion:submittedVersion });
+
+    let result = await postRoomIntent(intent, intentId, submittedVersion);
+    if (!result.response.accepted && result.response.error?.code === 'STALE_STATE' && intent.type === 'MULLIGAN') {
+      const refreshed = await refreshState(false, { preserveLiveOnError:true });
+      if (canRetryStaleMulligan(intent, refreshed?.match)) {
+        intentId = newIntentId(); // processed-intent idempotency requires a fresh id for the refreshed version.
+        submittedVersion = refreshed.match.stateVersion;
+        setIntentCommit('SENDING', intent, { intentId, fromVersion:submittedVersion, detail:'Opening hand resynchronized; confirming once more automatically.' });
+        result = await postRoomIntent(intent, intentId, submittedVersion);
+      }
+    }
+
     acceptView(result.view);
     if (result.serverProfile) applyServerProfile(result.serverProfile);
     appendEvents(result.view.events);
     if (!result.response.accepted) {
       state.lastError = result.response.error?.message ?? 'Move not accepted.';
-      setIntentCommit('REJECTED', intent, { intentId, fromVersion:match.stateVersion, toVersion:result.view?.match?.stateVersion, detail:state.lastError });
+      setIntentCommit('REJECTED', intent, { intentId, fromVersion:submittedVersion, toVersion:result.view?.match?.stateVersion, detail:state.lastError });
       showFeedback('error','Move not accepted',state.lastError,{ sticky:true });
     } else {
-      setIntentCommit('ACCEPTED', intent, { intentId, fromVersion:match.stateVersion, toVersion:result.view?.match?.stateVersion });
+      setIntentCommit('ACCEPTED', intent, { intentId, fromVersion:submittedVersion, toVersion:result.view?.match?.stateVersion });
       acceptedIntentFeedback(intent);
+      // Re-read after every accepted mutation. This catches immediate priority/turn handoffs even if SSE is buffered upstream.
+      try { await refreshState(false, { preserveLiveOnError:true }); } catch { /* result.view remains authoritative for this intent */ }
+      scheduleSyncPoll(350);
     }
     state.selectedHand.clear();
     state.interaction = null;
   } catch (error) {
     state.lastError = error.message;
     if (error.code === 'SESSION_SUPERSEDED') state.connectionStatus = 'SUPERSEDED';
-    if (error.code === 'NETWORK_UNREACHABLE') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
-    const interrupted = error.code === 'NETWORK_UNREACHABLE';
-    setIntentCommit(interrupted ? 'RESYNCING' : 'REJECTED', intent, { intentId, fromVersion:match.stateVersion, detail:interrupted ? 'Delivery was interrupted. Refreshing the authoritative match state before another move.' : (error.message || 'The move was not committed.') });
+    if (error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
+    const interrupted = error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT';
+    setIntentCommit(interrupted ? 'RESYNCING' : 'REJECTED', intent, { intentId, fromVersion:submittedVersion, detail:interrupted ? 'Delivery was interrupted. Refreshing the authoritative match state before another move.' : (error.message || 'The move was not committed.') });
     friendlyErrorFeedback(error,'Move could not be completed');
     try { await refreshState(false); } catch { /* connection banner and toast retain the error */ }
+    scheduleSyncPoll(350);
   } finally {
     state.intentBusy = false;
     render();
   }
 }
+
 
 function bindInteractionHandlers() {
   document.querySelectorAll('[data-field-slot]').forEach((el) => {

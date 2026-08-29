@@ -1616,3 +1616,15 @@ v7.67 is a hosted-play reliability hotfix. It does not change card rules, balanc
 - SSE heartbeats are real `heartbeat` events, allowing the client to distinguish a healthy quiet stream from a stale stream.
 - If SSE is unavailable or repeatedly interrupted, an authoritative HTTP polling fallback keeps the room current while live sync recovers.
 - Intent responses preserve the submitting `clientId` when projecting `viewerSession`, so controller state remains consistent immediately after moves.
+
+
+## v7.68 — Hosted Live-Sync Safety Hotfix
+
+v7.68 hardens hosted two-player state delivery after real external-alpha testing exposed delayed SSE state events during mulligan, turn handoffs and Priority transitions. The server remains strictly authoritative; stale-state validation is not relaxed.
+
+- A lightweight authoritative `/state` safety poll now remains armed even while SSE reports `LIVE`, so buffered or half-open proxy streams cannot leave the inactive player stuck on an old state.
+- Safety polling is faster during active/setup matches and slower outside live play; SSE remains the primary low-latency channel.
+- If observable SSE heartbeats become stale for multiple heartbeat intervals, the client rebuilds the stream while HTTP state sync keeps the match current.
+- Every submitted intent performs a best-effort authoritative state preflight, and every accepted intent performs an immediate post-commit refresh to catch turn/Priority transitions.
+- A P2 mulligan that races P1 and receives `STALE_STATE` is silently resynchronized and retried exactly once with a fresh intent id, only while mulligan remains legal and all chosen cards are still in that player's hand.
+- Ordinary non-mulligan intents are never auto-replayed after `STALE_STATE`; server idempotency and legality remain the final authority.

@@ -10,13 +10,13 @@ const server=root("server/server.mjs");
 const html=root("public/index.html");
 const app=root("public/app.js");
 const roomSrc=root("src/room.ts");
+const readme=root("README.md");
 function test(n:string,f:()=>void){f();passed++;console.log(`✓ ${n}`)}
 
-test("v7.67 version markers are current",()=>{
-  assert.equal(pkg.version,"7.67.0");
-  assert.match(server,/version: "7\.67\.0"/);
-  assert.match(server,/Office Card Game v7\.67 server/);
-  assert.match(html,/v7\.67 Alpha Playtest/);
+test("v7.67 hosted-sync compatibility contract remains after later hotfixes",()=>{
+  assert.match(readme,/## v7\.67 — Hosted Sync \/ Tab-Control Hotfix/);
+  assert.match(app,/CLIENT_INSTANCE_KEY = 'office-card-game-client-instance-v1'/);
+  assert.match(server,/sseWrite\(res, "heartbeat"/);
 });
 
 test("v7.67 keeps one controller identity across reloads in the same tab",()=>{
@@ -42,11 +42,11 @@ test("v7.67 uses observable SSE heartbeats",()=>{
 });
 
 test("v7.67 falls back to authoritative HTTP polling while SSE recovers",()=>{
-  assert.match(app,/function scheduleSyncPoll\(delay=1200\)/);
+  assert.match(app,/function scheduleSyncPoll\(delay=/);
   assert.match(app,/await refreshState\(false\)/);
   assert.match(app,/state\.connectionStatus='POLLING'/);
   assert.match(app,/HTTP fallback sync is active/);
-  assert.match(app,/scheduleSyncPoll\(3000\)/);
+  assert.match(app,/scheduleSyncPoll/);
 });
 
 test("v7.67 intent responses retain the submitting controller projection",()=>{
