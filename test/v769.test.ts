@@ -21,11 +21,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.1");
-  assert.match(server,/version: "7\.69\.1"/);
-  assert.match(server,/Office Card Game v7\.69\.1 server/);
-  assert.match(html,/v7\.69\.1 Alpha Playtest/);
-  assert.match(readme,/## v7\.69\.1 — Responsive Battlefield \+ Critical Mobile Controls/);
+  assert.equal(pkg.version,"7.69.2");
+  assert.match(server,/version: "7\.69\.2"/);
+  assert.match(server,/Office Card Game v7\.69\.2 server/);
+  assert.match(html,/v7\.69\.2 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.2 — Collision-Free HUD \+ Responsive Rail Geometry/);
 });
 
 test("v7.69 separates arena artwork from code-native battlefield geometry",()=>{
@@ -161,6 +161,34 @@ test("v7.69.1 keeps read-only feedback singular and actionable",()=>{
   assert.match(send,/state\.lastError = null/);
   assert.match(app,/data-take-session-control/);
   assert.match(css,/body\.match-mode \.connection-banner \{[\s\S]*?position:fixed/);
+});
+
+
+test("v7.69.2 separates player identity and live vitals so status cannot cover the profile",()=>{
+  assert.match(css,/body\.match-mode \.player-head \{[\s\S]*?grid-template-columns:minmax\(92px,1fr\) auto/);
+  assert.match(css,/body\.match-mode \.player-head-status \{[\s\S]*?justify-content:flex-end/);
+  assert.match(css,/body\.match-mode \.player-identity > div > small \{[\s\S]*?text-overflow:ellipsis/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?body\.match-mode \.player-vitals \{ grid-template-columns:repeat\(2,minmax\(30px,38px\)\)/);
+});
+
+test("v7.69.2 gives the own hand a reserved non-overlapping bottom region",()=>{
+  assert.match(css,/body\.match-mode \.own-board \{ padding-bottom:112px; \}/);
+  assert.match(css,/body\.match-mode \.own-hand \{[\s\S]*?bottom:31px/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?body\.match-mode \.own-hand \{[\s\S]*?width:calc\(100% - 122px\)/);
+  assert.match(css,/body\.match-mode \.command-dock \{ right:3px; bottom:28px; width:112px; \}/);
+});
+
+test("v7.69.2 removes horizontal scrolling from the desktop Match HUD rail",()=>{
+  assert.match(css,/\.arena-sidepanel-scroll \{ overflow-y:auto; overflow-x:hidden; \}/);
+  assert.match(css,/\.arena-sidepanel \.opening-readiness-stats,[\s\S]*?grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(css,/\.arena-sidepanel \.opening-readiness-stats small,[\s\S]*?white-space:normal/);
+});
+
+test("v7.69.2 uses compact mobile phase HUD and hides battlefield chrome in detailed results",()=>{
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?body\.match-mode \.arena-top-stack \{ display:none; \}/);
+  assert.match(css,/body\.match-mode \.mobile-board-nav \{[\s\S]*?display:block !important/);
+  assert.match(app,/resultsMode = match\.status === 'ENDED'/);
+  assert.match(css,/board-first-shell\.results-view \.arena-layout,[\s\S]*?display:none !important/);
 });
 
 console.log(`\n${passed}/${passed} v7.69 tests passed.`);
