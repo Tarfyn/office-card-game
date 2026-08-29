@@ -18,10 +18,10 @@ const css=root("public/styles.css");
 const readme=root("README.md");
 
 test("v7.68 version markers are current",()=>{
-  assert.equal(pkg.version,"7.68.3");
-  assert.match(server,/version: "7\.68\.3"/);
-  assert.match(server,/Office Card Game v7\.68\.3 server/);
-  assert.match(html,/v7\.68\.3 Alpha Playtest/);
+  assert.equal(pkg.version,"7.68.4");
+  assert.match(server,/version: "7\.68\.4"/);
+  assert.match(server,/Office Card Game v7\.68\.4 server/);
+  assert.match(html,/v7\.68\.4 Alpha Playtest/);
   assert.match(readme,/## v7\.68 — Hosted Live-Sync Safety Hotfix/);
 });
 
@@ -253,4 +253,38 @@ test("v7.68.3 widens 4K, stacks mobile lobby content and closes German lobby gap
   assert.match(app,/lobbyCopy\('CREDITS','BÜRO-CREDITS'\)/);
 });
 
-console.log(`${passed}/16 v7.68 tests passed.`);
+
+
+test("v7.68.4 removes transient server acknowledgements from battlefield layout flow",()=>{
+  assert.match(css,/\.app \{ overflow-anchor:none; \}/);
+  assert.match(css,/\.intent-commit-status \{[\s\S]*position:fixed;[\s\S]*pointer-events:none;/);
+  const game=app.slice(app.indexOf("function renderGame"),app.indexOf("function render()"));
+  assert.match(game,/previousBattlefieldTop/);
+  assert.match(game,/renderIntentCommitStatus\(match\)/);
+});
+
+test("v7.68.4 queues attack presentation independently from authoritative auto-pass",()=>{
+  assert.match(app,/const ATTACK_PRESENTATION_MS = 1500/);
+  assert.match(app,/function enqueueAttackPresentations\(events = \[\]\)/);
+  assert.match(app,/event\.type === 'ATTACK_DECLARED'\) freshAttacks\.push\(event\)/);
+  assert.match(app,/if \(freshAttacks\.length\) enqueueAttackPresentations\(freshAttacks\)/);
+  assert.match(app,/function renderAttackPresentation\(\)/);
+  assert.match(css,/\.attack-presentation \{[\s\S]*position:fixed;/);
+  assert.match(css,/\.attack-presentation\.opponent|\.attack-presentation > span/);
+});
+
+test("v7.68.4 makes match-complete actions non-overlapping for win and loss layouts",()=>{
+  assert.match(css,/\.match-result-panel \{ grid-template-columns:auto minmax\(0,1fr\); align-items:start; \}/);
+  assert.match(css,/\.match-result-actions \{[\s\S]*grid-column:1\/-1;[\s\S]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(css,/@media \(max-width:620px\)[\s\S]*\.match-result-actions \{ grid-template-columns:1fr 1fr; \}/);
+  assert.match(css,/@media \(max-width:420px\)[\s\S]*\.match-result-actions \{ grid-template-columns:1fr; \}/);
+});
+
+test("v7.68.4 tunes 4K density and stacks mobile helper rows",()=>{
+  assert.match(css,/@media \(min-width:2200px\)[\s\S]*width:min\(2100px,calc\(100% - 120px\)\)/);
+  assert.match(css,/grid-template-columns:minmax\(0,1\.55fr\) minmax\(430px,\.76fr\)/);
+  assert.match(css,/@media \(max-width:620px\)[\s\S]*\.starter-identity \{ min-height:0 !important; padding:9px 10px; gap:5px; \}/);
+  assert.match(css,/\.rules-primer > summary,[\s\S]*\.lobby-playtest-drawer > summary \{[\s\S]*grid-template-columns:minmax\(0,1fr\)/);
+});
+
+console.log(`${passed}/20 v7.68 tests passed.`);

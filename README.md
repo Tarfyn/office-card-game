@@ -1638,6 +1638,11 @@ v7.68 hardens hosted two-player state delivery after real external-alpha testing
 - Ordinary non-mulligan intents are never auto-replayed after `STALE_STATE`; server idempotency and legality remain the final authority.
 
 
+
+## v7.68.4 — Match feedback + responsive density
+
+v7.68.4 keeps the v7.68.3 server-authoritative auto-pass behavior while restoring readable combat pacing and tightening the remaining responsive surfaces. Server commit acknowledgements are now fixed overlays instead of layout participants, attack declarations are queued locally for a short 1.5-second presentation window even when Priority auto-passes immediately, the post-match action cluster occupies its own non-overlapping row for both Victory and Defeat, 4K lobby widths are capped back to a denser composition, and mobile starter/utility sections use less vertical space with helper copy stacked below titles.
+
 ## v7.68.3 — Playtest UX polish
 
 v7.68.3 bundles the next external-alpha polish pass: stable battlefield anchoring across local re-renders, a longer card reveal for deck-search results, canonical Archive card proportions, reliable Mulligan `REPLACE` markers, one fresh-pack `NEW` badge on every revealed booster card, wider 4K lobby composition, tighter mobile layout, and a more complete German lobby presentation. Hosted room intents also auto-pass response priority only when the authoritative engine reports zero legal response options for the current priority player; real response opportunities still stop and wait for the player.
