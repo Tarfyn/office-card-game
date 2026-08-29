@@ -7316,9 +7316,12 @@ body.match-mode .support-row > .empty-slot {
   overflow-anchor:none;
 }
 body.match-mode .field-empty:not(.slot-candidate) {
-  border:1px solid rgba(142,213,255,.10);
-  background:linear-gradient(180deg,rgba(17,31,52,.28),rgba(6,14,26,.28));
+  border:1px solid rgba(255,255,255,.05);
+  background:linear-gradient(180deg,rgba(17,31,52,.30),rgba(6,14,26,.34));
   color:rgba(189,200,209,.30);
+  box-shadow:
+    inset 0 4px 6px -1px rgba(0,0,0,.50),
+    inset 0 2px 4px -1px rgba(0,0,0,.30);
 }
 body.match-mode .field-empty:not(.slot-candidate)::before {
   border-color:rgba(142,213,255,.10);
@@ -7327,7 +7330,12 @@ body.match-mode .field-empty:not(.slot-candidate)::before {
 body.match-mode .field-empty.slot-candidate {
   border-color:rgba(74,225,118,.62);
   background:rgba(25,83,48,.24);
-  box-shadow:0 0 0 1px rgba(74,225,118,.25),0 0 22px rgba(74,225,118,.12);
+  box-shadow:
+    inset 0 4px 6px -1px rgba(0,0,0,.46),
+    inset 0 2px 4px -1px rgba(0,0,0,.28),
+    inset 0 0 10px rgba(74,225,118,.16),
+    0 0 0 1px rgba(74,225,118,.25),
+    0 0 22px rgba(74,225,118,.12);
 }
 body.match-mode .board-lane .card {
   background:#e8e4da;
@@ -7832,4 +7840,267 @@ body.match-mode .battlefield-surface { overflow-anchor:none; }
   .match-end-overlay-card,
   body.match-mode .board-lane .card,
   body.match-mode .own-hand .hand-fan-card { transition:none !important; animation:none !important; }
+}
+
+/* v7.69.1 — responsive battlefield + critical mobile controls hotfix */
+body.match-mode .connection-banner {
+  position:fixed;
+  z-index:365;
+  top:54px;
+  left:10px;
+  width:min(390px,calc(100vw - 20px));
+  margin:0;
+  padding:8px 9px;
+  border-color:rgba(142,213,255,.24);
+  border-radius:5px;
+  background:rgba(10,22,38,.97);
+  color:#dce8fa;
+  box-shadow:0 18px 46px rgba(0,0,0,.38);
+  backdrop-filter:blur(12px);
+}
+body.match-mode .connection-banner strong { color:#edf5ff; }
+body.match-mode .connection-banner span { color:#9eacbc; }
+body.match-mode .connection-banner.superseded { border-color:rgba(255,190,104,.42); background:rgba(39,29,15,.97); }
+body.match-mode .connection-banner.offline { border-color:rgba(255,146,154,.34); background:rgba(35,20,26,.97); }
+body.match-mode .connection-banner button { min-height:30px; padding:5px 8px; font-size:8px; }
+
+/* Reserve a real center seam row so front/back rows can never collide with OFFICE FLOOR. */
+body.match-mode .battlefield-surface {
+  grid-template-rows:minmax(0,1fr) 26px minmax(0,1fr);
+  gap:0;
+}
+body.match-mode .opponent-board { grid-row:1; }
+body.match-mode .own-board { grid-row:3; }
+body.match-mode .office-divider {
+  position:relative;
+  z-index:20;
+  grid-row:2;
+  left:auto;
+  top:auto;
+  transform:none;
+  align-self:center;
+  justify-self:stretch;
+  width:auto;
+  min-height:22px;
+  height:22px;
+  margin:2px 10px;
+  overflow:visible;
+}
+body.match-mode .decision-center {
+  position:absolute;
+  grid-row:auto;
+}
+
+/* Slot contents are height-constrained by their lane; no card/slot may spill into the next row. */
+body.match-mode .slots.employee-row,
+body.match-mode .slots.support-row,
+body.match-mode .slots.support {
+  min-height:0;
+}
+body.match-mode .employee-row > .card,
+body.match-mode .support-row > .card,
+body.match-mode .employee-row > .empty-slot,
+body.match-mode .support-row > .empty-slot {
+  justify-self:center;
+  align-self:center;
+  width:auto;
+  height:min(100%,162px);
+  max-width:116px;
+  max-height:162px;
+  aspect-ratio:5/7;
+}
+
+/* Mobile-only match menu keeps critical controls reachable when the desktop side panel is hidden. */
+.mobile-match-menu { display:none; }
+
+@media (max-width:760px) {
+  body.match-mode .connection-banner {
+    top:auto;
+    bottom:88px;
+    left:8px;
+    width:calc(100vw - 16px);
+    align-items:stretch;
+    gap:6px;
+  }
+  body.match-mode .connection-banner > div { gap:1px; }
+  body.match-mode .connection-banner span { font-size:7px; }
+  body.match-mode .connection-banner button { width:auto; min-width:116px; }
+
+  /* Setup matchup header stays informative but no longer consumes a quarter of the phone. */
+  body.match-mode .match-opening {
+    top:2px;
+    width:calc(100% - 8px);
+    min-height:0;
+    padding:4px 5px;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    grid-template-rows:auto auto;
+    gap:3px 7px;
+    border-radius:6px;
+  }
+  body.match-mode .match-opening-center {
+    grid-column:1/-1;
+    grid-row:1;
+    order:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    min-height:18px;
+  }
+  body.match-mode .match-opening-center em,
+  body.match-mode .match-opening-center span,
+  body.match-mode .match-opening-center small { display:none; }
+  body.match-mode .match-opening-center b { font-size:7px; letter-spacing:.16em; }
+  body.match-mode .match-deck { grid-row:2; gap:5px; min-width:0; }
+  body.match-mode .match-deck.you { grid-column:1; }
+  body.match-mode .match-deck.opponent { grid-column:2; justify-content:flex-end; text-align:right; flex-direction:row; }
+  body.match-mode .match-deck > span { width:26px; height:26px; flex:0 0 26px; border-radius:7px; font-size:7px; }
+  body.match-mode .match-deck.opponent > span { order:2; }
+  body.match-mode .match-deck div { gap:0; min-width:0; }
+  body.match-mode .match-deck small { font-size:4.5px; letter-spacing:.06em; }
+  body.match-mode .match-deck strong { display:block; max-width:31vw; font-size:6.5px; line-height:1.15; }
+
+  body.match-mode .battlefield-surface { grid-template-rows:minmax(0,1fr) 22px minmax(0,1fr); }
+  body.match-mode .office-divider { height:18px; min-height:18px; margin:1px 5px; }
+  body.match-mode .office-divider span { padding:2px 7px; font-size:5px; }
+
+  body.match-mode .employee-row > .card,
+  body.match-mode .support-row > .card,
+  body.match-mode .employee-row > .empty-slot,
+  body.match-mode .support-row > .empty-slot {
+    width:auto;
+    height:min(100%,96px);
+    max-width:100%;
+    max-height:96px;
+  }
+
+  /* Mulligan remains a board overlay but becomes denser and keeps both actions in one row. */
+  body.match-mode .decision-center { width:min(94%,620px); max-height:58%; }
+  body.match-mode .mulligan-panel { padding:6px; gap:4px; }
+  body.match-mode .mulligan-copy > strong { font-size:11px; }
+  body.match-mode .mulligan-meter { margin-top:4px; }
+  body.match-mode .mulligan-actions { grid-template-columns:1fr 1fr; gap:4px; }
+  body.match-mode .mulligan-actions b { display:none; }
+  body.match-mode .mulligan-actions button { min-height:36px; padding:5px 7px; font-size:9px; }
+  body.match-mode .mulligan-actions .primary { grid-column:auto; }
+
+  .mobile-match-menu {
+    position:fixed;
+    z-index:372;
+    right:7px;
+    top:51px;
+    display:block;
+    color:#dce8fa;
+  }
+  .mobile-match-menu > summary {
+    min-width:68px;
+    min-height:31px;
+    padding:5px 7px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+    list-style:none;
+    border:1px solid rgba(142,213,255,.24);
+    border-radius:5px;
+    background:rgba(10,22,38,.96);
+    color:#dce8fa;
+    box-shadow:0 8px 22px rgba(0,0,0,.28);
+    font-size:8px;
+    font-weight:900;
+    cursor:pointer;
+  }
+  .mobile-match-menu > summary::-webkit-details-marker { display:none; }
+  .mobile-match-menu > summary span { color:#7f91a5; letter-spacing:.08em; }
+  .mobile-match-menu-panel {
+    position:absolute;
+    top:calc(100% + 5px);
+    right:0;
+    width:min(220px,78vw);
+    padding:6px;
+    display:grid;
+    gap:5px;
+    border:1px solid rgba(142,213,255,.22);
+    border-radius:5px;
+    background:rgba(8,18,33,.99);
+    box-shadow:0 18px 44px rgba(0,0,0,.48);
+  }
+  .mobile-match-menu-panel button { width:100%; min-height:36px; padding:6px 8px; font-size:9px; }
+  .mobile-match-menu-panel small { color:#8292a5; font-size:6.5px; line-height:1.35; }
+}
+
+/* 1080p-class / short desktop: reserve geometry first, then compress chrome instead of overlapping rows. */
+@media (min-width:761px) and (max-height:1000px) {
+  body.match-mode .game-main { padding:4px 6px 5px; gap:4px; }
+  .arena-top-stack { min-height:34px; }
+  body.match-mode .turn-banner,
+  body.match-mode .phase-track { min-height:34px; }
+  body.match-mode .player-board { padding-top:3px; padding-bottom:3px; }
+  body.match-mode .opponent-board { padding-top:35px; }
+  body.match-mode .own-board { padding-bottom:72px; }
+  body.match-mode .battlefield-surface { grid-template-rows:minmax(0,1fr) 24px minmax(0,1fr); }
+  body.match-mode .employee-row > .card,
+  body.match-mode .support-row > .card,
+  body.match-mode .employee-row > .empty-slot,
+  body.match-mode .support-row > .empty-slot { height:min(100%,146px); max-height:146px; }
+  body.match-mode .office-divider { height:20px; min-height:20px; }
+  body.match-mode .own-hand { height:88px; }
+  body.match-mode .own-hand .hand-fan-card { width:66px; min-width:66px; max-width:66px; height:93px; min-height:93px; max-height:93px; }
+}
+
+/* Large/4K displays keep the arena expansive but scale cards and HUD instead of leaving a miniature interface. */
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .topbar { height:54px; min-height:54px; padding-inline:20px; }
+  body.match-mode .topbar > div > strong { font-size:15px; }
+  body.match-mode .app { height:calc(100dvh - 54px); }
+  body.match-mode .game-main { padding:9px 12px 10px; gap:7px; }
+  .arena-top-stack { min-height:50px; grid-template-columns:minmax(300px,.75fr) minmax(720px,2fr); gap:8px; }
+  body.match-mode .turn-banner,
+  body.match-mode .phase-track { min-height:50px; padding:6px 9px; }
+  body.match-mode .turn-label { font-size:11px; }
+  body.match-mode .turn-detail { font-size:10px; }
+  body.match-mode .phase-track span b { font-size:9px; }
+  body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) 390px; gap:10px; }
+  body.match-mode .player-board { padding-left:205px; padding-right:135px; }
+  body.match-mode .player-head { width:300px; min-height:42px; padding:7px 9px; }
+  body.match-mode .player-identity > div > strong { font-size:12px; }
+  body.match-mode .player-identity > div > small { max-width:175px; font-size:8px; }
+  body.match-mode .player-vitals .vital { min-width:48px; height:31px; }
+  body.match-mode .player-vitals .vital small { font-size:6px; }
+  body.match-mode .player-vitals .vital b { font-size:10px; }
+  body.match-mode .player-board::after { left:202px; right:132px; }
+  body.match-mode .board-resource-row { width:112px; right:10px; }
+  body.match-mode .deck-pile { min-height:46px; }
+  body.match-mode .deck-pile strong { font-size:18px; }
+  body.match-mode .archive-compact summary { min-height:40px; }
+  body.match-mode .slots.employee-row { grid-template-columns:repeat(5,minmax(0,164px)); gap:8px; }
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support { grid-template-columns:repeat(4,minmax(0,164px)); gap:8px; }
+  body.match-mode .employee-row > .card,
+  body.match-mode .support-row > .card,
+  body.match-mode .employee-row > .empty-slot,
+  body.match-mode .support-row > .empty-slot { height:min(100%,230px); max-width:164px; max-height:230px; }
+  body.match-mode .board-lane .card .card-name { font-size:10px; }
+  body.match-mode .board-lane .card .card-name-row { min-height:29px; }
+  body.match-mode .board-lane .card .card-type-strip { font-size:6px; }
+  body.match-mode .own-hand { width:min(66%,900px); height:126px; }
+  body.match-mode .own-hand .hand-fan-card { width:90px; min-width:90px; max-width:90px; height:126px; min-height:126px; max-height:126px; margin-left:-16px; }
+  body.match-mode .command-dock { width:380px; min-height:50px; padding:8px 9px; }
+  body.match-mode .command-dock .phase-button { min-height:36px; font-size:10px; }
+  .arena-sidepanel-head { padding:11px 12px; }
+  .arena-sidepanel-head strong { font-size:13px; }
+  .arena-sidepanel-head small { font-size:8px; }
+}
+
+@media (min-width:3200px) and (min-height:1500px) {
+  body.match-mode .arena-layout { grid-template-columns:minmax(0,1fr) 440px; }
+  body.match-mode .slots.employee-row { grid-template-columns:repeat(5,minmax(0,182px)); }
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support { grid-template-columns:repeat(4,minmax(0,182px)); }
+  body.match-mode .employee-row > .card,
+  body.match-mode .support-row > .card,
+  body.match-mode .employee-row > .empty-slot,
+  body.match-mode .support-row > .empty-slot { height:min(100%,255px); max-width:182px; max-height:255px; }
+  body.match-mode .player-head { width:330px; }
+  body.match-mode .own-hand .hand-fan-card { width:102px; min-width:102px; max-width:102px; height:143px; min-height:143px; max-height:143px; }
 }

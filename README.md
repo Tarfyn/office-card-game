@@ -1647,6 +1647,10 @@ v7.68.4 keeps the v7.68.3 server-authoritative auto-pass behavior while restorin
 
 v7.68.3 bundles the next external-alpha polish pass: stable battlefield anchoring across local re-renders, a longer card reveal for deck-search results, canonical Archive card proportions, reliable Mulligan `REPLACE` markers, one fresh-pack `NEW` badge on every revealed booster card, wider 4K lobby composition, tighter mobile layout, and a more complete German lobby presentation. Hosted room intents also auto-pass response priority only when the authoritative engine reports zero legal response options for the current priority player; real response opportunities still stop and wait for the player.
 
+## v7.69.1 — Responsive Battlefield + Critical Mobile Controls
+
+v7.69.1 is the first responsive correction pass on top of the board-first match shell. It reserves a real center seam so Employee/Support rows cannot collide with the Office Floor at 1080p-class heights, scales the HUD/cards up on 4K displays, compresses the mobile opening/mulligan chrome, and restores critical mobile controls through a dedicated Match menu. Read-only tabs expose Take control directly and no longer duplicate the same warning as a large inline arena error. The recessed battlefield slot depth is included in this release, so v7.69.0 servers only need this single patch.
+
 ## v7.69.0 — Board-First Match UI
 
 v7.69.0 rebuilds the live match presentation around a board-first, viewport-oriented TCG layout while preserving the authoritative engine, hosted sync, auto-pass Priority rules and existing match semantics. Active desktop matches keep both 5-Employee + 4-Support/System fields, resources, hand and primary actions inside the match viewport; mobile preserves the same topology with denser HUD treatment instead of deleting slots. Player identity stays faction-neutral and deck-aware, so mixed and combo decks are not assigned a department faction.

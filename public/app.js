@@ -1038,17 +1038,17 @@ function renderNetworkDiagnostic() {
 
 function renderConnectionBanner() {
   const superseded = state.view?.viewerSession?.activeElsewhere;
-  if (superseded) return `<div class="connection-banner superseded"><div><strong>Match open elsewhere</strong><span>This tab is read-only so the same seat cannot send moves from two browser sessions.</span></div><button id="takeSessionControl" class="primary">Take control here</button></div>`;
-  if (navigator.onLine === false || state.connectionStatus === 'OFFLINE') return `<div class="connection-banner offline"><div><strong>You are offline</strong><span>Your server-authoritative match is preserved. This page will resync when the network returns.</span></div><button id="retryLiveConnection">Retry</button></div>`;
-  if (state.connectionStatus === 'POLLING') return `<div class="connection-banner reconnecting"><div><strong>Live stream recovering</strong><span>HTTP fallback sync is active. You can keep playing; the client is still reading authoritative room state.</span></div><button id="retryLiveConnection">Retry live stream</button></div>`;
-  if (state.connectionStatus === 'RECONNECTING') return `<div class="connection-banner reconnecting"><div><strong>Reconnecting…</strong><span>Live updates were interrupted. HTTP fallback sync will keep the room current while the live stream recovers.</span></div><button id="retryLiveConnection">Reconnect now</button></div>`;
+  if (superseded) return `<div class="connection-banner superseded"><div><strong>Match open elsewhere</strong><span>This tab is read-only so the same seat cannot send moves from two browser sessions.</span></div><button id="takeSessionControl" data-take-session-control class="primary">Take control here</button></div>`;
+  if (navigator.onLine === false || state.connectionStatus === 'OFFLINE') return `<div class="connection-banner offline"><div><strong>You are offline</strong><span>Your server-authoritative match is preserved. This page will resync when the network returns.</span></div><button id="retryLiveConnection" data-retry-live-connection>Retry</button></div>`;
+  if (state.connectionStatus === 'POLLING') return `<div class="connection-banner reconnecting"><div><strong>Live stream recovering</strong><span>HTTP fallback sync is active. You can keep playing; the client is still reading authoritative room state.</span></div><button id="retryLiveConnection" data-retry-live-connection>Retry live stream</button></div>`;
+  if (state.connectionStatus === 'RECONNECTING') return `<div class="connection-banner reconnecting"><div><strong>Reconnecting…</strong><span>Live updates were interrupted. HTTP fallback sync will keep the room current while the live stream recovers.</span></div><button id="retryLiveConnection" data-retry-live-connection>Reconnect now</button></div>`;
   if (state.connectionStatus === 'CONNECTING') return `<div class="connection-banner connecting"><div><strong>Connecting…</strong><span>Synchronizing the current room state.</span></div></div>`;
   return '';
 }
 
 function bindConnectionControls() {
-  document.querySelector('#takeSessionControl')?.addEventListener('click', () => claimSessionControl());
-  document.querySelector('#retryLiveConnection')?.addEventListener('click', () => forceConnectionRecovery());
+  document.querySelectorAll('[data-take-session-control],#takeSessionControl').forEach((button) => button.addEventListener('click', () => claimSessionControl()));
+  document.querySelectorAll('[data-retry-live-connection],#retryLiveConnection').forEach((button) => button.addEventListener('click', () => forceConnectionRecovery()));
 }
 
 function estimatedServerNow() {
@@ -5654,6 +5654,16 @@ function renderMobileBoardNav(match) {
   </nav>`;
 }
 
+function renderMobileMatchMenu(match) {
+  if (!match || match.status === 'ENDED') return '';
+  const superseded = Boolean(state.view?.viewerSession?.activeElsewhere);
+  const connectionAction = navigator.onLine === false || ['OFFLINE','POLLING','RECONNECTING'].includes(state.connectionStatus)
+    ? `<button type="button" data-retry-live-connection>${state.connectionStatus === 'POLLING' ? 'Retry live stream' : 'Reconnect'}</button>`
+    : '';
+  const takeControl = superseded ? '<button type="button" class="primary" data-take-session-control>Take control here</button>' : '';
+  return `<details class="mobile-match-menu"><summary aria-label="Match menu">Match <span>•••</span></summary><div class="mobile-match-menu-panel">${takeControl}${connectionAction}<button type="button" data-action="resign" ${superseded ? 'disabled title="Take control before resigning this match"' : ''}>Resign match</button><small>${superseded ? 'Read-only until this tab takes control.' : `Connection: ${esc(connectionLabel())}`}</small></div></details>`;
+}
+
 function renderCommandDock(match) {
   const legal = match.legalActions;
   const abilityCount = legal.activatableAbilities.length;
@@ -5869,18 +5879,17 @@ function renderMatchContextStack(match) {
   return `<section class="match-context-stack context-${esc(mode.toLowerCase())}" data-match-context="${esc(mode)}" aria-label="Current match context">${primary}${powerRead}${resolution}</section>`;
 }
 
+// v7.69.1 opening hand banner compacts after setup; turn-start messaging continues through renderTurnFlowCue. THE OFFICE OPENS · First player skips the first Draw
 function renderMatchOpening(match) {
+  if (match.status !== 'SETUP') return '';
   const mine = roomDeckMeta(match.viewerId);
   const opponentId = match.viewerId === 'P1' ? 'P2' : 'P1';
   const theirs = roomDeckMeta(opponentId);
-  const opening = match.status === 'SETUP';
-  const firstStart = match.status === 'ACTIVE' && match.turnNumber === 1 && match.phase === 'START';
-  if (!opening && !firstStart) return '';
   const openerIsYou = match.firstPlayerId === match.viewerId;
   const openerName = openerIsYou ? 'You' : theirs.playerName;
-  return `<section class="match-opening ${firstStart ? 'office-open' : 'opening-hands'}">
+  return `<section class="match-opening opening-hands">
     <div class="match-deck you"><span>YOU</span><div><small>YOU · ${esc(mine.playerName)}</small><strong>${esc(mine.name)}</strong></div></div>
-    <div class="match-opening-center"><em>VS</em><b>${firstStart ? 'THE OFFICE OPENS' : 'OPENING HANDS'}</b><span>${firstStart ? `${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} the first turn` : `${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} · one free mulligan each`}</span><small>${firstStart ? 'First player skips the first Draw · ' : ''}${esc(roomModeLabel())} · ${esc(roomTimerLabel())}</small></div>
+    <div class="match-opening-center"><em>VS</em><b>OPENING HANDS</b><span>${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} · one free mulligan each</span><small>${esc(roomModeLabel())} · ${esc(roomTimerLabel())}</small></div>
     <div class="match-deck opponent"><div><small>OPPONENT · ${esc(theirs.playerName)}</small><strong>${esc(theirs.name)}</strong></div><span>OPP</span></div>
   </section>`;
 }
@@ -5978,6 +5987,7 @@ function renderGame() {
         ${renderPhaseTrack(match)}
       </div>
       ${renderMobileBoardNav(match)}
+      ${renderMobileMatchMenu(match)}
       <div class="arena-layout">
         <div class="arena-board-column">
           <div class="battlefield-surface" aria-label="Office battlefield">
@@ -6281,8 +6291,9 @@ async function sendIntent(intent) {
   if (!match || !state.session) return;
   if (state.intentBusy) { showFeedback('info','Move already submitting','Wait for the server state to return before sending another move.', { duration:1600 }); return; }
   if (!viewerHasControl()) {
-    state.lastError = 'This tab is read-only because the same match is active elsewhere. Use “Take control here” before making a move.';
-    showFeedback('warning','Read-only tab',state.lastError,{ duration:3200 });
+    const readOnlyMessage = 'This tab is read-only because the same match is active elsewhere. Use “Take control here” before making a move.';
+    state.lastError = null;
+    showFeedback('warning','Read-only tab',readOnlyMessage,{ duration:3200 });
     render();
     return;
   }
