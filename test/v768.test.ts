@@ -13,10 +13,10 @@ const app=root("public/app.js");
 const readme=root("README.md");
 
 test("v7.68 version markers are current",()=>{
-  assert.equal(pkg.version,"7.68.1");
-  assert.match(server,/version: "7\.68\.1"/);
-  assert.match(server,/Office Card Game v7\.68\.1 server/);
-  assert.match(html,/v7\.68\.1 Alpha Playtest/);
+  assert.equal(pkg.version,"7.68.2");
+  assert.match(server,/version: "7\.68\.2"/);
+  assert.match(server,/Office Card Game v7\.68\.2 server/);
+  assert.match(html,/v7\.68\.2 Alpha Playtest/);
   assert.match(readme,/## v7\.68 — Hosted Live-Sync Safety Hotfix/);
 });
 
@@ -101,25 +101,50 @@ test("v7.68 passive sync keeps End anyway confirmation only for the identical au
   assert.match(send,/state\.pendingActionConfirmation = null/);
 });
 
-test("v7.68.1 validates saved rooms with the server before resume",()=>{
-  const helpers = app.slice(app.indexOf("function roomViewIsActiveMatch"), app.indexOf("function clearTransientMatchUi"));
+test("v7.68.2 validates saved rooms without rejecting the live mulligan SETUP state",()=>{
+  const helpers = app.slice(app.indexOf("function roomViewHasLiveMatch"), app.indexOf("function clearTransientMatchUi"));
   assert.match(helpers,/view\?\.status === 'ACTIVE'/);
-  assert.match(helpers,/view\?\.match\?\.status === 'ACTIVE'/);
+  assert.match(helpers,/matchStatus === 'SETUP'/);
+  assert.match(helpers,/matchStatus === 'ACTIVE'/);
   const resume = app.slice(app.indexOf("async function resumeRecentSession"), app.indexOf("async function abandonRecentWaitingRoom"));
   assert.match(resume,/const serverView = await api/);
   assert.match(resume,/if \(!roomViewIsResumable\(serverView\)\)/);
   assert.match(resume,/saveRecentSession\(null\)/);
 });
 
-test("v7.68.1 blocks intents when the authoritative match is no longer active",()=>{
+test("v7.68.2 blocks intents only when the authoritative match is no longer live",()=>{
   const send = app.slice(app.indexOf("async function sendIntent"), app.indexOf("function bindInteractionHandlers"));
   assert.match(send,/await refreshState\(false, \{ preserveLiveOnError:true \}\)/);
-  assert.match(send,/if \(!roomViewIsActiveMatch\(state\.view\)\)/);
+  assert.match(send,/if \(!roomViewHasLiveMatch\(state\.view\)\)/);
   assert.match(send,/MATCH_NOT_ACTIVE/);
   assert.match(send,/No move was sent/);
 });
 
-test("v7.68.1 contains large-desktop, mobile and German lobby follow-ups",()=>{
+test("v7.68.2 room lifecycle stays live throughout mulligan setup and ends only with the match",()=>{
+  let tokenNo=0;
+  const rooms=new RoomService({ roomIdFactory:()=>"LIFE682", tokenFactory:()=>`tok-life-${++tokenNo}`, firstPlayerFactory:()=>"P1", nowFactory:()=>2000 });
+  const host=rooms.createRoom("customer-service-starter");
+  const guest=rooms.joinRoom(host.roomId,"it-starter");
+  const opening=rooms.getView(host.roomId,host.token);
+  assert.equal(opening.status,"ACTIVE");
+  assert.equal(opening.match?.status,"SETUP");
+  assert.equal(opening.match?.phase,"MULLIGAN");
+  const p1=rooms.submitIntent(host.roomId,host.token,{ intentId:"life-p1", expectedStateVersion:opening.match!.stateVersion, intent:{type:"MULLIGAN",returnIds:[]} });
+  assert.equal(p1.response.accepted,true);
+  assert.equal(p1.view.status,"ACTIVE");
+  assert.equal(p1.view.match?.status,"SETUP");
+  const guestOpening=rooms.getView(host.roomId,guest.token);
+  const p2=rooms.submitIntent(host.roomId,guest.token,{ intentId:"life-p2", expectedStateVersion:guestOpening.match!.stateVersion, intent:{type:"MULLIGAN",returnIds:[]} });
+  assert.equal(p2.response.accepted,true);
+  assert.equal(p2.view.status,"ACTIVE");
+  assert.equal(p2.view.match?.status,"ACTIVE");
+  const ended=rooms.submitIntent(host.roomId,host.token,{ intentId:"life-resign", expectedStateVersion:p2.view.match!.stateVersion, intent:{type:"RESIGN"} });
+  assert.equal(ended.response.accepted,true);
+  assert.equal(ended.view.status,"ENDED");
+  assert.equal(ended.view.match?.status,"ENDED");
+});
+
+test("v7.68.2 keeps large-desktop, mobile and German lobby follow-ups",()=>{
   const css=root("public/styles.css");
   const de=root("public/locales/de.js");
   assert.match(css,/@media \(min-width:1800px\)/);
@@ -130,4 +155,4 @@ test("v7.68.1 contains large-desktop, mobile and German lobby follow-ups",()=>{
   assert.match(app,/lobbyCopy\('Placement','Platzierung'\)/);
 });
 
-console.log(`${passed}/10 v7.68 tests passed.`);
+console.log(`${passed}/11 v7.68 tests passed.`);
