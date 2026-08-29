@@ -1636,3 +1636,8 @@ v7.68 hardens hosted two-player state delivery after real external-alpha testing
 - Every submitted intent performs a best-effort authoritative state preflight, and every accepted intent performs an immediate post-commit refresh to catch turn/Priority transitions.
 - A P2 mulligan that races P1 and receives `STALE_STATE` is silently resynchronized and retried exactly once with a fresh intent id, only while mulligan remains legal and all chosen cards are still in that player's hand.
 - Ordinary non-mulligan intents are never auto-replayed after `STALE_STATE`; server idempotency and legality remain the final authority.
+
+
+## v7.68.3 — Playtest UX polish
+
+v7.68.3 bundles the next external-alpha polish pass: stable battlefield anchoring across local re-renders, a longer card reveal for deck-search results, canonical Archive card proportions, reliable Mulligan `REPLACE` markers, one fresh-pack `NEW` badge on every revealed booster card, wider 4K lobby composition, tighter mobile layout, and a more complete German lobby presentation. Hosted room intents also auto-pass response priority only when the authoritative engine reports zero legal response options for the current priority player; real response opportunities still stop and wait for the player.

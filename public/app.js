@@ -1334,6 +1334,19 @@ function lobbyCopy(english, german) {
   return currentLocale() === 'de' ? german : english;
 }
 
+function lobbyModeName(mode) {
+  if (!mode) return lobbyCopy('Friendly','Freundschaft');
+  if (mode.id === 'FRIENDLY') return lobbyCopy(mode.name ?? 'Friendly','Freundschaft');
+  return mode.name ?? mode.id;
+}
+
+function lobbyModeDescription(mode) {
+  if (!mode) return '';
+  if (mode.id === 'FRIENDLY') return lobbyCopy(mode.description ?? 'Manual friendly room.','Manueller Freundschaftsraum.');
+  if (mode.id === 'RANKED') return lobbyCopy(mode.description ?? 'Ranked Alpha rules.','Ranked-Alpha-Regeln.');
+  return mode.description ?? '';
+}
+
 function departmentIdentity(department) {
   const identities = currentLocale() === 'de' ? ({
     CUSTOMER_SERVICE:{ label:'Kundenservice', loop:'Reagieren → Umleiten → Wieder öffnen → Durchhalten', note:'Tickets, Anrufe und Bewertungen verwandeln Druck in eine weitere Chance.' },
@@ -1924,9 +1937,16 @@ function zoneCueText(cue) {
 }
 
 function renderZoneTransitionCue() {
-  const copy = zoneCueText(state.zoneCue);
+  const cue = state.zoneCue;
+  const copy = zoneCueText(cue);
   if (!copy) return '';
-  return `<div class="zone-transition-cue ${esc(String(state.zoneCue?.kind ?? '').toLowerCase())}"><span>${esc(copy.kicker)}</span><strong>${esc(copy.title)}</strong><small>${esc(copy.detail)}</small></div>`;
+  let revealCard = '';
+  if (cue?.kind === 'SEARCH_COMPLETE' && cue.cardInstanceId) {
+    const card = cardByRef(cue.cardInstanceId);
+    const def = card ? cardDef(card.definitionId) : null;
+    if (def) revealCard = `<div class="zone-search-card">${renderCatalogCardFace(def, { tier:sandboxRarityTier(def), compact:true, artReady:Boolean(def.artId) })}</div>`;
+  }
+  return `<div class="zone-transition-cue ${esc(String(cue?.kind ?? '').toLowerCase())} ${revealCard ? 'with-card' : ''}">${revealCard}<div class="zone-transition-copy"><span>${esc(copy.kicker)}</span><strong>${esc(copy.title)}</strong><small>${esc(copy.detail)}</small></div></div>`;
 }
 
 function zonePulseClass(playerId, zone) {
@@ -2119,17 +2139,18 @@ function renderGuidanceCoach(match, tip = currentGuidanceTip(match)) {
 
 function renderRulesPrimer() {
   const seen = Object.keys(state.guidance.seen ?? {}).length;
+  const guidanceState = state.guidance.enabled ? lobbyCopy('on','an') : lobbyCopy('off','aus');
   return `<details class="rules-primer">
-    <summary><div><span>NEW HERE?</span><strong>How a turn works</strong></div><small>Five rules to get playing · Guidance ${state.guidance.enabled ? 'on' : 'off'}</small></summary>
+    <summary><div><span>${lobbyCopy('NEW HERE?','NEU HIER?')}</span><strong>${lobbyCopy('How a turn works','So funktioniert ein Zug')}</strong></div><small>${lobbyCopy('Five rules to get playing','Fünf Regeln für den Einstieg')} · ${lobbyCopy('Guidance','Hinweise')} ${guidanceState}</small></summary>
     <div class="rules-primer-body">
       <div class="rules-primer-grid">
-        <div><b>1</b><strong>MAIN</strong><span>Spend Capacity to play Employees, Actions and Systems or set Incidents.</span></div>
-        <div><b>2</b><strong>ONBOARDING</strong><span>New Employees cannot attack this turn. Their other effects work immediately.</span></div>
-        <div><b>3</b><strong>BATTLE</strong><span>Attack opposing Employees first. Higher Power survives; equal Power destroys both unless an effect says otherwise.</span></div>
-        <div><b>4</b><strong>RESPONSES</strong><span>Effects can create a Chain. Both players pass, then the newest effect resolves first.</span></div>
-        <div><b>5</b><strong>WIN</strong><span>Reduce Company Reputation from 20 to 0. End Phase hand limit is 8. There is no Main Phase 2.</span></div>
+        <div><b>1</b><strong>MAIN</strong><span>${lobbyCopy('Spend Capacity to play Employees, Actions and Systems or set Incidents.','Gib Kapazität aus, um Mitarbeiter, Aktionen und Systeme zu spielen oder Vorfälle zu setzen.')}</span></div>
+        <div><b>2</b><strong>${lobbyCopy('ONBOARDING','EINARBEITUNG')}</strong><span>${lobbyCopy('New Employees cannot attack this turn. Their other effects work immediately.','Neue Mitarbeiter können in diesem Zug nicht angreifen. Ihre anderen Effekte funktionieren sofort.')}</span></div>
+        <div><b>3</b><strong>BATTLE</strong><span>${lobbyCopy('Attack opposing Employees first. Higher Power survives; equal Power destroys both unless an effect says otherwise.','Greife zuerst gegnerische Mitarbeiter an. Höhere Power überlebt; bei gleicher Power werden beide zerstört, sofern kein Effekt etwas anderes sagt.')}</span></div>
+        <div><b>4</b><strong>${lobbyCopy('RESPONSES','REAKTIONEN')}</strong><span>${lobbyCopy('Effects can create a Chain. Both players pass, then the newest effect resolves first.','Effekte können eine Kette erzeugen. Passen beide Spieler, wird der neueste Effekt zuerst aufgelöst.')}</span></div>
+        <div><b>5</b><strong>${lobbyCopy('WIN','SIEG')}</strong><span>${lobbyCopy('Reduce Company Reputation from 20 to 0. End Phase hand limit is 8. There is no Main Phase 2.','Reduziere die Unternehmensreputation von 20 auf 0. In der End Phase gilt ein Handlimit von 8. Es gibt keine zweite Main Phase.')}</span></div>
       </div>
-      <div class="rules-primer-actions"><button class="small ${state.guidance.enabled ? '' : 'primary'}" data-guidance-toggle>${state.guidance.enabled ? 'Turn contextual guidance off' : 'Turn contextual guidance on'}</button>${seen ? `<button class="small ghost" data-guidance-reset>Reset ${esc(seen)} seen tip${seen === 1 ? '' : 's'}</button>` : ''}</div>
+      <div class="rules-primer-actions"><button class="small ${state.guidance.enabled ? '' : 'primary'}" data-guidance-toggle>${state.guidance.enabled ? lobbyCopy('Turn contextual guidance off','Kontexthinweise ausschalten') : lobbyCopy('Turn contextual guidance on','Kontexthinweise einschalten')}</button>${seen ? `<button class="small ghost" data-guidance-reset>${lobbyCopy(`Reset ${seen} seen tip${seen === 1 ? '' : 's'}`,`${seen} gesehene${seen === 1 ? 'n Hinweis' : ' Hinweise'} zurücksetzen`)}</button>` : ''}</div>
     </div>
   </details>`;
 }
@@ -2574,8 +2595,10 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const attackCompareBadge = hidden ? '' : attackTargetPowerBadge(card);
   const combinedFieldBadges = `${fieldStateBadges}${attackCompareBadge}`;
   const supportBack = hidden && faceDownSupport ? hiddenSupportBack() : '';
+  const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
   return `<div class="card ${hidden ? 'hidden-card' : ''} ${faceDownSupport ? 'face-down-support' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}" data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0">
     ${prototype}
+    ${mulliganReplaceMarker}
     ${def ? `<div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b></div>` : faceDownSupport ? '<div class="card-type-strip hidden-support-strip"><span>INCIDENT</span><b>SET</b></div>' : ''}
     <button class="card-info" type="button" data-card-info-button="${esc(card.instanceId)}" aria-label="Inspect card" title="Inspect card">i</button>
     ${ability ? `<button class="card-ability" type="button" data-card-ability="${esc(card.instanceId)}" aria-label="Activate ability">ACT</button>` : ''}
@@ -2669,7 +2692,7 @@ function closeCardInspector() {
   state.focusedCardRef = null;
   state.returnFocusCardRef = null;
   render();
-  if (returnRef) requestAnimationFrame(() => document.querySelector(`[data-card-info="${CSS.escape(returnRef)}"]`)?.focus());
+  if (returnRef) requestAnimationFrame(() => document.querySelector(`[data-card-info="${CSS.escape(returnRef)}"]`)?.focus({ preventScroll:true }));
 }
 
 function legalResponseOption(instanceId) {
@@ -2814,7 +2837,8 @@ function appendEvents(events = []) {
   if (freshMovement.length) {
     state.zoneCue = buildZoneCue(freshMovement);
     if (state.zoneCueTimer) clearTimeout(state.zoneCueTimer);
-    state.zoneCueTimer = setTimeout(() => { state.zoneCue = null; state.zoneCueTimer = null; render(); }, 1650);
+    const zoneCueDuration = state.zoneCue?.kind === 'SEARCH_COMPLETE' ? 2500 : 1650;
+    state.zoneCueTimer = setTimeout(() => { state.zoneCue = null; state.zoneCueTimer = null; render(); }, zoneCueDuration);
   }
   if (freshCues.length) {
     state.visualCueBatch = freshCues.slice(-10);
@@ -3934,10 +3958,11 @@ function renderBoosterReveal() {
     const isRevealed=index < revealed;
     const isNext=index === revealed;
     const appearedEarlier=state.lastBooster.cardIds.slice(0,index).filter((item)=>item===id).length;
-    const isNew=newCardIds.has(id) && appearedEarlier === 0;
+    const isCollectionNew=newCardIds.has(id) && appearedEarlier === 0;
+    const isFreshPackPull=true;
     if (!isRevealed) return `<button class="booster-hit booster-facedown tier-${esc(String(tier).toLowerCase())} ${isNext ? 'next-reveal' : 'locked-reveal'}" ${isNext ? `data-booster-reveal="${index}"` : 'disabled'}><div class="booster-card-back"><span>OFFICE</span><b>ALPHA</b><small>${isNext ? 'TAP TO REVEAL' : 'LOCKED'}</small></div></button>`;
     const deckUses=savedDeckCardUse(id).filter((item)=>item.copies>0).length;
-    return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${isNew ? 'new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, isNew, artReady:Boolean(def.artId), owned:ownedCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">INSPECT</i>${deckUses ? `<i class="booster-deck-use">USED IN ${esc(deckUses)} DECK${deckUses===1?'':'S'}</i>` : ''}</button>`;
+    return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${isCollectionNew ? 'collection-new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, isNew:isFreshPackPull, artReady:Boolean(def.artId), owned:ownedCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">INSPECT</i>${deckUses ? `<i class="booster-deck-use">USED IN ${esc(deckUses)} DECK${deckUses===1?'':'S'}</i>` : ''}</button>`;
   }).join('')}</div>${complete ? `<div class="booster-deck-bridge"><div><span>PACK → DECK</span><strong>${esc(deckFlow.opportunityPulls)} of ${esc(deckFlow.uniquePulls)} unique pulls have a saved-deck path</strong><small>Inspect a pull to see existing deck use, add it to a draft with room, or open a full deck for the existing swap flow.</small></div><button data-view-last-booster>Browse this pack</button></div>` : ''}</div>`;
 }
 
@@ -4466,11 +4491,11 @@ function bindAlphaSessionControls() { document.querySelector('#newAlphaTestSessi
 function renderProfileStrip() {
   const profile = state.serverProfile;
   const progression = state.metaProfile?.progression ?? {};
-  if (!profile) return `<section class="profile-strip"><span>PLAYTEST PROFILE</span><strong>Connecting profile…</strong></section>`;
+  if (!profile) return `<section class="profile-strip"><span>${lobbyCopy('PLAYTEST PROFILE','PLAYTEST-PROFIL')}</span><strong>${lobbyCopy('Connecting profile…','Profil wird verbunden…')}</strong></section>`;
   const stats = profile.stats ?? {};
   const ranked = profile.ranked ?? {};
   const rankLabel = ranked.status === 'RATED' ? `${ranked.rating ?? 1000} MMR` : `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed ?? 0}/${ranked.placementsRequired ?? 5}`;
-  return `<section class="profile-strip"><div class="profile-identity"><span>${lobbyCopy('PLAYTEST PROFILE · SERVER','PLAYTEST-PROFIL · SERVER')}</span><strong>${esc(profile.displayName)}</strong><small>${lobbyCopy('Guest profile · progress saved on this server','Gastprofil · Fortschritt wird auf diesem Server gespeichert')}</small></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
+  return `<section class="profile-strip"><div class="profile-identity"><span>${lobbyCopy('PLAYTEST PROFILE · SERVER','PLAYTEST-PROFIL · SERVER')}</span><strong>${esc(profile.displayName)}</strong><small>${lobbyCopy('Guest profile · progress saved on this server','Gastprofil · Fortschritt wird auf diesem Server gespeichert')}</small></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','BÜRO-CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
 }
 
 function renderRankedStanding() {
@@ -4497,12 +4522,14 @@ function renderStarterDeckGuide() {
 
 function renderLobbyConnectionStatus() {
   const status=navigator.onLine===false?'offline':state.serverInfo?.ok?'live':'checking';
-  const ping=state.networkDiagnostics.pingMs!=null?`${state.networkDiagnostics.pingMs} ms`:'ready';
-  return `<div class="lobby-connection-status tone-${status}"><i aria-hidden="true"></i><div><span>${status==='offline'?'Offline':status==='live'?'Server online':'Connection'}</span><small>${status==='offline'?'Match recovery will resume automatically':ping}</small></div></div>`;
+  const ping=state.networkDiagnostics.pingMs!=null?`${state.networkDiagnostics.pingMs} ms`:lobbyCopy('ready','bereit');
+  const title=status==='offline'?lobbyCopy('Offline','Offline'):status==='live'?lobbyCopy('Server online','Server online'):lobbyCopy('Connection','Verbindung');
+  const detail=status==='offline'?lobbyCopy('Match recovery will resume automatically','Match-Wiederherstellung wird automatisch fortgesetzt'):ping;
+  return `<div class="lobby-connection-status tone-${status}"><i aria-hidden="true"></i><div><span>${title}</span><small>${detail}</small></div></div>`;
 }
 function renderLobbyPlaytestDrawer() {
   const adminAnalytics=state.adminToken && opsModeAvailable() ? renderPlaytestAnalytics() : '';
-  return `<details class="lobby-playtest-drawer tester-support-drawer"><summary><div><span>MATCH HISTORY & SUPPORT</span><strong>Replays, connection check and bug reports</strong></div><small>Open only when needed</small></summary><div class="lobby-playtest-content">${renderProfileHistory()}${renderConnectionDiagnosticsPanel()}${adminAnalytics}</div></details>`;
+  return `<details class="lobby-playtest-drawer tester-support-drawer"><summary><div><span>${lobbyCopy('MATCH HISTORY & SUPPORT','MATCHVERLAUF & HILFE')}</span><strong>${lobbyCopy('Replays, connection check and bug reports','Replays, Verbindungscheck und Bugreports')}</strong></div><small>${lobbyCopy('Open only when needed','Bei Bedarf öffnen')}</small></summary><div class="lobby-playtest-content">${renderProfileHistory()}${renderConnectionDiagnosticsPanel()}${adminAnalytics}</div></details>`;
 }
 
 function renderProfileHistory() {
@@ -5053,15 +5080,15 @@ function renderLobby() {
   <section class="lobby-command-center">
     <div class="lobby-primary-column">
       <section class="lobby-hero">
-        <div><span>OFFICE ALPHA</span><strong>Pick a department. Start a match.</strong><small>Choose a starter or custom deck, then queue for a match or invite someone by room code.</small></div>
-        <div class="lobby-hero-actions"><button id="openAlphaGuide">Alpha guide</button><button class="primary" id="openCollection">Collection & Deckbuilder</button>${opsModeAvailable()?'<button id="openOps">Ops</button>':''}</div>
+        <div><span>OFFICE ALPHA</span><strong>${lobbyCopy('Pick a department. Start a match.','Abteilung wählen. Match starten.')}</strong><small>${lobbyCopy('Choose a starter or custom deck, then queue for a match or invite someone by room code.','Wähle ein Starter- oder eigenes Deck und starte die Gegnersuche oder lade jemanden per Raumcode ein.')}</small></div>
+        <div class="lobby-hero-actions"><button id="openAlphaGuide">${lobbyCopy('Alpha guide','Alpha-Anleitung')}</button><button class="primary" id="openCollection">${lobbyCopy('Collection & Deckbuilder','Sammlung & Deckbuilder')}</button>${opsModeAvailable()?'<button id="openOps">Ops</button>':''}</div>
       </section>
       <section class="quick-match-box">
-        <div class="quick-match-copy"><span>QUICK MATCH · SERVER QUEUE</span><strong>${queueWaiting ? 'Looking for an opponent…' : 'Find an opponent automatically'}</strong><small>Friendly stays unrated. Ranked Alpha Quick Match uses preseason MMR and widening search windows. Ranked timer remains off.</small></div>
+        <div class="quick-match-copy"><span>${lobbyCopy('QUICK MATCH · SERVER QUEUE','QUICK MATCH · SERVER-SUCHE')}</span><strong>${queueWaiting ? lobbyCopy('Looking for an opponent…','Gegner wird gesucht…') : lobbyCopy('Find an opponent automatically','Automatisch einen Gegner finden')}</strong><small>${lobbyCopy('Friendly stays unrated. Ranked Alpha Quick Match uses preseason MMR and widening search windows. Ranked timer remains off.','Freundschaft bleibt ungewertet. Ranked Alpha Quick Match nutzt Vorsaison-MMR und erweitert schrittweise den Suchbereich. Der Ranked-Timer bleibt aus.')}</small></div>
         <div class="quick-match-controls">
-          <label class="quick-match-field quick-match-deck">Deck<select id="quickDeck" ${queueWaiting?'disabled':''}>${options}</select></label>
-          <label class="quick-match-field quick-match-mode">Mode<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(mode.name)}</option>`).join('')}</select></label>
-          ${queueWaiting ? `<button id="cancelQuickMatch">Cancel search</button>` : `<button class="primary" id="quickMatchBtn" ${state.matchmakingBusy?'disabled':''}>${state.matchmakingBusy?'Queueing…':'Find opponent'}</button>`}
+          <label class="quick-match-field quick-match-deck">${lobbyCopy('Deck','Deck')}<select id="quickDeck" ${queueWaiting?'disabled':''}>${options}</select></label>
+          <label class="quick-match-field quick-match-mode">${lobbyCopy('Mode','Modus')}<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
+          ${queueWaiting ? `<button id="cancelQuickMatch">${lobbyCopy('Cancel search','Suche abbrechen')}</button>` : `<button class="primary" id="quickMatchBtn" ${state.matchmakingBusy?'disabled':''}>${state.matchmakingBusy?lobbyCopy('Queueing…','Suche läuft…'):lobbyCopy('Find opponent','Gegner finden')}</button>`}
         </div>
         <div data-lobby-deck-prep-host="QUICK">${renderLobbyDeckPrep(preferredDeck,'QUICK')}</div>
         ${state.matchmakingMessage ? `<p>${esc(state.matchmakingMessage)}</p>` : ''}
@@ -5073,25 +5100,25 @@ function renderLobby() {
       ${renderRankedStanding()}
       ${renderLobbyConnectionStatus()}
       <details class="private-room-drawer" ${state.inviteRoomCode ? 'open' : ''}>
-        <summary><div><span>PRIVATE ROOMS</span><strong>Play by room code</strong></div><small>Friendly or unrated Ranked rules</small></summary>
+        <summary><div><span>${lobbyCopy('PRIVATE ROOMS','PRIVATE RÄUME')}</span><strong>${lobbyCopy('Play by room code','Per Raumcode spielen')}</strong></div><small>${lobbyCopy('Friendly or unrated Ranked rules','Freundschaft oder ungewertete Ranked-Regeln')}</small></summary>
         <section class="lobby private-room-grid">
           <div class="box create-room-box">
-            <h2>Create private room</h2>
-            <p class="muted">Choose your deck and match rules, then send the six-character code to Player 2.</p>
-            <label class="field">Deck<select id="createDeck">${options}</select></label>
+            <h2>${lobbyCopy('Create private room','Privaten Raum erstellen')}</h2>
+            <p class="muted">${lobbyCopy('Choose your deck and match rules, then send the six-character code to Player 2.','Wähle Deck und Matchregeln und sende anschließend den sechsstelligen Code an Spieler 2.')}</p>
+            <label class="field">${lobbyCopy('Deck','Deck')}<select id="createDeck">${options}</select></label>
             <div data-lobby-deck-prep-host="CREATE">${renderLobbyDeckPrep(preferredDeck,'CREATE')}</div>
-            <label class="field">Match mode<select id="createMode">${modes.map((mode) => `<option value="${esc(mode.id)}" ${mode.id===state.lobbyMatchMode?'selected':''}>${esc(mode.name)}</option>`).join('')}</select></label>
-            <div class="mode-preview" id="modePreview"><strong>${esc(selectedMode?.name ?? 'Friendly')}</strong><span>${esc(selectedMode?.description ?? '')}</span><small>${state.lobbyMatchMode==='RANKED' ? 'Private room · unrated. Ranked timer profile is reserved but still disabled.' : 'No timer by default.'}</small></div>
-            <button class="primary" id="createRoomBtn">Create room</button>
+            <label class="field">${lobbyCopy('Match mode','Matchmodus')}<select id="createMode">${modes.map((mode) => `<option value="${esc(mode.id)}" ${mode.id===state.lobbyMatchMode?'selected':''}>${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
+            <div class="mode-preview" id="modePreview"><strong>${esc(lobbyModeName(selectedMode))}</strong><span>${esc(lobbyModeDescription(selectedMode))}</span><small>${state.lobbyMatchMode==='RANKED' ? lobbyCopy('Private room · unrated. Ranked timer profile is reserved but still disabled.','Privater Raum · ungewertet. Das Ranked-Timerprofil ist reserviert, bleibt aber deaktiviert.') : lobbyCopy('No timer by default.','Standardmäßig kein Timer.')}</small></div>
+            <button class="primary" id="createRoomBtn">${lobbyCopy('Create room','Raum erstellen')}</button>
           </div>
           <div class="box">
-            <h2>Join private room</h2>
-            ${state.inviteRoomCode ? `<div class="invite-arrival"><span>INVITE LINK</span><strong>Room ${esc(state.inviteRoomCode)} ready to join</strong><small>Choose your deck, then join normally. The invite contains no seat token.</small></div>` : ''}
-            <label class="field">Room code<input id="joinCode" maxlength="6" placeholder="ABC123" autocomplete="off" value="${esc(state.inviteRoomCode ?? '')}" /></label>
-            <label class="field">Deck<select id="joinDeck">${options}</select></label>
+            <h2>${lobbyCopy('Join private room','Privatem Raum beitreten')}</h2>
+            ${state.inviteRoomCode ? `<div class="invite-arrival"><span>${lobbyCopy('INVITE LINK','EINLADUNGSLINK')}</span><strong>${lobbyCopy(`Room ${state.inviteRoomCode} ready to join`,`Raum ${state.inviteRoomCode} ist bereit`)}</strong><small>${lobbyCopy('Choose your deck, then join normally. The invite contains no seat token.','Wähle dein Deck und tritt normal bei. Die Einladung enthält keinen Sitzplatz-Token.')}</small></div>` : ''}
+            <label class="field">${lobbyCopy('Room code','Raumcode')}<input id="joinCode" maxlength="6" placeholder="ABC123" autocomplete="off" value="${esc(state.inviteRoomCode ?? '')}" /></label>
+            <label class="field">${lobbyCopy('Deck','Deck')}<select id="joinDeck">${options}</select></label>
             <div data-lobby-deck-prep-host="JOIN">${renderLobbyDeckPrep(preferredDeck,'JOIN')}</div>
-            <div class="mode-preview compact"><strong>Room rules come from the host</strong><span>Friendly / Ranked rules and future timer settings are server-owned. Private rooms never change Ranked MMR.</span></div>
-            <button class="primary" id="joinRoomBtn">Join room</button>
+            <div class="mode-preview compact"><strong>${lobbyCopy('Room rules come from the host','Raumregeln kommen vom Host')}</strong><span>${lobbyCopy('Friendly / Ranked rules and future timer settings are server-owned. Private rooms never change Ranked MMR.','Freundschafts-/Ranked-Regeln und künftige Timer-Einstellungen liegen beim Server. Private Räume verändern niemals das Ranked-MMR.')}</span></div>
+            <button class="primary" id="joinRoomBtn">${lobbyCopy('Join room','Raum beitreten')}</button>
             ${state.lastError ? `<div class="error">${esc(state.lastError)}</div>` : ''}
           </div>
         </section>
@@ -5738,6 +5765,7 @@ function renderServerDiagnostics() {
 }
 
 function renderGame() {
+  const previousBattlefieldTop = app.querySelector('.battlefield-surface')?.getBoundingClientRect().top ?? null;
   const match = state.view.match;
   const me = match.players[match.viewerId];
   const them = match.players[match.viewerId === 'P1' ? 'P2' : 'P1'];
@@ -5801,6 +5829,12 @@ function renderGame() {
   bindHoverPreviewHandlers();
   bindBoardActionFocusHandlers();
   scheduleAttackConnectorDraw();
+  if (previousBattlefieldTop != null) requestAnimationFrame(() => {
+    const nextBattlefieldTop = app.querySelector('.battlefield-surface')?.getBoundingClientRect().top;
+    if (nextBattlefieldTop == null) return;
+    const delta = nextBattlefieldTop - previousBattlefieldTop;
+    if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
+  });
 }
 
 function render() {

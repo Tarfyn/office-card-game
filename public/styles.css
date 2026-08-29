@@ -6688,3 +6688,66 @@ button.primary {
   .starter-guide-grid { margin-inline:-2px; }
   .lobby-playtest-drawer { width:100%; }
 }
+
+
+/* v7.68.3 — responsive, card-state and match-surface polish */
+.mulligan-hand .card.selected::before { content:none; }
+.mulligan-replace-marker {
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(-6deg); z-index:12;
+  padding:5px 9px; border-radius:999px; background:#255f98; color:#fff; font-size:8px; font-style:normal;
+  font-weight:950; letter-spacing:.10em; box-shadow:0 4px 14px rgba(20,50,80,.24); pointer-events:none;
+}
+.booster-hit.collection-new-pull { box-shadow:0 10px 25px rgba(47,139,87,.18), inset 0 0 0 1px rgba(95,177,124,.35); }
+.booster-hit.new-pull::after { content:none; }
+.archive-grid { grid-template-columns:repeat(auto-fill,124px); justify-content:start; align-items:start; gap:8px; }
+.archive-grid .card { width:124px; min-width:124px; max-width:124px; height:174px; min-height:174px; max-height:174px; }
+.zone-transition-cue.with-card { min-width:330px; grid-template-columns:92px minmax(0,1fr); align-items:center; gap:10px; }
+.zone-transition-cue .zone-transition-copy { display:grid; gap:2px; min-width:0; }
+.zone-search-card { width:92px; min-width:92px; }
+.zone-search-card .catalog-card-face { width:92px; min-width:92px; max-width:92px; min-height:128px; pointer-events:none; }
+.zone-transition-cue.search_complete.with-card { animation-duration:2.4s; }
+
+@media (min-width:2200px) {
+  .app { max-width:2560px; }
+  .profile-strip,
+  .alpha-session-strip,
+  .lobby-command-center,
+  .lobby-playtest-drawer { width:min(2360px,calc(100% - 96px)); max-width:2360px; }
+  .lobby-command-center { grid-template-columns:minmax(0,1.72fr) minmax(460px,.72fr); gap:24px; }
+  .lobby-primary-column,.lobby-secondary-column { gap:18px; }
+  .lobby-hero { padding:26px 28px; }
+  .lobby-hero strong { font-size:36px; }
+  .quick-match-box,.starter-guide { padding:20px; }
+  .starter-guide-grid { gap:10px; }
+  .starter-identity { min-height:174px; padding:13px; }
+}
+
+@media (max-width:620px) {
+  html,body { overflow-x:hidden; }
+  .app { padding:8px 7px 20px; }
+  .profile-strip,.alpha-session-strip,.lobby-command-center,.lobby-playtest-drawer { min-width:0; }
+  .profile-strip { padding:9px; }
+  .profile-stats { gap:5px; }
+  .profile-stats > span { padding:5px 7px; }
+  .alpha-session-strip { padding:8px 9px; }
+  .lobby-hero { padding:12px; gap:10px; }
+  .lobby-hero strong { font-size:clamp(21px,6.8vw,28px); line-height:1.08; overflow-wrap:normal; word-break:normal; }
+  .lobby-hero small { font-size:9px; line-height:1.35; }
+  .lobby-hero-actions { display:grid; grid-template-columns:1fr; width:100%; gap:7px; }
+  .lobby-hero-actions button,.lobby-hero-actions button.primary { display:flex; align-items:center; justify-content:center; width:100%; min-height:43px; font-size:13px; line-height:1.2; text-indent:0; opacity:1; }
+  .lobby-hero-actions button:not(.primary) { color:#24231f !important; }
+  .lobby-hero-actions button.primary { color:#fff8e9 !important; }
+  .quick-match-controls { display:grid; grid-template-columns:minmax(0,1fr) !important; gap:7px; }
+  .quick-match-controls > *,.quick-match-controls > button { grid-column:1 !important; width:100%; min-width:0; }
+  .starter-guide-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); overflow:visible; scroll-snap-type:none; margin-inline:0; gap:7px; }
+  .starter-identity { min-width:0; min-height:148px; }
+  .archive-grid { grid-template-columns:repeat(auto-fill,112px); }
+  .archive-grid .card { width:112px; min-width:112px; max-width:112px; height:157px; min-height:157px; max-height:157px; }
+  .zone-transition-cue.with-card { min-width:0; width:min(310px,calc(100vw - 16px)); grid-template-columns:78px minmax(0,1fr); }
+  .zone-search-card,.zone-search-card .catalog-card-face { width:78px; min-width:78px; max-width:78px; }
+  .zone-search-card .catalog-card-face { min-height:109px; }
+}
+@media (max-width:460px) {
+  .starter-guide-grid { grid-template-columns:1fr; }
+  .starter-identity { min-height:128px; }
+}

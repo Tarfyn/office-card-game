@@ -2,7 +2,7 @@ import { alphaDefinitions } from "./cards.js";
 import { alphaDeckPresets, type DeckPreset } from "./decks.js";
 import { createMatch, resign, validateDeck } from "./engine.js";
 import { ALPHA_FORMAT } from "./formats.js";
-import { executeMatchIntent } from "./intents.js";
+import { executeHostedMatchIntent, executeMatchIntent } from "./intents.js";
 import { projectEventsSince, projectStateForViewer } from "./projection.js";
 import {
   clearReconnectDeadline,
@@ -672,7 +672,7 @@ export class RoomService {
     const previousTurnNumber = room.state.turnNumber;
     const previousActivePlayerId = room.state.activePlayerId;
     const hadResponseWindow = Boolean(room.state.responseWindow);
-    const execution = executeMatchIntent(room.state, {
+    const execution = executeHostedMatchIntent(room.state, {
       intentId: request.intentId,
       matchId: room.state.matchId,
       playerId: seat.playerId,
