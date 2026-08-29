@@ -21,11 +21,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.0");
-  assert.match(server,/version: "7\.69\.0"/);
-  assert.match(server,/Office Card Game v7\.69\.0 server/);
-  assert.match(html,/v7\.69\.0 Alpha Playtest/);
-  assert.match(readme,/## v7\.69\.0 — Board-First Match UI/);
+  assert.equal(pkg.version,"7.69.1");
+  assert.match(server,/version: "7\.69\.1"/);
+  assert.match(server,/Office Card Game v7\.69\.1 server/);
+  assert.match(html,/v7\.69\.1 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.1 — Responsive Battlefield \+ Critical Mobile Controls/);
 });
 
 test("v7.69 separates arena artwork from code-native battlefield geometry",()=>{
@@ -79,6 +79,16 @@ test("v7.69 prevents field-card hover and inspector overlays from moving the bat
   assert.match(app,/previousBattlefieldTop != null && !document\.body\.classList\.contains\('match-viewport-locked'\)/);
 });
 
+test("v7.69 gives battlefield slots recessed depth without geometry-changing 3D transforms",()=>{
+  const empty=sliceBetween(css,"body.match-mode .field-empty:not(.slot-candidate) {","body.match-mode .field-empty:not(.slot-candidate)::before");
+  assert.match(empty,/inset 0 4px 6px -1px rgba\(0,0,0,\.50\)/);
+  assert.match(empty,/inset 0 2px 4px -1px rgba\(0,0,0,\.30\)/);
+  const candidate=sliceBetween(css,"body.match-mode .field-empty.slot-candidate {","body.match-mode .board-lane .card {");
+  assert.match(candidate,/inset 0 0 10px rgba\(74,225,118,\.16\)/);
+  assert.doesNotMatch(css,/board-tilt[\s\S]*rotateX\(/);
+  assert.doesNotMatch(css,/body\.match-mode \.board-lane \.card[^}]*translateY\(-5px\)/);
+});
+
 test("v7.69 queues longer gameplay feedback while preserving independent attack pacing",()=>{
   assert.match(app,/const ATTACK_PRESENTATION_MS = 2400/);
   assert.match(app,/const GAMEPLAY_PRESENTATION_MS = 2800/);
@@ -109,6 +119,48 @@ test("v7.69 retains real game terminology in the new match-shell code",()=>{
   assert.match(app,/>DECK</);
   assert.match(app,/>ARCHIVE</);
   assert.doesNotMatch(shell,/Hostile Takeover|Synergy Capital|Internal Assets|Audit Log|Rival Corp/i);
+});
+
+
+
+test("v7.69.1 reserves a real center seam and constrains rows instead of overlapping them",()=>{
+  assert.match(css,/grid-template-rows:minmax\(0,1fr\) 26px minmax\(0,1fr\)/);
+  assert.match(css,/body\.match-mode \.opponent-board \{ grid-row:1; \}/);
+  assert.match(css,/body\.match-mode \.own-board \{ grid-row:3; \}/);
+  assert.match(css,/body\.match-mode \.office-divider \{[\s\S]*?position:relative;[\s\S]*?grid-row:2;/);
+  assert.match(css,/height:min\(100%,162px\)/);
+});
+
+test("v7.69.1 scales the board HUD up for large and 4K displays",()=>{
+  assert.match(css,/@media \(min-width:2200px\) and \(min-height:1100px\)/);
+  assert.match(css,/grid-template-columns:repeat\(5,minmax\(0,164px\)\)/);
+  assert.match(css,/max-width:164px; max-height:230px/);
+  assert.match(css,/@media \(min-width:3200px\) and \(min-height:1500px\)/);
+});
+
+test("v7.69.1 keeps mobile opening chrome compact and removes it after setup",()=>{
+  const opening=sliceBetween(app,"function renderMatchOpening(match)","function renderTurnFlowCue");
+  assert.match(opening,/if \(match\.status !== 'SETUP'\) return ''/);
+  assert.doesNotMatch(opening,/firstStart/);
+  assert.match(css,/body\.match-mode \.match-opening \{[\s\S]*?grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
+  assert.match(css,/body\.match-mode \.mulligan-actions \{ grid-template-columns:1fr 1fr/);
+});
+
+test("v7.69.1 exposes mobile Take control and Resign without the desktop side panel",()=>{
+  assert.match(app,/function renderMobileMatchMenu\(match\)/);
+  assert.match(app,/data-take-session-control>Take control here/);
+  assert.match(app,/data-action="resign"/);
+  assert.match(app,/renderMobileMatchMenu\(match\)/);
+  assert.match(css,/\.mobile-match-menu \{ display:none; \}/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.mobile-match-menu \{[\s\S]*?display:block/);
+});
+
+test("v7.69.1 keeps read-only feedback singular and actionable",()=>{
+  const send=sliceBetween(app,"async function sendIntent(intent)","async function boot()");
+  assert.match(send,/const readOnlyMessage = 'This tab is read-only/);
+  assert.match(send,/state\.lastError = null/);
+  assert.match(app,/data-take-session-control/);
+  assert.match(css,/body\.match-mode \.connection-banner \{[\s\S]*?position:fixed/);
 });
 
 console.log(`\n${passed}/${passed} v7.69 tests passed.`);
