@@ -5,6 +5,7 @@ import {
   advancePhase,
   archiveCardsFromHand,
   declareAttackInteractive,
+  getLegalActions,
   mulligan,
   passPriority,
   playActionInteractive,
@@ -126,6 +127,18 @@ function rejected(
   return { state, response };
 }
 
+function autoPassUnavailablePriority(state: GameState): number {
+  let passed = 0;
+  while (state.status === "ACTIVE" && state.responseWindow && state.priorityPlayerId && passed < 16) {
+    const priorityPlayerId = state.priorityPlayerId;
+    const legal = getLegalActions(state, priorityPlayerId);
+    if (!legal.canPassPriority || legal.responseOptions.length > 0) break;
+    passPriority(state, priorityPlayerId);
+    passed += 1;
+  }
+  return passed;
+}
+
 export function executeMatchIntent(state: GameState, command: MatchIntentCommand): MatchCommandExecution {
   if (command.matchId !== state.matchId) return rejected(state, command, "MATCH_MISMATCH", "Intent belongs to a different match.");
   if (command.expectedStateVersion !== state.stateVersion) {
@@ -153,4 +166,20 @@ export function executeMatchIntent(state: GameState, command: MatchIntentCommand
     const message = error instanceof Error ? error.message : "Unknown internal error.";
     return rejected(state, command, "INTERNAL_ERROR", message);
   }
+}
+
+/**
+ * Room/server execution path. The core engine keeps explicit priority semantics,
+ * while hosted play skips response windows that have no legal response at all.
+ */
+export function executeHostedMatchIntent(state: GameState, command: MatchIntentCommand): MatchCommandExecution {
+  const beforeEventSeq = state.eventSeq;
+  const execution = executeMatchIntent(state, command);
+  if (!execution.response.accepted) return execution;
+  const autoPassCount = autoPassUnavailablePriority(execution.state);
+  if (autoPassCount === 0) return execution;
+  execution.response.lastEventSeq = execution.state.eventSeq;
+  execution.response.events = projectEventsSince(execution.state, command.playerId, beforeEventSeq);
+  execution.response.view = projectStateForViewer(execution.state, command.playerId);
+  return execution;
 }

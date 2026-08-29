@@ -2,6 +2,10 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { RoomService } from "../src/room.js";
+import { alphaDefinitions } from "../src/cards.js";
+import { alphaDeckPresets } from "../src/decks.js";
+import { createMatch, mulligan } from "../src/engine.js";
+import { executeHostedMatchIntent } from "../src/intents.js";
 
 let passed=0;
 function test(name:string, fn:()=>void){ fn(); passed+=1; console.log(`✓ ${name}`); }
@@ -10,13 +14,14 @@ const pkg=JSON.parse(root("package.json"));
 const server=root("server/server.mjs");
 const html=root("public/index.html");
 const app=root("public/app.js");
+const css=root("public/styles.css");
 const readme=root("README.md");
 
 test("v7.68 version markers are current",()=>{
-  assert.equal(pkg.version,"7.68.2");
-  assert.match(server,/version: "7\.68\.2"/);
-  assert.match(server,/Office Card Game v7\.68\.2 server/);
-  assert.match(html,/v7\.68\.2 Alpha Playtest/);
+  assert.equal(pkg.version,"7.68.3");
+  assert.match(server,/version: "7\.68\.3"/);
+  assert.match(server,/Office Card Game v7\.68\.3 server/);
+  assert.match(html,/v7\.68\.3 Alpha Playtest/);
   assert.match(readme,/## v7\.68 — Hosted Live-Sync Safety Hotfix/);
 });
 
@@ -145,7 +150,6 @@ test("v7.68.2 room lifecycle stays live throughout mulligan setup and ends only 
 });
 
 test("v7.68.2 keeps large-desktop, mobile and German lobby follow-ups",()=>{
-  const css=root("public/styles.css");
   const de=root("public/locales/de.js");
   assert.match(css,/@media \(min-width:1800px\)/);
   assert.match(css,/width:min\(1540px,calc\(100% - 48px\)\)/);
@@ -155,4 +159,98 @@ test("v7.68.2 keeps large-desktop, mobile and German lobby follow-ups",()=>{
   assert.match(app,/lobbyCopy\('Placement','Platzierung'\)/);
 });
 
-console.log(`${passed}/11 v7.68 tests passed.`);
+
+
+test("v7.68.3 auto-passes hosted priority only when no legal response exists",()=>{
+  const deck=alphaDeckPresets["customer-service-starter"].cards;
+  const state=createMatch({ matchId:"AUTO683", seed:683, firstPlayerId:"P1", definitions:alphaDefinitions, p1Deck:deck, p2Deck:deck });
+  mulligan(state,"P1",[]);
+  mulligan(state,"P2",[]);
+  const attacker=Object.values(state.cards).find((card)=>card.ownerId==="P1" && alphaDefinitions[card.definitionId]?.cardType==="EMPLOYEE" && !(alphaDefinitions[card.definitionId]?.abilities??[]).some((ability)=>ability.type==="TRIGGERED"));
+  if (!attacker) throw new Error("No attack-ready test Employee found.");
+  for (const player of Object.values(state.players)) {
+    player.hand=[];
+    player.supportField=player.supportField.map(()=>null);
+    player.employeeField=player.employeeField.map(()=>null);
+  }
+  state.players.P1.deck=state.players.P1.deck.filter((id)=>id!==attacker.instanceId);
+  state.players.P1.employeeField[0]=attacker.instanceId;
+  attacker.zone="EMPLOYEE_FIELD";
+  attacker.slot=0;
+  attacker.faceUp=true;
+  attacker.onboarding=false;
+  attacker.attacksUsed=0;
+  attacker.cannotAttackUntilTurnNumber=null;
+  attacker.cannotAttackThroughControllerTurnsStarted=null;
+  state.phase="BATTLE";
+  state.activePlayerId="P1";
+  const execution=executeHostedMatchIntent(state,{ intentId:"auto-pass-attack", matchId:state.matchId, playerId:"P1", expectedStateVersion:state.stateVersion, intent:{type:"DECLARE_ATTACK",attackerId:attacker.instanceId,targetId:null} });
+  assert.equal(execution.response.accepted,true);
+  assert.equal(execution.state.responseWindow,null);
+  assert.equal(execution.state.priorityPlayerId,null);
+  assert.ok(execution.response.events.some((event)=>event.type==="PRIORITY_PASSED"));
+  assert.ok(execution.response.events.some((event)=>event.type==="REPUTATION_CHANGED"));
+
+  const withResponse=structuredClone(state);
+  const responseCard=Object.values(withResponse.cards).find((card)=>card.ownerId==="P2" && card.definitionId==="CS-010");
+  if (!responseCard) throw new Error("Expected Please Hold response card in starter deck.");
+  withResponse.players.P2.deck=withResponse.players.P2.deck.filter((id)=>id!==responseCard.instanceId);
+  withResponse.players.P2.supportField[0]=responseCard.instanceId;
+  responseCard.zone="SUPPORT_FIELD";
+  responseCard.slot=0;
+  responseCard.faceUp=false;
+  responseCard.setTurnNumber=Math.max(0,withResponse.turnNumber-1);
+  const held=executeHostedMatchIntent(withResponse,{ intentId:"keep-real-priority", matchId:withResponse.matchId, playerId:"P1", expectedStateVersion:withResponse.stateVersion, intent:{type:"DECLARE_ATTACK",attackerId:attacker.instanceId,targetId:null} });
+  assert.equal(held.response.accepted,true);
+  assert.equal(held.state.responseWindow?.event,"ATTACK_DECLARED");
+  assert.equal(held.state.priorityPlayerId,"P2");
+  assert.ok(held.response.view.legalActions.responseOptions.length > 0 || held.state.responseWindow !== null);
+
+  const intentSource=root("src/intents.ts");
+  assert.match(intentSource,/legal\.responseOptions\.length > 0\) break/);
+});
+
+test("v7.68.3 uses explicit mulligan and booster markers without pseudo-element collisions",()=>{
+  const cardRender=app.slice(app.indexOf("function renderCard"),app.indexOf("function cardInspectorContext"));
+  assert.match(cardRender,/mulliganReplaceMarker/);
+  assert.match(cardRender,/selectionRole === 'MULLIGAN' && selected/);
+  assert.match(cardRender,/mulligan-replace-marker/);
+  assert.match(css,/\.mulligan-hand \.card\.selected::before \{ content:none; \}/);
+  const booster=app.slice(app.indexOf("function renderBoosterReveal"),app.indexOf("function revealBoosterThrough"));
+  assert.match(booster,/const isFreshPackPull=true/);
+  assert.match(booster,/isNew:isFreshPackPull/);
+  assert.match(booster,/collection-new-pull/);
+  assert.match(css,/\.booster-hit\.new-pull::after \{ content:none; \}/);
+});
+
+test("v7.68.3 keeps archive cards proportional and makes deck searches readable",()=>{
+  assert.match(css,/\.archive-grid \.card \{ width:124px;[^}]*height:174px/);
+  const cue=app.slice(app.indexOf("function renderZoneTransitionCue"),app.indexOf("function zonePulseClass"));
+  assert.match(cue,/cue\?\.kind === 'SEARCH_COMPLETE'/);
+  assert.match(cue,/zone-search-card/);
+  assert.match(app,/zoneCueDuration = state\.zoneCue\?\.kind === 'SEARCH_COMPLETE' \? 2500 : 1650/);
+  assert.match(css,/\.zone-transition-cue\.with-card/);
+});
+
+test("v7.68.3 anchors the battlefield across local re-renders",()=>{
+  const renderGame=app.slice(app.indexOf("function renderGame"),app.indexOf("function render()"));
+  assert.match(renderGame,/previousBattlefieldTop/);
+  assert.match(renderGame,/nextBattlefieldTop/);
+  assert.match(renderGame,/window\.scrollBy\(0, delta\)/);
+  assert.match(app,/focus\(\{ preventScroll:true \}\)/);
+});
+
+test("v7.68.3 widens 4K, stacks mobile lobby content and closes German lobby gaps",()=>{
+  assert.match(css,/@media \(min-width:2200px\)/);
+  assert.match(css,/width:min\(2360px,calc\(100% - 96px\)\)/);
+  assert.match(css,/@media \(max-width:620px\)[\s\S]*font-size:clamp\(21px,6\.8vw,28px\)/);
+  assert.match(css,/\.starter-guide-grid \{ display:grid; grid-template-columns:repeat\(2,minmax\(0,1fr\)\); overflow:visible/);
+  assert.match(css,/@media \(max-width:460px\)[\s\S]*\.starter-guide-grid \{ grid-template-columns:1fr; \}/);
+  assert.match(app,/lobbyCopy\('Pick a department\. Start a match\.','Abteilung wählen\. Match starten\.'\)/);
+  assert.match(app,/lobbyCopy\('PRIVATE ROOMS','PRIVATE RÄUME'\)/);
+  assert.match(app,/lobbyCopy\('MATCH HISTORY & SUPPORT','MATCHVERLAUF & HILFE'\)/);
+  assert.match(app,/lobbyModeName\(mode\)/);
+  assert.match(app,/lobbyCopy\('CREDITS','BÜRO-CREDITS'\)/);
+});
+
+console.log(`${passed}/16 v7.68 tests passed.`);
