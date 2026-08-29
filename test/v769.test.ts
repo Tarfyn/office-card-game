@@ -22,10 +22,10 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.3");
-  assert.match(server,/version: "7\.69\.3"/);
-  assert.match(server,/Office Card Game v7\.69\.3 server/);
-  assert.match(html,/v7\.69\.3 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.4");
+  assert.match(server,/version: "7\.69\.4"/);
+  assert.match(server,/Office Card Game v7\.69\.4 server/);
+  assert.match(html,/v7\.69\.4 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.3 — Executive Desk Lobby \+ Rematch Gate/);
 });
 
@@ -272,20 +272,65 @@ test("v7.69.3 expires pending rematches and allows the requester to cancel",()=>
   assert.match(app,/Rematch request expired/);
 });
 
-test("v7.69.3 rebuilds the lobby as one Executive Desk hierarchy without duplicate Deckbuilder",()=>{
+test("v7.69.4 rebuilds the lobby as one material Executive Desk hierarchy without duplicate actions",()=>{
   const lobby=sliceBetween(app,"function renderLobby()","function renderWaiting()");
+  assert.match(lobby,/material-executive-lobby/);
   assert.match(lobby,/executive-desk-surface/);
+  assert.match(lobby,/desk-nav-rail/);
+  assert.match(lobby,/data-lobby-deck-showcase-host="CURRENT"/);
   assert.match(lobby,/desk-meeting-agenda/);
   assert.match(lobby,/desk-bureaucracy/);
   assert.match(lobby,/desk-private-room/);
+  assert.match(lobby,/desk-tools-tray/);
   assert.equal((lobby.match(/id="openCollection"/g)??[]).length,1);
   assert.equal((lobby.match(/id="quickMatchBtn"/g)??[]).length,1);
+  assert.equal((lobby.match(/renderLobbyPlaytestDrawer\(\)/g)??[]).length,1);
   assert.match(lobby,/data-starter-deck/);
-  assert.doesNotMatch(lobby,/>Social</);
-  assert.match(css,/body\.lobby-mode[\s\S]*?repeating-linear-gradient/);
-  assert.match(css,/\.desk-collection-drawer/);
-  assert.match(css,/\.desk-starter-tray \.starter-guide-grid/);
+  assert.doesNotMatch(lobby,/>Social<|>Shop<|>Practice<|Daily Challenge/);
+});
+
+test("v7.69.4 uses supplied material assets for one desk and one central green play surface",()=>{
+  const materialPaths=[
+    "public/ui/materials/wood-dark-walnut/basecolor.webp",
+    "public/ui/materials/deskmat-green/basecolor.webp",
+    "public/ui/materials/folder-manila/basecolor.webp",
+    "public/ui/materials/paper-offwhite/basecolor.webp",
+    "public/ui/materials/leather-dark-brown/basecolor.webp",
+    "public/ui/materials/metal-brass-brushed/basecolor.webp",
+    "public/ui/materials/plastic-dark-matte/basecolor.webp",
+    "public/ui/materials/metal-black-coated/basecolor.webp"
+  ];
+  for(const asset of materialPaths) assert.ok(readFileSync(fileURLToPath(new URL(`../../${asset}`,import.meta.url))).length>0,`missing ${asset}`);
+  assert.match(css,/--desk-wood-texture:url\('\/ui\/materials\/wood-dark-walnut\/basecolor\.webp'\)/);
+  assert.match(css,/--desk-mat-texture:url\('\/ui\/materials\/deskmat-green\/basecolor\.webp'\)/);
+  assert.match(css,/--desk-leather-texture:url\('\/ui\/materials\/leather-dark-brown\/basecolor\.webp'\)/);
+  assert.match(css,/--desk-brass-texture:url\('\/ui\/materials\/metal-brass-brushed\/basecolor\.webp'\)/);
+  const center=sliceBetween(css,".executive-desk-center {",".executive-desk-right");
+  assert.match(center,/var\(--desk-mat-texture\)/);
+  assert.doesNotMatch(center,/desk-mat-texture[\s\S]*desk-mat-texture/);
+});
+
+test("v7.69.4 stages three real selected-deck cards and updates them with deck choice",()=>{
+  const helpers=sliceBetween(app,"function lobbyDeckSummary","function catalogArt");
+  assert.match(helpers,/function lobbyDeckPreviewCards/);
+  assert.match(helpers,/cardDef\(entry\.definitionId\)/);
+  assert.match(helpers,/\['EMPLOYEE','ACTION','SYSTEM','INCIDENT'\]/);
+  assert.match(helpers,/function renderLobbyDeckShowcase/);
+  assert.match(helpers,/renderCatalogCardFace\(entry\.def/);
+  assert.match(helpers,/desk-card-fan-item fan-\$\{index\+1\}/);
+  assert.match(helpers,/querySelectorAll\('\[data-lobby-deck-showcase-host\]'\)/);
+  assert.match(helpers,/classList\.toggle\('selected', selected\)/);
+  assert.match(css,/\.desk-card-fan-item\.fan-1/);
+  assert.match(css,/\.desk-card-fan-item\.fan-2/);
+  assert.match(css,/\.desk-card-fan-item\.fan-3/);
+});
+
+test("v7.69.4 scales useful lobby surfaces on 4K and keeps all real controls on mobile",()=>{
+  assert.match(css,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?\.executive-desk-surface \{ width:min\(2200px,100%\)/);
+  assert.match(css,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?\.desk-card-fan-item \{ width:250px; \}/);
   assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.executive-desk-surface \{ display:flex; flex-direction:column/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.desk-card-fan-item \{ width:104px/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*?\.desk-tools-tray \{ display:flex; flex-direction:column/);
 });
 
 console.log(`\n${passed}/${passed} v7.69 tests passed.`);

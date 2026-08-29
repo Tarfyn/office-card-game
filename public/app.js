@@ -3348,8 +3348,67 @@ function lobbyDeckSummary(value = state.preferredDeckValue) {
     formatErrors,
     ownedReady:owned.ready,
     missingCopies:owned.missingCopies,
-    topTags:stats.topTags.slice(0,3).map(([tag]) => tag)
+    topTags:stats.topTags.slice(0,3).map(([tag]) => tag),
+    entries:deck.cards,
+    stats
   };
+}
+
+function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
+  const deck = lobbyDeckSummary(value);
+  if (!deck) return [];
+  const candidates = deck.entries.map((entry) => ({
+    def:cardDef(entry.definitionId),
+    copies:Number(entry.copies || 0)
+  })).filter((entry) => entry.def && entry.copies > 0);
+  const department = deck.department;
+  candidates.sort((a,b) => {
+    const art = Number(Boolean(b.def.artId)) - Number(Boolean(a.def.artId));
+    if (art) return art;
+    const dept = Number(b.def.department === department) - Number(a.def.department === department);
+    if (dept) return dept;
+    if (b.copies !== a.copies) return b.copies - a.copies;
+    const cost = definitionCost(b.def) - definitionCost(a.def);
+    return cost || a.def.name.localeCompare(b.def.name);
+  });
+  const chosen = [];
+  for (const type of ['EMPLOYEE','ACTION','SYSTEM','INCIDENT']) {
+    const next = candidates.find((entry) => entry.def.cardType === type && !chosen.some((item) => item.def.id === entry.def.id));
+    if (next) chosen.push(next);
+    if (chosen.length === 3) break;
+  }
+  for (const entry of candidates) {
+    if (chosen.length === 3) break;
+    if (!chosen.some((item) => item.def.id === entry.def.id)) chosen.push(entry);
+  }
+  return chosen.slice(0,3);
+}
+
+function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
+  const deck = lobbyDeckSummary(value);
+  if (!deck) return `<section class="desk-deck-showcase empty"><div class="desk-deck-sheet"><span>${lobbyCopy('CURRENT DECK','AKTUELLES DECK')}</span><strong>${lobbyCopy('No deck selected','Kein Deck ausgewählt')}</strong></div></section>`;
+  const preview = lobbyDeckPreviewCards(deck.value);
+  const size = Number(state.format?.deckSize ?? 40);
+  const counts = deck.stats.typeCounts;
+  const typeLine = [
+    `${counts.EMPLOYEE ?? 0} ${lobbyCopy('Employee','Employee')}`,
+    `${counts.ACTION ?? 0} ${lobbyCopy('Action','Action')}`,
+    `${counts.INCIDENT ?? 0} ${lobbyCopy('Incident','Incident')}`,
+    `${counts.SYSTEM ?? 0} ${lobbyCopy('System','System')}`
+  ].join(' · ');
+  const ownedLabel = deck.ownedReady ? lobbyCopy('COLLECTION READY','SAMMLUNG BEREIT') : lobbyCopy(`${deck.missingCopies} copies missing`,`${deck.missingCopies} Kopien fehlen`);
+  return `<section class="desk-deck-showcase ${esc(departmentThemeClass(deck.department))}" aria-label="${esc(lobbyCopy('Selected match deck','Ausgewähltes Match-Deck'))}">
+    <div class="desk-deck-sheet">
+      <div class="desk-deck-sheet-head"><div><span>${lobbyCopy('CURRENT DECK','AKTUELLES DECK')}</span><strong>${esc(deck.name)}</strong></div><b>${esc(departmentCode(deck.department))}</b></div>
+      <p>${esc(deck.identity.loop)}</p>
+      <div class="desk-deck-tags">${deck.topTags.length ? deck.topTags.map((tag)=>`<span>#${esc(tag)}</span>`).join('') : `<span>${esc(deck.identity.label)}</span>`}</div>
+      <div class="desk-deck-facts"><span><b>${esc(deck.total)}/${esc(size)}</b>${deck.formatReady ? lobbyCopy(' Format ready',' Format bereit') : lobbyCopy(' Draft',' Entwurf')}</span><span><b>${esc(deck.stats.averageCost.toFixed(1))}</b>${lobbyCopy(' avg. cost',' Ø Kosten')}</span><span class="${deck.ownedReady?'ready':'warn'}">${esc(ownedLabel)}</span></div>
+      <small>${esc(typeLine)}</small>
+    </div>
+    <div class="desk-card-fan" aria-label="${esc(lobbyCopy('Representative cards from selected deck','Beispielkarten aus dem ausgewählten Deck'))}">
+      ${preview.length ? preview.map((entry,index)=>`<div class="desk-card-fan-item fan-${index+1}" title="${esc(entry.def.name)} · ${esc(entry.copies)}×">${renderCatalogCardFace(entry.def,{ compact:false })}<i>${esc(entry.copies)}×</i></div>`).join('') : `<div class="desk-card-fan-empty">${lobbyCopy('Add cards to preview this deck.','Füge Karten hinzu, um dieses Deck anzuzeigen.')}</div>`}
+    </div>
+  </section>`;
 }
 
 function renderLobbyDeckPrep(value, context = 'QUICK') {
@@ -3379,6 +3438,12 @@ function syncLobbyDeckChoice(value) {
     const host = document.querySelector(`[data-lobby-deck-prep-host="${context}"]`);
     if (host) host.innerHTML = renderLobbyDeckPrep(resolved, context);
   }
+  document.querySelectorAll('[data-lobby-deck-showcase-host]').forEach((host) => { host.innerHTML = renderLobbyDeckShowcase(resolved); });
+  document.querySelectorAll('[data-starter-deck]').forEach((button) => {
+    const selected = button.dataset.starterDeck === resolved;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
   const summary = lobbyDeckSummary(resolved);
   const legal = Boolean(summary?.formatReady);
   const quick = document.querySelector('#quickMatchBtn');
@@ -4637,7 +4702,7 @@ function renderStarterDeckGuide() {
 }
 
 function renderExecutiveAlphaMemo() {
-  const version = state.serverInfo?.version ?? '7.69.3';
+  const version = state.serverInfo?.version ?? '7.69.4';
   return `<section class="desk-alpha-memo"><span>${lobbyCopy('ALPHA UPDATE','ALPHA-UPDATE')}</span><strong>v${esc(version)}</strong><p>${lobbyCopy('Executive Desk lobby, safer rematches and the board-first match interface are active on this server.','Executive-Desk-Lobby, sichere Rematches und das Board-First-Matchinterface sind auf diesem Server aktiv.')}</p><small>${lobbyCopy('Alpha systems and balance remain provisional.','Alpha-Systeme und Balance bleiben vorläufig.')}</small></section>`;
 }
 
@@ -5199,21 +5264,26 @@ function renderLobby() {
   const modes = state.matchSettings?.modes ?? [{id:'FRIENDLY',name:'Friendly',description:'Manual friendly room.'}];
   const selectedMode = matchModeConfig(state.lobbyMatchMode) ?? modes[0];
   const queueWaiting = state.matchmakingTicket?.status === 'WAITING';
-  app.innerHTML = `<section class="executive-lobby">
+  app.innerHTML = `<section class="executive-lobby material-executive-lobby">
     ${renderRecentSessionCard()}
     <div class="executive-desk-surface">
-      <aside class="executive-desk-left" aria-label="Collection and utilities">
-        <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION &','SAMMLUNG &')}</span><strong>${lobbyCopy('DECKBUILDER','DECKBUILDER')}</strong><i aria-hidden="true"></i><small>${lobbyCopy('Cards, decks and crafting','Karten, Decks und Crafting')}</small></button>
-        <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
-        ${opsModeAvailable()?'<button id="openOps" class="desk-file-button" type="button"><span>ALPHA OPS</span><strong>Server tools</strong></button>':''}
-        ${renderLobbyConnectionStatus()}
+      <aside class="executive-desk-left" aria-label="${esc(lobbyCopy('Lobby navigation and utilities','Lobby-Navigation und Werkzeuge'))}">
+        <div class="desk-nav-rail">
+          <div class="desk-nav-heading"><span>${lobbyCopy('OFFICE TERMINAL','OFFICE-TERMINAL')}</span><strong>${lobbyCopy('Main Lobby','Hauptlobby')}</strong></div>
+          <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Quick Match','Quick Match')}</strong><small>${lobbyCopy('Selected deck is staged on the desk.','Das gewählte Deck liegt auf dem Schreibtisch bereit.')}</small></div>
+          <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
+          <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
+          ${opsModeAvailable()?'<button id="openOps" class="desk-file-button" type="button"><span>ALPHA OPS</span><strong>Server tools</strong></button>':''}
+          ${renderLobbyConnectionStatus()}
+        </div>
       </aside>
 
       <main class="executive-desk-center">
+        <div data-lobby-deck-showcase-host="CURRENT">${renderLobbyDeckShowcase(preferredDeck)}</div>
         <section class="quick-match-box desk-meeting-agenda">
           <div class="desk-agenda-sheet">
-            <div class="desk-agenda-heading"><div><span>${lobbyCopy('MEETING AGENDA','MEETING-AGENDA')}</span><strong>${queueWaiting ? lobbyCopy('Searching for an opponent','Gegner wird gesucht') : lobbyCopy('Quick Match','Quick Match')}</strong></div><b>${queueWaiting ? lobbyCopy('PENDING','LÄUFT') : lobbyCopy('URGENT','DRINGEND')}</b></div>
-            <p>${lobbyCopy('Choose the deck you actually want to play, then enter the server queue. Friendly is unrated; Ranked Alpha uses preseason MMR.','Wähle das Deck, das du tatsächlich spielen möchtest, und starte dann die Serversuche. Freundschaft ist ungewertet; Ranked Alpha nutzt Vorsaison-MMR.')}</p>
+            <div class="desk-agenda-heading"><div><span>${lobbyCopy('MATCH QUEUE','MATCH-SUCHE')}</span><strong>${queueWaiting ? lobbyCopy('Searching for an opponent','Gegner wird gesucht') : lobbyCopy('Quick Match','Quick Match')}</strong></div><b>${queueWaiting ? lobbyCopy('PENDING','LÄUFT') : lobbyCopy('READY','BEREIT')}</b></div>
+            <p>${lobbyCopy('Choose the deck and mode, then enter the server queue. Friendly is unrated; Ranked Alpha uses preseason MMR.','Wähle Deck und Modus und starte anschließend die Serversuche. Freundschaft ist ungewertet; Ranked Alpha nutzt Vorsaison-MMR.')}</p>
             <div class="quick-match-controls desk-quick-controls">
               <label class="quick-match-field quick-match-deck">${lobbyCopy('Deck','Deck')}<select id="quickDeck" ${queueWaiting?'disabled':''}>${options}</select></label>
               <label class="quick-match-field quick-match-mode">${lobbyCopy('Mode','Modus')}<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
@@ -5227,40 +5297,43 @@ function renderLobby() {
       </main>
 
       <aside class="executive-desk-right" aria-label="Profile and Ranked Alpha">
-        <section class="desk-bureaucracy"><div class="desk-clipboard-clip" aria-hidden="true"></div><div class="desk-bureaucracy-title"><span>${lobbyCopy('BUREAUCRACY','BÜROKRATIE')}</span><strong>${lobbyCopy('Profile & Ranked Alpha','Profil & Ranked Alpha')}</strong></div>${renderProfileStrip()}${renderRankedStanding()}</section>
+        <section class="desk-bureaucracy"><div class="desk-clipboard-clip" aria-hidden="true"></div><div class="desk-bureaucracy-title"><span>${lobbyCopy('PLAYER FILE','SPIELERAKTE')}</span><strong>${lobbyCopy('Profile & Ranked Alpha','Profil & Ranked Alpha')}</strong></div>${renderProfileStrip()}${renderRankedStanding()}</section>
         ${renderExecutiveAlphaMemo()}
       </aside>
     </div>
 
-    <section class="executive-desk-tools">
-      <details class="private-room-drawer desk-private-room" ${state.inviteRoomCode ? 'open' : ''}>
-        <summary><div><span>${lobbyCopy('WATER COOLER · PRIVATE ROOMS','WASSERKÜHLER · PRIVATE RÄUME')}</span><strong>${lobbyCopy('Play with a specific person','Mit einer bestimmten Person spielen')}</strong></div><small>${lobbyCopy('Create or join by room code','Per Raumcode erstellen oder beitreten')}</small></summary>
-        <section class="lobby private-room-grid">
-          <div class="box create-room-box">
-            <h2>${lobbyCopy('Create private room','Privaten Raum erstellen')}</h2>
-            <p class="muted">${lobbyCopy('Choose your deck and match rules, then send the six-character code to Player 2.','Wähle Deck und Matchregeln und sende anschließend den sechsstelligen Code an Spieler 2.')}</p>
-            <label class="field">${lobbyCopy('Deck','Deck')}<select id="createDeck">${options}</select></label>
-            <div data-lobby-deck-prep-host="CREATE">${renderLobbyDeckPrep(preferredDeck,'CREATE')}</div>
-            <label class="field">${lobbyCopy('Match mode','Matchmodus')}<select id="createMode">${modes.map((mode) => `<option value="${esc(mode.id)}" ${mode.id===state.lobbyMatchMode?'selected':''}>${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
-            <div class="mode-preview" id="modePreview"><strong>${esc(lobbyModeName(selectedMode))}</strong><span>${esc(lobbyModeDescription(selectedMode))}</span><small>${state.lobbyMatchMode==='RANKED' ? lobbyCopy('Private room · unrated. Ranked timer profile is reserved but still disabled.','Privater Raum · ungewertet. Das Ranked-Timerprofil ist reserviert, bleibt aber deaktiviert.') : lobbyCopy('No timer by default.','Standardmäßig kein Timer.')}</small></div>
-            <button class="primary" id="createRoomBtn">${lobbyCopy('Create room','Raum erstellen')}</button>
-          </div>
-          <div class="box">
-            <h2>${lobbyCopy('Join private room','Privatem Raum beitreten')}</h2>
-            ${state.inviteRoomCode ? `<div class="invite-arrival"><span>${lobbyCopy('INVITE LINK','EINLADUNGSLINK')}</span><strong>${lobbyCopy(`Room ${state.inviteRoomCode} ready to join`,`Raum ${state.inviteRoomCode} ist bereit`)}</strong><small>${lobbyCopy('Choose your deck, then join normally. The invite contains no seat token.','Wähle dein Deck und tritt normal bei. Die Einladung enthält keinen Sitzplatz-Token.')}</small></div>` : ''}
-            <label class="field">${lobbyCopy('Room code','Raumcode')}<input id="joinCode" maxlength="6" placeholder="ABC123" autocomplete="off" value="${esc(state.inviteRoomCode ?? '')}" /></label>
-            <label class="field">${lobbyCopy('Deck','Deck')}<select id="joinDeck">${options}</select></label>
-            <div data-lobby-deck-prep-host="JOIN">${renderLobbyDeckPrep(preferredDeck,'JOIN')}</div>
-            <div class="mode-preview compact"><strong>${lobbyCopy('Room rules come from the host','Raumregeln kommen vom Host')}</strong><span>${lobbyCopy('Friendly / Ranked rules and future timer settings are server-owned. Private rooms never change Ranked MMR.','Freundschafts-/Ranked-Regeln und künftige Timer-Einstellungen liegen beim Server. Private Räume verändern niemals das Ranked-MMR.')}</span></div>
-            <button class="primary" id="joinRoomBtn">${lobbyCopy('Join room','Raum beitreten')}</button>
-            ${state.lastError ? `<div class="error">${esc(state.lastError)}</div>` : ''}
-          </div>
-        </section>
-      </details>
-      ${renderAlphaSessionStrip()}
-      ${renderRulesPrimer()}
+    <section class="executive-desk-tools" aria-label="${esc(lobbyCopy('Lobby utilities','Lobby-Werkzeuge'))}">
+      <div class="desk-tools-hardware" aria-hidden="true"><i></i><span></span><i></i></div>
+      <div class="desk-tools-tray">
+        <details class="private-room-drawer desk-private-room" ${state.inviteRoomCode ? 'open' : ''}>
+          <summary><div><span>${lobbyCopy('PRIVATE ROOMS','PRIVATE RÄUME')}</span><strong>${lobbyCopy('Play with a specific person','Mit einer bestimmten Person spielen')}</strong></div><small>${lobbyCopy('Create or join by room code','Per Raumcode erstellen oder beitreten')}</small></summary>
+          <section class="lobby private-room-grid">
+            <div class="box create-room-box">
+              <h2>${lobbyCopy('Create private room','Privaten Raum erstellen')}</h2>
+              <p class="muted">${lobbyCopy('Choose your deck and match rules, then send the six-character code to Player 2.','Wähle Deck und Matchregeln und sende anschließend den sechsstelligen Code an Spieler 2.')}</p>
+              <label class="field">${lobbyCopy('Deck','Deck')}<select id="createDeck">${options}</select></label>
+              <div data-lobby-deck-prep-host="CREATE">${renderLobbyDeckPrep(preferredDeck,'CREATE')}</div>
+              <label class="field">${lobbyCopy('Match mode','Matchmodus')}<select id="createMode">${modes.map((mode) => `<option value="${esc(mode.id)}" ${mode.id===state.lobbyMatchMode?'selected':''}>${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
+              <div class="mode-preview" id="modePreview"><strong>${esc(lobbyModeName(selectedMode))}</strong><span>${esc(lobbyModeDescription(selectedMode))}</span><small>${state.lobbyMatchMode==='RANKED' ? lobbyCopy('Private room · unrated. Ranked timer profile is reserved but still disabled.','Privater Raum · ungewertet. Das Ranked-Timerprofil ist reserviert, bleibt aber deaktiviert.') : lobbyCopy('No timer by default.','Standardmäßig kein Timer.')}</small></div>
+              <button class="primary" id="createRoomBtn">${lobbyCopy('Create room','Raum erstellen')}</button>
+            </div>
+            <div class="box">
+              <h2>${lobbyCopy('Join private room','Privatem Raum beitreten')}</h2>
+              ${state.inviteRoomCode ? `<div class="invite-arrival"><span>${lobbyCopy('INVITE LINK','EINLADUNGSLINK')}</span><strong>${lobbyCopy(`Room ${state.inviteRoomCode} ready to join`,`Raum ${state.inviteRoomCode} ist bereit`)}</strong><small>${lobbyCopy('Choose your deck, then join normally. The invite contains no seat token.','Wähle dein Deck und tritt normal bei. Die Einladung enthält keinen Sitzplatz-Token.')}</small></div>` : ''}
+              <label class="field">${lobbyCopy('Room code','Raumcode')}<input id="joinCode" maxlength="6" placeholder="ABC123" autocomplete="off" value="${esc(state.inviteRoomCode ?? '')}" /></label>
+              <label class="field">${lobbyCopy('Deck','Deck')}<select id="joinDeck">${options}</select></label>
+              <div data-lobby-deck-prep-host="JOIN">${renderLobbyDeckPrep(preferredDeck,'JOIN')}</div>
+              <div class="mode-preview compact"><strong>${lobbyCopy('Room rules come from the host','Raumregeln kommen vom Host')}</strong><span>${lobbyCopy('Friendly / Ranked rules and future timer settings are server-owned. Private rooms never change Ranked MMR.','Freundschafts-/Ranked-Regeln und künftige Timer-Einstellungen liegen beim Server. Private Räume verändern niemals das Ranked-MMR.')}</span></div>
+              <button class="primary" id="joinRoomBtn">${lobbyCopy('Join room','Raum beitreten')}</button>
+              ${state.lastError ? `<div class="error">${esc(state.lastError)}</div>` : ''}
+            </div>
+          </section>
+        </details>
+        ${renderAlphaSessionStrip()}
+        ${renderRulesPrimer()}
+        ${renderLobbyPlaytestDrawer()}
+      </div>
     </section>
-    ${renderLobbyPlaytestDrawer()}
   </section>${renderAlphaOnboarding()}`;
   app.insertAdjacentHTML('beforeend', renderReplayModal());
   bindReplayControls();
