@@ -132,6 +132,9 @@ const state = {
   visualCue: null,
   visualCueBatch: [],
   visualCueTimer: null,
+  attackPresentation: null,
+  attackPresentationQueue: [],
+  attackPresentationTimer: null,
   resolutionTrace: null,
   resolutionTraceTimer: null,
   flowCue: null,
@@ -1137,10 +1140,13 @@ function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
     state.intentBusy = false;
   }
   if (clearCues) {
-    for (const timer of [state.visualCueTimer,state.resolutionTraceTimer,state.flowCueTimer,state.zoneCueTimer]) if (timer) clearTimeout(timer);
+    for (const timer of [state.visualCueTimer,state.attackPresentationTimer,state.resolutionTraceTimer,state.flowCueTimer,state.zoneCueTimer]) if (timer) clearTimeout(timer);
     state.visualCueTimer = null;
     state.visualCue = null;
     state.visualCueBatch = [];
+    state.attackPresentationTimer = null;
+    state.attackPresentation = null;
+    state.attackPresentationQueue = [];
     state.resolutionTraceTimer = null;
     state.resolutionTrace = null;
     state.flowCueTimer = null;
@@ -1761,7 +1767,50 @@ function promotionMaterialCandidateIds() {
 }
 
 function visualCueEvents() {
-  return Array.isArray(state.visualCueBatch) && state.visualCueBatch.length ? state.visualCueBatch : (state.visualCue ? [state.visualCue] : []);
+  const cues = Array.isArray(state.visualCueBatch) && state.visualCueBatch.length ? [...state.visualCueBatch] : (state.visualCue ? [state.visualCue] : []);
+  const attackEvent = state.attackPresentation?.event;
+  if (attackEvent && !cues.some((cue) => cue.seq === attackEvent.seq)) cues.push(attackEvent);
+  return cues;
+}
+
+const ATTACK_PRESENTATION_MS = 1500;
+function attackPresentationFromEvent(event) {
+  if (!event || event.type !== 'ATTACK_DECLARED') return null;
+  const viewerId = state.view?.match?.viewerId;
+  return {
+    event,
+    opponent:Boolean(viewerId && event.playerId && event.playerId !== viewerId),
+    attacker:cardLabel(event.cardInstanceId) || 'Employee',
+    target:event.data?.targetId == null ? 'Company Reputation' : (cardLabel(event.data.targetId) || 'Employee')
+  };
+}
+
+function armAttackPresentationTimer() {
+  if (state.attackPresentationTimer || !state.attackPresentation) return;
+  state.attackPresentationTimer = setTimeout(() => {
+    state.attackPresentationTimer = null;
+    state.attackPresentation = state.attackPresentationQueue.shift() ?? null;
+    if (state.attackPresentation) armAttackPresentationTimer();
+    render();
+  }, ATTACK_PRESENTATION_MS);
+}
+
+function enqueueAttackPresentations(events = []) {
+  for (const event of events) {
+    const presentation = attackPresentationFromEvent(event);
+    if (!presentation) continue;
+    const alreadyCurrent = state.attackPresentation?.event?.seq === event.seq;
+    const alreadyQueued = state.attackPresentationQueue.some((item) => item.event?.seq === event.seq);
+    if (!alreadyCurrent && !alreadyQueued) state.attackPresentationQueue.push(presentation);
+  }
+  if (!state.attackPresentation) state.attackPresentation = state.attackPresentationQueue.shift() ?? null;
+  armAttackPresentationTimer();
+}
+
+function renderAttackPresentation() {
+  const cue = state.attackPresentation;
+  if (!cue) return '';
+  return `<div class="attack-presentation ${cue.opponent ? 'opponent' : 'own'}" role="status" aria-live="polite" aria-atomic="true"><span>${cue.opponent ? 'OPPONENT ATTACK' : 'ATTACK'}</span><strong>${esc(cue.attacker)}</strong><i aria-hidden="true">→</i><b>${esc(cue.target)}</b></div>`;
 }
 
 function chainSourceRefForEvent(event) {
@@ -2821,14 +2870,17 @@ function appendEvents(events = []) {
   const movementSignificant = new Set(['CARD_DRAWN','CARD_MOVED','CARD_ARCHIVED','CARD_REVEALED','DECK_SHUFFLED']);
   const freshCues = [];
   const freshMovement = [];
+  const freshAttacks = [];
   let latestTurnCue = null;
   for (const event of events) {
     if (state.eventLog.some((x) => x.seq === event.seq)) continue;
     state.eventLog.push(event);
     if (significant.has(event.type)) freshCues.push(event);
+    if (event.type === 'ATTACK_DECLARED') freshAttacks.push(event);
     if (movementSignificant.has(event.type)) freshMovement.push(event);
     if (event.type === 'TURN_STARTED') latestTurnCue = event;
   }
+  if (freshAttacks.length) enqueueAttackPresentations(freshAttacks);
   if (latestTurnCue) {
     state.flowCue = latestTurnCue;
     if (state.flowCueTimer) clearTimeout(state.flowCueTimer);
@@ -5809,7 +5861,7 @@ function renderGame() {
         </div></details>
       </div>
     </div>
-  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderCombatMoment()}${renderResolutionMoment()}${renderZoneTransitionCue()}${renderVisualCue()}${renderCardModal()}`;
+  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderCombatMoment()}${renderResolutionMoment()}${renderZoneTransitionCue()}${renderVisualCue()}${renderCardModal()}`;
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   document.querySelector('#resultPlayAnother')?.addEventListener('click', playAnotherMatch);
