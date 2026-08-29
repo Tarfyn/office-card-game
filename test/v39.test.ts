@@ -109,7 +109,7 @@ test("v3.9 browser can park and resume a room token instead of destructive local
   assert.match(app, /RESUMABLE SESSION/);
   assert.match(app, /renderPresencePill/);
   assert.match(app, /Abandon room/);
-  assert.doesNotMatch(app, /saveSession\([^\n]+\);\n\s*saveSession\(/);
+  assert.doesNotMatch(app, /saveSession\([^\r\n]+\);\r?\n\s*saveSession\(/);
   assert.match(html, /(?:v3\.9|v4\.0) alpha playtest/);
   assert.match(html, /Back to lobby/);
 });

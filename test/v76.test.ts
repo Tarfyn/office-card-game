@@ -28,7 +28,7 @@ test("v7.6 performs the replacement as one saved deck mutation", () => {
   assert.match(app,/function writeDeckCopies\(deck, definitionId, copies\)/);
   assert.match(app,/writeDeckCopies\(deck, sourceId, deckCopies\(deck, sourceId\) - 1\)/);
   assert.match(app,/writeDeckCopies\(deck, targetId, deckCopies\(deck, targetId\) \+ 1\)/);
-  assert.match(app,/sortDeckEntries\(deck\);\n  saveCustomDecks\(\);\n  state\.deckSwapSourceId = null/);
+  assert.match(app,/sortDeckEntries\(deck\);\r?\n  saveCustomDecks\(\);\r?\n  state\.deckSwapSourceId = null/);
   assert.match(app,/Swapped 1×/);
 });
 
@@ -41,7 +41,7 @@ test("v7.6 swap targets reuse format and owned-copy ceilings", () => {
 });
 
 test("v7.6 keeps replacement choice manual and uses the existing Collection", () => {
-  assert.match(app,/resetCollectionFilters\(\);\n  state\.collectionDeckFilter = 'BELOW_LIMIT'/);
+  assert.match(app,/resetCollectionFilters\(\);\r?\n  state\.collectionDeckFilter = 'BELOW_LIMIT'/);
   assert.match(app,/collection-swap-control/);
   assert.match(app,/SWAP IN/);
   assert.match(app,/cancelDeckSwap/);
