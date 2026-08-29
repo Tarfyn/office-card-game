@@ -66,36 +66,27 @@ test("v4.8 content pass leaves representative gameplay definitions unchanged", (
   assert.equal(cards.find((card)=>card.id === "PRD-013")?.cardType,"SYSTEM");
 });
 
-test("v4.8 lobby prioritizes play and keeps secondary tools out of the main flow", () => {
-  // Current lobby shell
-  assert.match(app,/class="executive-lobby"/);
-  assert.match(app,/class="executive-desk-surface"/);
+test("v4.8 lobby keeps primary play and secondary utilities available", () => {
+  // Primary play path
+  assert.match(app,/id="quickMatchBtn"/);
+  assert.match(app,/id="quickDeck"/);
+  assert.match(app,/id="quickMode"/);
 
-  // Primary play surface
-  assert.match(app,/desk-meeting-agenda/);
-  assert.match(app,/desk-quick-controls/);
-  assert.match(app,/desk-quick-match-button/);
-
-  // Starter decks remain directly available
-  assert.match(app,/renderStarterDeckGuide/);
-  assert.match(app,/desk-starter-tray/);
-  assert.match(app,/data-starter-deck/);
-
-  // Collection / deckbuilder remains a primary destination
-  assert.match(app,/desk-collection-drawer/);
+  // Collection / deckbuilder remains directly reachable
   assert.match(app,/id="openCollection"/);
 
-  // Profile / Ranked Alpha stay available as secondary information
-  assert.match(app,/desk-bureaucracy/);
+  // Starter decks remain selectable as real lobby deck choices
+  assert.match(app,/data-starter-deck/);
+
+  // Profile / Ranked information remains part of the lobby
+  assert.match(app,/renderProfileStrip/);
   assert.match(app,/renderRankedStanding/);
 
-  // Alpha status remains visible without becoming the primary CTA
-  assert.match(app,/renderExecutiveAlphaMemo/);
-  assert.match(app,/ALPHA UPDATE/);
+  // Rules / Alpha guidance remains reachable
+  assert.match(app,/id="openAlphaGuide"/);
 
-  // Private-room and playtest/debug tools remain secondary surfaces
-  assert.match(app,/desk-private-room/);
-  assert.match(app,/executive-desk-tools/);
+  // Private-room and playtest functionality remains available
+  assert.match(app,/private-room/);
   assert.match(app,/lobby-playtest-drawer/);
 });
 
