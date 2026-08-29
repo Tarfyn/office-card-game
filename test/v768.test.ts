@@ -26,7 +26,7 @@ test("v7.68 keeps authoritative HTTP safety sync armed while SSE is LIVE",()=>{
   assert.match(app,/if \(state\.connectionStatus === 'LIVE'\) return matchActive \? HOSTED_SYNC_LIVE_POLL_MS : 3000/);
   assert.match(app,/function scheduleSyncPoll\(delay=hostedSyncPollDelay\(\)\)/);
   assert.doesNotMatch(app,/function scheduleSyncPoll[\s\S]{0,500}connectionStatus==='LIVE'\) return/);
-  assert.match(app,/scheduleSyncPoll\(\);\n  const isCurrent=/);
+  assert.match(app,/scheduleSyncPoll\(\);\r?\n  const isCurrent=/);
 });
 
 test("v7.68 does not clear an in-progress local interaction when an unchanged safety read returns",()=>{
@@ -40,7 +40,7 @@ test("v7.68 rebuilds stale SSE while HTTP state reads keep running",()=>{
   assert.match(app,/function hostedLiveStaleThreshold\(\)/);
   assert.match(app,/heartbeat \* 2\.5/);
   assert.match(app,/const liveWasStale = state\.connectionStatus === 'LIVE' && liveConnectionLooksStale\(hostedLiveStaleThreshold\(\)\)/);
-  assert.match(app,/state\.connectionStatus='RECONNECTING';\n      startStream\(\)/);
+  assert.match(app,/state\.connectionStatus='RECONNECTING';\r?\n      startStream\(\)/);
 });
 
 test("v7.68 preflights and post-refreshes every submitted intent without auto-replaying ordinary moves",()=>{
