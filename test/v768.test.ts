@@ -13,10 +13,10 @@ const app=root("public/app.js");
 const readme=root("README.md");
 
 test("v7.68 version markers are current",()=>{
-  assert.equal(pkg.version,"7.68.0");
-  assert.match(server,/version: "7\.68\.0"/);
-  assert.match(server,/Office Card Game v7\.68 server/);
-  assert.match(html,/v7\.68 Alpha Playtest/);
+  assert.equal(pkg.version,"7.68.1");
+  assert.match(server,/version: "7\.68\.1"/);
+  assert.match(server,/Office Card Game v7\.68\.1 server/);
+  assert.match(html,/v7\.68\.1 Alpha Playtest/);
   assert.match(readme,/## v7\.68 — Hosted Live-Sync Safety Hotfix/);
 });
 
@@ -32,7 +32,7 @@ test("v7.68 keeps authoritative HTTP safety sync armed while SSE is LIVE",()=>{
 test("v7.68 does not clear an in-progress local interaction when an unchanged safety read returns",()=>{
   const refresh = app.slice(app.indexOf("async function refreshState"), app.indexOf("function streamReconnectDelay"));
   assert.doesNotMatch(refresh,/state\.interaction = null/);
-  assert.match(refresh,/acceptView\(view\)/);
+  assert.match(refresh,/acceptPassiveSyncedView\(view\)/);
   assert.match(refresh,/preserveLiveOnError/);
 });
 
@@ -83,4 +83,51 @@ test("v7.68 recovers the real P1/P2 mulligan race with one refreshed P2 retry",(
   assert.equal(p2Retry.view.match!.activePlayerId,"P1");
 });
 
-console.log(`${passed}/6 v7.68 tests passed.`);
+test("v7.68 passive sync keeps End anyway confirmation only for the identical authoritative moment",()=>{
+  const helper = app.slice(app.indexOf("function acceptPassiveSyncedView"), app.indexOf("async function refreshState"));
+  assert.match(helper,/pendingActionConfirmation/);
+  assert.match(helper,/before\.stateVersion === after\.stateVersion/);
+  assert.match(helper,/before\.turnNumber === after\.turnNumber/);
+  assert.match(helper,/before\.phase === after\.phase/);
+  assert.match(helper,/before\.activePlayerId === after\.activePlayerId/);
+  assert.match(helper,/before\.viewerId === after\.viewerId/);
+  assert.match(helper,/acceptView\(view\)/);
+
+  const refresh = app.slice(app.indexOf("async function refreshState"), app.indexOf("function streamReconnectDelay"));
+  assert.match(refresh,/acceptPassiveSyncedView\(view\)/);
+  const stream = app.slice(app.indexOf("async function startStream"), app.indexOf("function canRetryStaleMulligan"));
+  assert.match(stream,/acceptPassiveSyncedView\(view\)/);
+  const send = app.slice(app.indexOf("async function sendIntent"), app.indexOf("function bindInteractionHandlers"));
+  assert.match(send,/state\.pendingActionConfirmation = null/);
+});
+
+test("v7.68.1 validates saved rooms with the server before resume",()=>{
+  const helpers = app.slice(app.indexOf("function roomViewIsActiveMatch"), app.indexOf("function clearTransientMatchUi"));
+  assert.match(helpers,/view\?\.status === 'ACTIVE'/);
+  assert.match(helpers,/view\?\.match\?\.status === 'ACTIVE'/);
+  const resume = app.slice(app.indexOf("async function resumeRecentSession"), app.indexOf("async function abandonRecentWaitingRoom"));
+  assert.match(resume,/const serverView = await api/);
+  assert.match(resume,/if \(!roomViewIsResumable\(serverView\)\)/);
+  assert.match(resume,/saveRecentSession\(null\)/);
+});
+
+test("v7.68.1 blocks intents when the authoritative match is no longer active",()=>{
+  const send = app.slice(app.indexOf("async function sendIntent"), app.indexOf("function bindInteractionHandlers"));
+  assert.match(send,/await refreshState\(false, \{ preserveLiveOnError:true \}\)/);
+  assert.match(send,/if \(!roomViewIsActiveMatch\(state\.view\)\)/);
+  assert.match(send,/MATCH_NOT_ACTIVE/);
+  assert.match(send,/No move was sent/);
+});
+
+test("v7.68.1 contains large-desktop, mobile and German lobby follow-ups",()=>{
+  const css=root("public/styles.css");
+  const de=root("public/locales/de.js");
+  assert.match(css,/@media \(min-width:1800px\)/);
+  assert.match(css,/width:min\(1540px,calc\(100% - 48px\)\)/);
+  assert.match(css,/@media \(max-width:620px\)[\s\S]*\.quick-match-controls \{ grid-template-columns:1fr; \}/);
+  assert.match(css,/\.lobby-hero-actions button:not\(\.primary\) \{ color:#24231f; \}/);
+  assert.match(de,/"Five offices\. Five different ways to make the day worse\.":"Fünf Abteilungen/);
+  assert.match(app,/lobbyCopy\('Placement','Platzierung'\)/);
+});
+
+console.log(`${passed}/10 v7.68 tests passed.`);

@@ -21,6 +21,7 @@ function acceptView(view) {
 // Regression compatibility marker for v6.0 compact rarity source: ${raritySignal(def, tier, true)}
 // Regression compatibility marker for v5.4 collection NEW badge: new-card-badge
 // Regression compatibility marker for v3.3 booster owned copy source: OWNED ${esc(ownedCopies(id))}
+// Regression compatibility marker for v3.7 profile storage label: persistent local server profile
 // Regression compatibility marker for v3.3 booster visual source: class="booster-hit-art"
 // v7.0 card-system visual unification
 // v7.1 card discovery + information polish
@@ -1112,6 +1113,14 @@ function loadRecentSession() {
   } catch { localStorage.removeItem(RECENT_SESSION_KEY); }
 }
 
+function roomViewIsActiveMatch(view) {
+  return Boolean(view?.status === 'ACTIVE' && view?.match?.status === 'ACTIVE');
+}
+
+function roomViewIsResumable(view) {
+  return Boolean(view?.status === 'WAITING' || roomViewIsActiveMatch(view));
+}
+
 function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
   state.selectedHand.clear();
   state.interaction = null;
@@ -1176,7 +1185,12 @@ function parkSession() {
 async function refreshRecentSession() {
   if (!state.recentSession || state.session) return;
   try {
-    state.recentSessionView = await api(`/api/rooms/${state.recentSession.roomId}/state?after=0`, { headers:roomAuthHeaders(state.recentSession.token) });
+    const view = await api(`/api/rooms/${state.recentSession.roomId}/state?after=0&${clientQuery()}`, { headers:roomAuthHeaders(state.recentSession.token) });
+    if (!roomViewIsResumable(view)) {
+      saveRecentSession(null);
+      return;
+    }
+    state.recentSessionView = view;
   } catch (error) {
     if (error.code === 'ROOM_NOT_FOUND' || error.code === 'INVALID_TOKEN') saveRecentSession(null);
   }
@@ -1214,16 +1228,25 @@ async function forceConnectionRecovery() {
 async function resumeRecentSession() {
   if (!state.recentSession) return;
   const session = { ...state.recentSession };
-  saveSession(session);
-  acceptView(state.recentSessionView);
   try {
-    await refreshState(false);
+    // Never trust the local resume shortcut by itself. Confirm that the room still exists
+    // and is either waiting for its second seat or owns a genuinely ACTIVE match.
+    const serverView = await api(`/api/rooms/${session.roomId}/state?after=0&${clientQuery()}`, { headers:roomAuthHeaders(session.token) });
+    if (!roomViewIsResumable(serverView)) {
+      saveRecentSession(null);
+      state.matchmakingMessage = lobbyCopy('That saved match is no longer active. The resume shortcut was removed.','Dieses gespeicherte Match ist nicht mehr aktiv. Die Resume-Verknüpfung wurde entfernt.');
+      renderLobby();
+      return;
+    }
+    saveSession(session);
+    acceptView(serverView);
     await claimSessionControl({ restartStream:false, renderAfter:false });
     saveRecentSession(null);
     startStream();
   } catch (error) {
+    if (error.code === 'ROOM_NOT_FOUND' || error.code === 'INVALID_TOKEN') saveRecentSession(null);
     state.lastError = error.message;
-    parkSession();
+    if (state.session) parkSession(); else renderLobby();
   }
 }
 
@@ -1306,15 +1329,27 @@ function departmentCode(department) {
   return ({ CUSTOMER_SERVICE:'CS', IT:'IT', OFFICE:'OFC', MARKETING:'MKT', PRODUCTION:'PRD', NEUTRAL:'NEU' })[department] ?? department;
 }
 
+function lobbyCopy(english, german) {
+  return currentLocale() === 'de' ? german : english;
+}
+
 function departmentIdentity(department) {
-  return ({
+  const identities = currentLocale() === 'de' ? ({
+    CUSTOMER_SERVICE:{ label:'Kundenservice', loop:'Reagieren → Umleiten → Wieder öffnen → Durchhalten', note:'Tickets, Anrufe und Bewertungen verwandeln Druck in eine weitere Chance.' },
+    IT:{ label:'IT', loop:'Aufbauen → Automatisieren → Erzeugen → Ausrollen', note:'Baue Systeme auf, senke Kosten und mache aus Vorbereitung effiziente Züge.' },
+    OFFICE:{ label:'Office', loop:'Koordinieren → Freigeben → Verzögern → Organisieren', note:'Kontrolliere das Tempo mit Meetings, Prozessen und Freigabe-Reibung.' },
+    MARKETING:{ label:'Marketing', loop:'Aufbauen → Aktionen verketten → Druck erhöhen → Konvertieren', note:'Verkette Marketing-Aktionen und verwandle Momentum in Reputationsdruck.' },
+    PRODUCTION:{ label:'Produktion', loop:'Linie besetzen → Output erhöhen → Überrollen → Durchbrechen', note:'Fülle die Fläche, skaliere Power und verwandle ein breites Board in Durchbruch.' },
+    NEUTRAL:{ label:'Neutral', loop:'Unterstützen → Anpassen → Lücken füllen', note:'Büroalltag als Bindeglied für gemischte Pläne und flexible Slots.' }
+  }) : ({
     CUSTOMER_SERVICE:{ label:'Customer Service', loop:'React → Redirect → Reopen → Survive', note:'Tickets, Calls and Reviews turn pressure into another chance.' },
     IT:{ label:'IT', loop:'Setup → Automate → Generate → Deploy', note:'Build Systems, squeeze costs and turn setup into efficient turns.' },
     OFFICE:{ label:'Office', loop:'Coordinate → Approve → Delay → Organize', note:'Control tempo with Meetings, Process cards and approval friction.' },
     MARKETING:{ label:'Marketing', loop:'Setup → Chain Actions → Build Pressure → Convert', note:'Sequence real Marketing Actions and convert momentum into Reputation pressure.' },
     PRODUCTION:{ label:'Production', loop:'Staff line → Increase Output → Overwhelm → Break Through', note:'Fill the floor, scale Power and turn a wide board into Breakthrough.' },
     NEUTRAL:{ label:'Neutral', loop:'Support → Adapt → Fill gaps', note:'Office-culture glue that supports mixed plans and utility slots.' }
-  })[department] ?? { label:String(department ?? 'Unknown'), loop:'Build → Adapt → Win', note:'' };
+  });
+  return identities[department] ?? { label:String(department ?? lobbyCopy('Unknown','Unbekannt')), loop:lobbyCopy('Build → Adapt → Win','Aufbauen → Anpassen → Gewinnen'), note:'' };
 }
 
 function departmentThemeClass(department) {
@@ -4425,7 +4460,7 @@ function alphaTestSessionId() {
   catch { return 'A-LOCAL'; }
 }
 function newAlphaTestSession() { try { sessionStorage.setItem(ALPHA_TEST_SESSION_KEY,makeAlphaSessionId()); } catch {} render(); }
-function renderAlphaSessionStrip() { const id=alphaTestSessionId(); return `<section class="alpha-session-strip"><div><span>TEST SESSION</span><strong>${esc(id)}</strong><small>Rematches, replays and human notes from this browser session can be grouped together.</small></div><button id="newAlphaTestSession">New test session</button></section>`; }
+function renderAlphaSessionStrip() { const id=alphaTestSessionId(); return `<section class="alpha-session-strip"><div><span>${lobbyCopy('TEST SESSION','TESTSESSION')}</span><strong>${esc(id)}</strong><small>${lobbyCopy('Rematches, replays and human notes from this browser session can be grouped together.','Rematches, Replays und menschliche Notizen aus dieser Browser-Sitzung können gemeinsam gruppiert werden.')}</small></div><button id="newAlphaTestSession">${lobbyCopy('New test session','Neue Testsession')}</button></section>`; }
 function bindAlphaSessionControls() { document.querySelector('#newAlphaTestSession')?.addEventListener('click',newAlphaTestSession); }
 function renderProfileStrip() {
   const profile = state.serverProfile;
@@ -4433,9 +4468,8 @@ function renderProfileStrip() {
   if (!profile) return `<section class="profile-strip"><span>PLAYTEST PROFILE</span><strong>Connecting profile…</strong></section>`;
   const stats = profile.stats ?? {};
   const ranked = profile.ranked ?? {};
-  const rankLabel = ranked.status === 'RATED' ? `${ranked.rating ?? 1000} MMR` : `Placement ${ranked.placementsPlayed ?? 0}/${ranked.placementsRequired ?? 5}`;
-  const storage = state.profileStorage === 'FILE_JSON_LOCAL' ? 'persistent local server profile' : 'server playtest profile';
-  return `<section class="profile-strip"><div class="profile-identity"><span>PLAYTEST PROFILE · SERVER</span><strong>${esc(profile.displayName)}</strong><small>Guest profile · progress saved on this server</small></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>RANK <b>${esc(rankLabel)}</b></span><span>CREDITS <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>SCRAPS <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="Profile name"/><button id="saveProfileName">Rename</button></div></section>`;
+  const rankLabel = ranked.status === 'RATED' ? `${ranked.rating ?? 1000} MMR` : `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed ?? 0}/${ranked.placementsRequired ?? 5}`;
+  return `<section class="profile-strip"><div class="profile-identity"><span>${lobbyCopy('PLAYTEST PROFILE · SERVER','PLAYTEST-PROFIL · SERVER')}</span><strong>${esc(profile.displayName)}</strong><small>${lobbyCopy('Guest profile · progress saved on this server','Gastprofil · Fortschritt wird auf diesem Server gespeichert')}</small></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
 }
 
 function renderRankedStanding() {
@@ -4443,14 +4477,18 @@ function renderRankedStanding() {
   if (!ranked) return '';
   const recent = ranked.recentResults?.[0] ?? null;
   const placement = ranked.status !== 'RATED';
-  const standing = placement ? `Placement ${ranked.placementsPlayed}/${ranked.placementsRequired}` : `${ranked.rating} MMR`;
-  const lastMove = recent ? `${recent.ratingDelta >= 0 ? '+' : ''}${recent.ratingDelta} → ${recent.ratingAfter}` : 'No rated result yet';
-  return `<section class="ranked-standing"><div><span>RANKED ALPHA · ${esc(ranked.phase ?? 'PRESEASON')}</span><strong>${esc(standing)}</strong><small>${placement ? `Provisional MMR ${esc(ranked.rating)} · complete placements to lock the visible standing.` : `Peak ${esc(ranked.peakRating)} MMR`} Rated play is Quick Match only; private Ranked-rule rooms are unrated.</small></div><div class="ranked-standing-stats"><span>Record <b>${esc(ranked.wins ?? 0)}–${esc(ranked.losses ?? 0)}–${esc(ranked.draws ?? 0)}</b></span><span>Peak <b>${esc(ranked.peakRating ?? ranked.rating ?? 1000)}</b></span><span>Last <b>${esc(lastMove)}</b></span><span>Season <b>${esc(ranked.seasonId ?? 'ALPHA_PRESEASON')}</b></span></div><small class="ranked-standing-note">Alpha preseason foundation · rating values and search windows are provisional · Ranked timer remains off.</small></section>`;
+  const standing = placement ? `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed}/${ranked.placementsRequired}` : `${ranked.rating} MMR`;
+  const lastMove = recent ? `${recent.ratingDelta >= 0 ? '+' : ''}${recent.ratingDelta} → ${recent.ratingAfter}` : lobbyCopy('No rated result yet','Noch kein gewertetes Ergebnis');
+  const phaseLabel = String(ranked.phase ?? 'PRESEASON') === 'PRESEASON' ? lobbyCopy('PRESEASON','VORSAISON') : String(ranked.phase ?? 'PRESEASON');
+  const standingDetail = placement
+    ? lobbyCopy(`Provisional MMR ${ranked.rating} · complete placements to lock the visible standing.`,`Vorläufiges MMR ${ranked.rating} · schließe die Platzierungsspiele ab, um den sichtbaren Rang festzulegen.`)
+    : lobbyCopy(`Peak ${ranked.peakRating} MMR`,`Bestwert ${ranked.peakRating} MMR`);
+  return `<section class="ranked-standing"><div><span>RANKED ALPHA · ${esc(phaseLabel)}</span><strong>${esc(standing)}</strong><small>${esc(standingDetail)} ${lobbyCopy('Rated play is Quick Match only; private Ranked-rule rooms are unrated.','Gewertete Matches gibt es nur über Quick Match; private Räume mit Ranked-Regeln bleiben ungewertet.')}</small></div><div class="ranked-standing-stats"><span>${lobbyCopy('Record','Bilanz')} <b>${esc(ranked.wins ?? 0)}–${esc(ranked.losses ?? 0)}–${esc(ranked.draws ?? 0)}</b></span><span>${lobbyCopy('Peak','Bestwert')} <b>${esc(ranked.peakRating ?? ranked.rating ?? 1000)}</b></span><span>${lobbyCopy('Last','Zuletzt')} <b>${esc(lastMove)}</b></span><span>${lobbyCopy('Season','Saison')} <b>${esc(ranked.seasonId ?? 'ALPHA_PRESEASON')}</b></span></div><small class="ranked-standing-note">${lobbyCopy('Alpha preseason foundation · rating values and search windows are provisional · Ranked timer remains off.','Alpha-Vorsaison · Ratingwerte und Suchfenster sind vorläufig · der Ranked-Timer bleibt aus.')}</small></section>`;
 }
 
 function renderStarterDeckGuide() {
   if (!state.presets?.length) return '';
-  return `<section class="starter-guide"><div class="starter-guide-head"><div><span>STARTER DEPARTMENTS</span><strong>Five offices. Five different ways to make the day worse.</strong></div><small>Starter decks stay format-legal and are the fastest way into an Alpha match.</small></div><div class="starter-guide-grid">${state.presets.map((preset) => {
+  return `<section class="starter-guide"><div class="starter-guide-head"><div><span>${lobbyCopy('STARTER DEPARTMENTS','STARTER-ABTEILUNGEN')}</span><strong>${lobbyCopy('Five offices. Five different ways to make the day worse.','Fünf Abteilungen. Fünf verschiedene Arten, den Bürotag schlimmer zu machen.')}</strong></div><small>${lobbyCopy('Starter decks stay format-legal and are the fastest way into an Alpha match.','Starterdecks bleiben formatlegal und sind der schnellste Weg in ein Alpha-Match.')}</small></div><div class="starter-guide-grid">${state.presets.map((preset) => {
     const identity = departmentIdentity(preset.department);
     return `<article class="starter-identity dept-${esc(String(preset.department).toLowerCase())}"><div><span>${esc(departmentCode(preset.department))}</span><b>${esc(identity.label)}</b></div><strong>${esc(identity.loop)}</strong><small>${esc(identity.note)}</small><em>${esc(preset.name)}</em></article>`;
   }).join('')}</div></section>`;
@@ -4877,12 +4915,13 @@ async function cancelQuickMatch() {
 function renderRecentSessionCard() {
   if (!state.recentSession) return '';
   const view = state.recentSessionView;
+  if (view && !roomViewIsResumable(view)) return '';
   const status = view?.status ?? 'UNKNOWN';
-  const mode = view?.settings?.mode === 'RANKED' ? (view?.settings?.ratingActive ? 'Ranked Alpha · Rated' : 'Ranked Rules · Unrated') : 'Friendly';
+  const mode = view?.settings?.mode === 'RANKED' ? (view?.settings?.ratingActive ? 'Ranked Alpha · Rated' : lobbyCopy('Ranked Rules · Unrated','Ranked-Regeln · ungewertet')) : lobbyCopy('Friendly','Freundschaft');
   const opponentName = view ? (view.playerId === 'P1' ? view.guestDisplayName : view.hostDisplayName) : null;
-  const detail = status === 'WAITING' ? 'Waiting for Player 2' : status === 'ACTIVE' ? `Match in progress${opponentName ? ` vs ${opponentName}` : ''}` : status === 'ENDED' ? `Match ended · ${view?.match?.reason ?? ''}` : 'Reconnect status will be checked when resumed';
-  const secondary = status === 'WAITING' ? '<button id="abandonRecentRoom" class="danger">Abandon room</button>' : status === 'ENDED' ? '<button id="forgetRecentRoom" class="ghost">Forget shortcut</button>' : '';
-  return `<section class="resume-session-box"><div><span>RESUMABLE SESSION</span><strong>Room ${esc(state.recentSession.roomId)} · ${esc(mode)}</strong><small>${esc(detail)}. Your seat token stays on this device; server restart does not invalidate it.</small></div><div class="resume-session-actions"><button class="primary" id="resumeRecentRoom">Resume</button>${secondary}</div></section>`;
+  const detail = status === 'WAITING' ? lobbyCopy('Waiting for Player 2','Warte auf Spieler 2') : status === 'ACTIVE' ? `${lobbyCopy('Match in progress','Match läuft')}${opponentName ? ` vs ${opponentName}` : ''}` : lobbyCopy('Server status will be checked before resume','Serverstatus wird vor dem Fortsetzen geprüft');
+  const secondary = status === 'WAITING' ? `<button id="abandonRecentRoom" class="danger">${lobbyCopy('Abandon room','Raum aufgeben')}</button>` : '';
+  return `<section class="resume-session-box"><div><span>${lobbyCopy('RESUMABLE SESSION','FORTSETZBARE SITZUNG')}</span><strong>${lobbyCopy('Room','Raum')} ${esc(state.recentSession.roomId)} · ${esc(mode)}</strong><small>${esc(detail)}. ${lobbyCopy('The server is checked again before this seat can send another move.','Der Server wird erneut geprüft, bevor dieser Sitz einen weiteren Zug senden darf.')}</small></div><div class="resume-session-actions"><button class="primary" id="resumeRecentRoom">${lobbyCopy('Resume','Fortsetzen')}</button>${secondary}</div></section>`;
 }
 
 function syncSelectDisplayTitle(select) {
@@ -5813,13 +5852,34 @@ async function joinRoom() {
   } catch (error) { state.lastError = error.message; friendlyErrorFeedback(error,'Could not join room'); render(); }
 }
 
+// Passive hosted syncs may re-deliver the exact same authoritative state while
+// the player is deciding whether to leave Capacity / legal actions unused.
+// Keep that one-shot local confirmation only for the identical match moment.
+// Any real mutation (including a newer stateVersion in the same phase) must
+// invalidate it so "End anyway" can never become a persistent bypass.
+function acceptPassiveSyncedView(view) {
+  const pendingConfirmation = state.pendingActionConfirmation;
+  const before = state.view?.match;
+  const after = view?.match;
+  const sameAuthoritativeMoment = Boolean(
+    pendingConfirmation && before && after &&
+    before.stateVersion === after.stateVersion &&
+    before.turnNumber === after.turnNumber &&
+    before.phase === after.phase &&
+    before.activePlayerId === after.activePlayerId &&
+    before.viewerId === after.viewerId
+  );
+  acceptView(view);
+  if (sameAuthoritativeMoment) state.pendingActionConfirmation = pendingConfirmation;
+}
+
 async function refreshState(renderAfter = true, { preserveLiveOnError = false } = {}) {
   if (!state.session) return null;
   const wasLive = state.connectionStatus === 'LIVE';
   try {
     const after = state.view?.match?.lastEventSeq ?? 0;
     const view = await api(`/api/rooms/${state.session.roomId}/state?after=${after}&${clientQuery()}`, { headers:roomAuthHeaders() });
-    acceptView(view);
+    acceptPassiveSyncedView(view);
     appendEvents(view.events);
     state.lastSyncAt = Date.now();
     state.lastError = null;
@@ -5947,7 +6007,7 @@ async function startStream() {
     clearStreamReconnectTimer();
     scheduleSyncPoll();
     const view = JSON.parse(event.data);
-    acceptView(view);
+    acceptPassiveSyncedView(view);
     state.interaction = null;
     appendEvents(view.events);
     state.connectionStatus = view?.viewerSession?.activeElsewhere ? 'SUPERSEDED' : 'LIVE';
@@ -6012,6 +6072,10 @@ async function sendIntent(intent) {
     try { await refreshState(false, { preserveLiveOnError:true }); } catch { /* the POST still gets one chance */ }
     match = state.view?.match ?? match;
     submittedVersion = match.stateVersion;
+    if (!roomViewIsActiveMatch(state.view)) {
+      saveRecentSession(null);
+      throw Object.assign(new Error(lobbyCopy('This match is no longer active. No move was sent.','Dieses Match ist nicht mehr aktiv. Es wurde kein Zug gesendet.')), { code:'MATCH_NOT_ACTIVE' });
+    }
     if (!viewerHasControl()) throw Object.assign(new Error('This tab no longer has control of the match.'), { code:'SESSION_SUPERSEDED' });
     setIntentCommit('SENDING', intent, { intentId, fromVersion:submittedVersion });
 

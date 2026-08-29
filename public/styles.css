@@ -6644,3 +6644,47 @@ button.primary {
 
 /* v7.66 — human playtest signal readout */
 .analytics-human-signals{margin-top:9px;padding:10px;border:1px solid #d4ccbf;border-radius:10px;background:#f5f1ea}.analytics-signal-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}.analytics-signal-head b{font-size:10px}.analytics-signal-head span{font-size:7px;color:#81796f}.analytics-friction{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px}.analytics-friction>span{padding:7px;border:1px solid #ddd5c9;border-radius:8px;background:#fff}.analytics-friction small{display:block;font-size:6px;letter-spacing:.08em;color:#877c6d}.analytics-friction b{display:block;margin:2px 0;font-size:17px}.analytics-friction em{font-size:7px;color:#756f66;font-style:normal}.analytics-human-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.analytics-human-grid>div{display:grid;align-content:start;gap:3px;padding:8px;border:1px solid #ddd5c9;border-radius:8px;background:#fff}.analytics-human-grid>div>b{margin-bottom:3px;font-size:8px}.analytics-human-grid span{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid #eee9e1}.analytics-human-grid strong{font-size:7px}.analytics-human-grid em{font-size:6.5px;color:#777067;font-style:normal;text-align:right}.analytics-actions button{min-height:28px}@media(max-width:760px){.analytics-friction,.analytics-human-grid{grid-template-columns:1fr}.analytics-signal-head{flex-direction:column}}
+
+/* v7.68.1 — lobby responsive + localization follow-up */
+.lobby-hero-actions button:not(.primary) { color:#24231f; }
+.lobby-hero-actions button.primary { color:#fff8e9; }
+
+@media (min-width:1800px) {
+  .app { max-width:1720px; }
+  .profile-strip,
+  .alpha-session-strip,
+  .lobby-command-center,
+  .lobby-playtest-drawer { width:min(1540px,calc(100% - 48px)); max-width:1540px; }
+  .lobby-command-center { grid-template-columns:minmax(0,1.62fr) minmax(360px,.78fr); gap:18px; }
+  .lobby-primary-column,.lobby-secondary-column { gap:14px; }
+  .lobby-hero { padding:22px 24px; }
+  .lobby-hero strong { font-size:32px; }
+  .quick-match-box { padding:17px; }
+  .starter-guide { padding:17px; }
+  .starter-identity { min-height:154px; }
+}
+
+@media (max-width:620px) {
+  .topbar { min-height:56px; padding:0 12px; gap:10px; }
+  .topbar > div { min-width:0; display:flex; align-items:center; gap:8px; }
+  .topbar strong { white-space:nowrap; font-size:12px; }
+  .topbar .muted { max-width:116px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; }
+  .language-switcher { flex:0 0 auto; }
+  .language-switcher select { min-width:74px; min-height:36px; padding-left:8px; padding-right:22px; }
+  .app { padding:10px 8px 22px; }
+  .profile-strip { margin:8px 0; border-radius:13px; }
+  .profile-rename { display:grid; grid-template-columns:minmax(0,1fr) auto; }
+  .profile-rename input { width:100%; }
+  .alpha-session-strip { margin:8px 0 10px; }
+  .lobby-command-center { width:100%; padding:8px; }
+  .lobby-hero { gap:12px; padding:14px; }
+  .lobby-hero strong { font-size:clamp(24px,8vw,34px); overflow-wrap:anywhere; }
+  .lobby-hero small { font-size:11px; }
+  .lobby-hero-actions { display:grid; grid-template-columns:1fr; gap:8px; }
+  .lobby-hero-actions button { width:100%; min-height:48px; color:#24231f; }
+  .lobby-hero-actions button.primary { color:#fff8e9; }
+  .quick-match-controls { grid-template-columns:1fr; }
+  .quick-match-controls > button { grid-column:auto; width:100%; min-width:0; }
+  .starter-guide-grid { margin-inline:-2px; }
+  .lobby-playtest-drawer { width:100%; }
+}

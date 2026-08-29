@@ -1618,6 +1618,10 @@ v7.67 is a hosted-play reliability hotfix. It does not change card rules, balanc
 - Intent responses preserve the submitting `clientId` when projecting `viewerSession`, so controller state remains consistent immediately after moves.
 
 
+## v7.68.1 — Hosted confirmation, resume safety, responsive lobby & DE pass
+
+v7.68.1 keeps the v7.68 hosted live-sync hardening and adds four follow-ups from real external-alpha testing: End-anyway confirmation survives identical passive sync reads, saved rooms are server-validated before resume and every mutation is preflight-blocked when the match is no longer ACTIVE, the lobby uses more useful width on very large desktops and reliable stacked controls on mobile, and the visible German lobby/ranked/starter surface no longer falls back to mixed English copy.
+
 ## v7.68 — Hosted Live-Sync Safety Hotfix
 
 v7.68 hardens hosted two-player state delivery after real external-alpha testing exposed delayed SSE state events during mulligan, turn handoffs and Priority transitions. The server remains strictly authoritative; stale-state validation is not relaxed.
