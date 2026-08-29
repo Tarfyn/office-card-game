@@ -1,0 +1,454 @@
+[
+  {
+    "id": "customer-service-starter",
+    "name": "Customer Service Starter v0.3",
+    "department": "CUSTOMER_SERVICE",
+    "description": "React \u2192 Redirect \u2192 Reopen \u2192 Survive. Ticket/Call control with Archive recursion and defensive Incidents.",
+    "cards": [
+      {
+        "definitionId": "CS-001",
+        "copies": 3
+      },
+      {
+        "definitionId": "CS-002",
+        "copies": 3
+      },
+      {
+        "definitionId": "CS-003",
+        "copies": 3
+      },
+      {
+        "definitionId": "CS-004",
+        "copies": 1
+      },
+      {
+        "definitionId": "CS-005",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-006",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-007",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-002",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-008",
+        "copies": 3
+      },
+      {
+        "definitionId": "CS-009",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-010",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-011",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-012",
+        "copies": 1
+      },
+      {
+        "definitionId": "CS-013",
+        "copies": 1
+      },
+      {
+        "definitionId": "CS-014",
+        "copies": 1
+      },
+      {
+        "definitionId": "CS-016",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-017",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-018",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-019",
+        "copies": 2
+      },
+      {
+        "definitionId": "CS-020",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-008",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-014",
+        "copies": 1
+      }
+    ]
+  },
+  {
+    "id": "it-starter",
+    "name": "IT Starter v0.3",
+    "department": "IT",
+    "description": "Setup \u2192 Automate \u2192 Generate \u2192 Deploy. Systems, Ticket utility, Capacity and targeted technical interaction.",
+    "cards": [
+      {
+        "definitionId": "IT-001",
+        "copies": 3
+      },
+      {
+        "definitionId": "IT-002",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-003",
+        "copies": 3
+      },
+      {
+        "definitionId": "IT-004",
+        "copies": 3
+      },
+      {
+        "definitionId": "IT-005",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-016",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-006",
+        "copies": 1
+      },
+      {
+        "definitionId": "IT-007",
+        "copies": 1
+      },
+      {
+        "definitionId": "IT-008",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-009",
+        "copies": 1
+      },
+      {
+        "definitionId": "IT-010",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-011",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-012",
+        "copies": 1
+      },
+      {
+        "definitionId": "IT-013",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-014",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-015",
+        "copies": 1
+      },
+      {
+        "definitionId": "IT-018",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-019",
+        "copies": 2
+      },
+      {
+        "definitionId": "IT-020",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-013",
+        "copies": 2
+      },
+      {
+        "definitionId": "N-009",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-008",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-014",
+        "copies": 1
+      }
+    ]
+  },
+  {
+    "id": "office-starter",
+    "name": "Office Starter v0.1",
+    "department": "OFFICE",
+    "description": "Coordinate \u2192 Approve \u2192 Delay \u2192 Organize. Meeting/Process control with approvals and deliberate tempo friction.",
+    "cards": [
+      {
+        "definitionId": "OFC-001",
+        "copies": 3
+      },
+      {
+        "definitionId": "OFC-002",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-003",
+        "copies": 3
+      },
+      {
+        "definitionId": "OFC-004",
+        "copies": 3
+      },
+      {
+        "definitionId": "OFC-005",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-006",
+        "copies": 1
+      },
+      {
+        "definitionId": "OFC-007",
+        "copies": 3
+      },
+      {
+        "definitionId": "OFC-008",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-009",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-010",
+        "copies": 3
+      },
+      {
+        "definitionId": "OFC-011",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-012",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-013",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-014",
+        "copies": 2
+      },
+      {
+        "definitionId": "OFC-015",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-003",
+        "copies": 2
+      },
+      {
+        "definitionId": "N-004",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-005",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-010",
+        "copies": 2
+      },
+      {
+        "definitionId": "N-014",
+        "copies": 1
+      }
+    ]
+  },
+  {
+    "id": "marketing-starter",
+    "name": "Marketing Starter v0.1",
+    "department": "MARKETING",
+    "description": "Setup \u2192 Chain Actions \u2192 Build Pressure \u2192 Convert. Campaign/Content combo deck with Reputation burst.",
+    "cards": [
+      {
+        "definitionId": "MKT-001",
+        "copies": 3
+      },
+      {
+        "definitionId": "MKT-002",
+        "copies": 3
+      },
+      {
+        "definitionId": "MKT-003",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-004",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-005",
+        "copies": 3
+      },
+      {
+        "definitionId": "MKT-006",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-007",
+        "copies": 1
+      },
+      {
+        "definitionId": "MKT-008",
+        "copies": 3
+      },
+      {
+        "definitionId": "MKT-009",
+        "copies": 3
+      },
+      {
+        "definitionId": "MKT-010",
+        "copies": 3
+      },
+      {
+        "definitionId": "MKT-011",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-012",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-013",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-014",
+        "copies": 2
+      },
+      {
+        "definitionId": "MKT-015",
+        "copies": 2
+      },
+      {
+        "definitionId": "N-003",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-005",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-009",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-014",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-008",
+        "copies": 1
+      }
+    ]
+  },
+  {
+    "id": "production-starter",
+    "name": "Production Starter v0.1",
+    "department": "PRODUCTION",
+    "description": "Staff the line \u2192 Increase Output \u2192 Overwhelm \u2192 Break Through. Employee-heavy battle deck with Shift and Machine support.",
+    "cards": [
+      {
+        "definitionId": "PRD-001",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-002",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-003",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-004",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-005",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-006",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-007",
+        "copies": 2
+      },
+      {
+        "definitionId": "PRD-008",
+        "copies": 1
+      },
+      {
+        "definitionId": "PRD-009",
+        "copies": 2
+      },
+      {
+        "definitionId": "PRD-010",
+        "copies": 3
+      },
+      {
+        "definitionId": "PRD-011",
+        "copies": 2
+      },
+      {
+        "definitionId": "PRD-012",
+        "copies": 2
+      },
+      {
+        "definitionId": "PRD-013",
+        "copies": 2
+      },
+      {
+        "definitionId": "PRD-014",
+        "copies": 2
+      },
+      {
+        "definitionId": "PRD-015",
+        "copies": 2
+      },
+      {
+        "definitionId": "N-007",
+        "copies": 2
+      },
+      {
+        "definitionId": "N-005",
+        "copies": 1
+      },
+      {
+        "definitionId": "N-014",
+        "copies": 1
+      }
+    ]
+  }
+]

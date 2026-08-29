@@ -1,0 +1,17 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+let passed = 0;
+const root = (n) => readFileSync(fileURLToPath(new URL(`../../${n}`, import.meta.url)), "utf8");
+const pkg = JSON.parse(root("package.json")), server = root("server/server.mjs"), html = root("public/index.html"), app = root("public/app.js"), i18n = root("public/i18n.js"), de = root("public/locales/de.js");
+function test(n, f) { f(); passed++; console.log(`✓ ${n}`); }
+test("v7.59 German UI overlay remains present", () => { assert.match(i18n, /MutationObserver/); assert.match(de, /Sammlung & Deckbuilder/); });
+test("German legacy overlay covers onboarding and lobby", () => { for (const phrase of ["WILLKOMMEN IM BÜRO", "Abteilung wählen. Match starten.", "Gegner finden", "Privaten Raum erstellen", "Privatem Raum beitreten"])
+    assert.match(de, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))); });
+test("German overlay covers diagnostics and match HUD", () => { for (const phrase of ["VERBINDUNG", "Du bist offline", "Verbindung wird wiederhergestellt", "Karten spielen", "ANGRIFF BEREIT"])
+    assert.match(de, new RegExp(phrase)); });
+test("German overlay covers collection and deckbuilder navigation", () => { for (const phrase of ["Sammlung & Deckbuilder", "ABTEILUNG", "SELTENHEIT", "Deckname", "Dieses Deck in Lobby nutzen"])
+    assert.match(de, new RegExp(phrase)); });
+test("legacy migration is presentation-only and observes rendered DOM", () => { assert.match(i18n, /MutationObserver/); assert.match(i18n, /SHOW_TEXT/); assert.match(app, /observeLocalizedApp\(app\)/); assert.doesNotMatch(i18n, /sendIntent|stateVersion|roomToken/); });
+test("dynamic diagnostic age has a German pattern fallback", () => { assert.match(i18n, /\(\\d\+\)s ago/); assert.match(i18n, /Letzter Sync/); });
+console.log(`${passed}/6 v7.59 tests passed.`);

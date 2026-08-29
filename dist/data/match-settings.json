@@ -1,0 +1,95 @@
+{
+  "version": 5,
+  "defaultMode": "FRIENDLY",
+  "modes": [
+    {
+      "id": "FRIENDLY",
+      "name": "Friendly",
+      "ratingEnabled": false,
+      "timerProfile": "UNTIMED",
+      "description": "Manual friendly room. Timer remains optional/off by default."
+    },
+    {
+      "id": "RANKED",
+      "name": "Ranked Alpha",
+      "ratingEnabled": true,
+      "timerProfile": "RANKED_STANDARD_TBD",
+      "description": "Alpha preseason rating is active in Ranked Quick Match only. Private Ranked-rule rooms remain unrated; Ranked timer remains disabled until timing telemetry is tuned."
+    }
+  ],
+  "timerProfiles": [
+    {
+      "id": "UNTIMED",
+      "enabled": false,
+      "turnSeconds": null,
+      "responseSeconds": null,
+      "timeBankSeconds": null,
+      "reconnectGraceSeconds": null
+    },
+    {
+      "id": "RANKED_STANDARD_TBD",
+      "enabled": false,
+      "turnSeconds": null,
+      "responseSeconds": null,
+      "timeBankSeconds": null,
+      "reconnectGraceSeconds": null,
+      "status": "TUNING_REQUIRED"
+    }
+  ],
+  "turnTimer": {
+    "supported": true,
+    "runtimeImplemented": true,
+    "enabledByDefault": false,
+    "friendlyMode": "OPTIONAL_OR_OFF",
+    "rankedMode": "PLANNED_REQUIRED",
+    "turnSeconds": null,
+    "responseSeconds": null,
+    "timeBankSeconds": null,
+    "reconnectGraceSeconds": null,
+    "serverAuthoritative": true,
+    "recommendedModel": "TURN_CLOCK_PLUS_RESPONSE_CLOCK_PLUS_TIME_BANK",
+    "responseTimeoutBehavior": "AUTO_PASS",
+    "turnTimeoutBehavior": "FORFEIT",
+    "offTurnDecisionTimeoutBehavior": "FORFEIT",
+    "reconnectTimeoutBehavior": "FORFEIT_WHEN_OPPONENT_CONNECTED",
+    "serverRestartBehavior": "PAUSE_CLOCK_AT_LAST_CHECKPOINT",
+    "activationRule": "Do not enable production profiles until human-vs-human timing telemetry exists."
+  },
+  "timerRuntime": {
+    "sweepIntervalMs": 250,
+    "checkpointIntervalMs": 5000,
+    "countdownProjection": "SERVER_DEADLINE_WITH_CLIENT_LOCAL_RENDER",
+    "openingMulliganTimed": false
+  },
+  "sessionLifecycle": {
+    "roomPersistence": true,
+    "resumeSupported": true,
+    "presenceTracking": "SSE_CONNECTION",
+    "waitingRoomAbandonSupported": true,
+    "activeMatchAbandonBehavior": "RESIGN",
+    "autoForfeitEnabled": false,
+    "afkTimeoutSeconds": null,
+    "reconnectGraceSeconds": null,
+    "note": "Timer/reconnect enforcement is implemented but remains inactive because the shipped profiles are disabled and untuned."
+  },
+  "ranked": {
+    "enabled": true,
+    "currentSeasonId": "ALPHA_PRESEASON",
+    "phase": "PRESEASON",
+    "seasonResetEnabled": false,
+    "initialRating": 1000,
+    "minimumRating": 100,
+    "placementsRequired": 5,
+    "ratingScale": 400,
+    "placementK": 40,
+    "ratedK": 24,
+    "matchmaking": {
+      "initialRatingWindow": 200,
+      "widenEverySeconds": 30,
+      "widenByRating": 100,
+      "maxRatingWindow": 600,
+      "note": "Provisional alpha values; widen symmetrically based on the longer-waiting player."
+    },
+    "note": "This is an alpha preseason foundation, not a launched competitive season. Ratings persist; formal season resets/rewards are not active."
+  }
+}

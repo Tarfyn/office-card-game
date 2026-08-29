@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 420">
+<rect width="600" height="420" fill="#edf5f5"/>
+<rect x="18" y="18" width="564" height="384" rx="28" fill="#f9fcfc" stroke="#4f7b82" stroke-width="8"/>
+<rect x="92" y="84" width="165" height="245" rx="18" fill="#26343b"/><rect x="116" y="112" width="117" height="46" rx="7" fill="#8cc5c5"/><circle cx="135" cy="205" r="12" fill="#f3b544"/><circle cx="172" cy="205" r="12" fill="#68b46a"/><circle cx="209" cy="205" r="12" fill="#d65d56"/><circle cx="360" cy="145" r="65" fill="#f0c5a1"/><path d="M304 145c12-73 107-83 121-3-21-16-41-24-62-24s-40 9-59 27z" fill="#252525"/><rect x="298" y="230" width="135" height="106" rx="32" fill="#5d7b82"/><path d="M420 266l86-40" stroke="#26343b" stroke-width="14" stroke-linecap="round"/><circle cx="515" cy="220" r="27" fill="#fff" stroke="#4f7b82" stroke-width="7"/><path d="M505 220h20M515 210v20" stroke="#4f7b82" stroke-width="6" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,14 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+let passed = 0;
+const root = (n) => readFileSync(fileURLToPath(new URL(`../../${n}`, import.meta.url)), "utf8");
+const app = root("public/app.js"), server = root("server/server.mjs"), pkg = JSON.parse(root("package.json"));
+function test(n, f) { f(); passed++; console.log(`✓ ${n}`); }
+test("v7.53 version markers", () => { assert.ok(Number(String(pkg.version).split(".")[1]) >= 53); assert.match(server, /version: "7\.\d+\.0"/); });
+test("bug report includes reproducibility context", () => { assert.match(app, /office-card-game-bug-report-v1/); assert.match(app, /recentEvents/); assert.match(app, /stateVersion/); });
+test("bug report redacts credential-like fields", () => { assert.match(app, /token\|authorization\|password\|secret\|credential\|cookie\|ticket/); assert.match(app, /\[REDACTED\]/); });
+test("active room and profile credentials are explicitly redacted", () => { assert.match(app, /input===state\.profileToken/); assert.match(app, /input===state\.session\?\.token/); });
+test("testers can copy or download reports", () => { assert.match(app, /copyBugReportBundle/); assert.match(app, /downloadBugReportBundle/); assert.match(app, /Report issue/); });
+test("bundle only uses projected event surfaces", () => { assert.match(app, /state\.eventLog/); assert.match(app, /state\.view\?\.telemetry\?\.diagnostics/); assert.doesNotMatch(app, /buildBugReportBundle[\s\S]{0,1200}state\.view\.authoritative/); });
+console.log(`${passed}/6 v7.53 tests passed.`);

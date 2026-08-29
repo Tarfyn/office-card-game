@@ -1,0 +1,23 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { alphaDeckPresets } from "../src/decks.js";
+import { alphaDefinitions } from "../src/cards.js";
+let passed = 0;
+function test(n, f) { try {
+    f();
+    passed++;
+    console.log(`✓ ${n}`);
+}
+catch (e) {
+    console.error(`✗ ${n}`);
+    throw e;
+} }
+test("v7.35 keeps all five starters at exactly 40 cards", () => { assert.equal(Object.keys(alphaDeckPresets).length, 5); for (const d of Object.values(alphaDeckPresets))
+    assert.equal(d.cards.reduce((n, e) => n + e.copies, 0), 40); });
+test("v7.35 reduces two high-density Production starter slots", () => { const d = alphaDeckPresets["production-starter"]; assert.equal(d.cards.find(e => e.definitionId === "PRD-007")?.copies, 2); assert.equal(d.cards.find(e => e.definitionId === "PRD-009")?.copies, 2); });
+test("v7.35 increases stabilizing Production starter slots", () => { const d = alphaDeckPresets["production-starter"]; assert.equal(d.cards.find(e => e.definitionId === "PRD-006")?.copies, 3); assert.equal(d.cards.find(e => e.definitionId === "PRD-015")?.copies, 2); });
+test("v7.35 leaves adjusted card definitions unchanged", () => { assert.equal(alphaDefinitions["PRD-007"].power, 4); assert.equal(alphaDefinitions["PRD-009"].cost?.play, 3); assert.equal(alphaDefinitions["PRD-006"].power, 3); });
+test("v7.35 ships an explicit starter audit with heuristic caveat", () => { const audit = readFileSync(fileURLToPath(new URL("../../STARTER_AUDIT_v7.35.md", import.meta.url)), "utf8"); assert.match(audit, /directional only/); assert.match(audit, /73\.3%/); assert.match(audit, /human feedback/i); });
+test("v7.35 version markers are current", () => { const server = readFileSync(fileURLToPath(new URL("../../server/server.mjs", import.meta.url)), "utf8"); const html = readFileSync(fileURLToPath(new URL("../../public/index.html", import.meta.url)), "utf8"); assert.match(server, /version: "7\.35\.0"/); assert.match(html, /v7\.35 Alpha Playtest/i); });
+console.log(`${passed}/6 v7.35 tests passed.`);

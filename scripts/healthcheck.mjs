@@ -1,0 +1,3 @@
+const base=String(process.env.HEALTHCHECK_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/$/,"");
+const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),5000);
+try { const response=await fetch(`${base}/api/ready`,{signal:controller.signal,headers:process.env.HEALTHCHECK_HOST?{"x-forwarded-host":process.env.HEALTHCHECK_HOST,"x-forwarded-proto":"https"}:{}}); const body=await response.json(); if(!response.ok||!body.ok) throw new Error(`not ready: HTTP ${response.status}`); console.log(`READY ${body.version} · ${base}`); } finally { clearTimeout(timeout); }

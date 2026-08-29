@@ -1,0 +1,25 @@
+{
+  "id": "DEPT-000",
+  "version": 1,
+  "name": "Example Card",
+  "cardType": "ACTION",
+  "department": "NEUTRAL",
+  "tags": ["EXAMPLE"],
+  "cost": {
+    "play": 1
+  },
+  "abilities": [
+    {
+      "id": "DEPT-000-A1",
+      "type": "ACTIVATED",
+      "timing": "OWN_MAIN_PHASE",
+      "effects": [
+        {
+          "type": "DRAW",
+          "player": "SELF",
+          "amount": 1
+        }
+      ]
+    }
+  ]
+}

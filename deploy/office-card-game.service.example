@@ -1,0 +1,18 @@
+[Unit]
+Description=Office Card Game Alpha Server
+After=network.target
+
+[Service]
+Type=simple
+User=officecardgame
+WorkingDirectory=/srv/office-card-game/current
+EnvironmentFile=/etc/office-card-game.env
+ExecStart=/usr/bin/node server/server.mjs --host=127.0.0.1 --port=8787
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

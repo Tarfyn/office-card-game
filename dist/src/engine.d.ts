@@ -1,0 +1,52 @@
+export { ALPHA_FORMAT } from "./formats.js";
+import type { CardDefinition, CostCalculation, DeckEntry, DeckFormat, DeckValidationResult, ClientLegalActions, GameState, PlayerId, PowerContribution } from "./types.js";
+export declare function validateDeck(entries: DeckEntry[], definitions: Record<string, CardDefinition>, format?: DeckFormat): DeckValidationResult;
+export declare function assertLegalDeck(entries: DeckEntry[], definitions: Record<string, CardDefinition>, format?: DeckFormat): void;
+export declare function createMatch(args: {
+    matchId: string;
+    seed: number;
+    firstPlayerId: PlayerId;
+    definitions: Record<string, CardDefinition>;
+    p1Deck: DeckEntry[];
+    p2Deck: DeckEntry[];
+    format?: DeckFormat;
+}): GameState;
+export declare function mulligan(state: GameState, playerId: PlayerId, returnIds: string[]): void;
+export declare function advancePhase(state: GameState, playerId: PlayerId): void;
+export declare function archiveCardsFromHand(state: GameState, playerId: PlayerId, ids: string[]): void;
+export declare function playEmployee(state: GameState, playerId: PlayerId, instanceId: string, slot: number, promotionMaterials?: string[]): void;
+export declare function playSystem(state: GameState, playerId: PlayerId, instanceId: string, slot: number): void;
+export declare function getCardCost(state: GameState, playerId: PlayerId, instanceId: string, mode: "PLAY" | "SET"): CostCalculation;
+export declare function resolveTriggerTargetSelection(state: GameState, playerId: PlayerId, selectionId: string, suppliedTargets: Record<string, string[]>): void;
+export declare function resolveHandSelection(state: GameState, playerId: PlayerId, selectionId: string, selectedIds: string[]): void;
+export declare function resolveDeckSelection(state: GameState, playerId: PlayerId, selectionId: string, selectedIds: string[], unselectedOrder?: string[]): void;
+export declare function resolveChoice(state: GameState, playerId: PlayerId, choiceId: string, optionId: string): void;
+export declare function playAction(state: GameState, playerId: PlayerId, instanceId: string, targets?: Record<string, string[]>): void;
+export declare function activateAbility(state: GameState, playerId: PlayerId, sourceId: string, abilityId: string, targets?: Record<string, string[]>): void;
+export declare function getPowerBreakdown(state: GameState, instanceId: string): {
+    printed: number;
+    current: number;
+    contributions: PowerContribution[];
+};
+export declare function getCurrentPower(state: GameState, instanceId: string): number;
+export declare function declareAttack(state: GameState, playerId: PlayerId, attackerId: string, targetId: string | null): void;
+export declare function setIncident(state: GameState, playerId: PlayerId, instanceId: string, slot: number): void;
+export declare function playActionInteractive(state: GameState, playerId: PlayerId, instanceId: string, targets?: Record<string, string[]>): void;
+export declare function declareAttackInteractive(state: GameState, playerId: PlayerId, attackerId: string, targetId: string | null): void;
+export declare function getAvailableResponses(state: GameState, playerId: PlayerId): Array<{
+    sourceId: string;
+    abilityId: string;
+    sourceType: "INCIDENT" | "IN_PLAY";
+}>;
+export declare function getAvailableIncidentResponses(state: GameState, playerId: PlayerId): Array<{
+    sourceId: string;
+    abilityId: string;
+}>;
+export declare function activateResponse(state: GameState, playerId: PlayerId, sourceId: string, abilityId: string, targets?: Record<string, string[]>): void;
+export declare function activateIncident(state: GameState, playerId: PlayerId, sourceId: string, abilityId: string, targets?: Record<string, string[]>): void;
+export declare function passPriority(state: GameState, playerId: PlayerId): void;
+export declare function getLegalActions(state: GameState, playerId: PlayerId): ClientLegalActions;
+export declare function getCardName(state: GameState, instanceId: string): string;
+export declare function findInHandByDefinition(state: GameState, playerId: PlayerId, definitionId: string): string | undefined;
+export declare function activateAbilityInteractive(state: GameState, playerId: PlayerId, sourceId: string, abilityId: string, targets?: Record<string, string[]>): void;
+export declare function resign(state: GameState, playerId: PlayerId, reason?: "RESIGN" | "TURN_TIMEOUT" | "DECISION_TIMEOUT" | "RECONNECT_TIMEOUT"): void;

@@ -1,0 +1,14 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+let passed = 0;
+function test(n, f) { f(); passed++; console.log(`✓ ${n}`); }
+const root = (n) => readFileSync(fileURLToPath(new URL(`../../${n}`, import.meta.url)), "utf8");
+const server = root("server/server.mjs"), readme = root("README.md"), caddy = root("deploy/Caddyfile.example"), nginx = root("deploy/nginx.conf.example");
+const pkg = JSON.parse(root("package.json"));
+test("v7.48 proxy baseline remains present", () => { assert.match(readme, /## v7\.48 — HTTPS \/ Reverse Proxy \/ SSE Hardening/); });
+test("v7.48 understands trusted reverse proxy headers", () => { assert.match(server, /TRUST_PROXY/); assert.match(server, /x-forwarded-for/); assert.match(server, /x-forwarded-host/); assert.match(server, /x-forwarded-proto/); });
+test("v7.48 can require HTTPS in network mode", () => { assert.match(server, /REQUIRE_HTTPS/); assert.match(server, /HTTPS_REQUIRED/); assert.match(server, /strict-transport-security/); });
+test("v7.48 hardens SSE for proxies", () => { assert.match(server, /retry: 2000/); assert.match(server, /SSE_HEARTBEAT_MS/); assert.match(server, /x-accel-buffering/); });
+test("v7.48 ships Caddy and nginx proxy examples", () => { assert.match(caddy, /reverse_proxy 127\.0\.0\.1:8787/); assert.match(caddy, /flush_interval -1/); assert.match(nginx, /proxy_buffering off/); assert.match(readme, /Only the reverse proxy needs public ports 80\/443/); });
+console.log(`${passed}/5 v7.48 tests passed.`);

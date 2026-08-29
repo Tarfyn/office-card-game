@@ -1,0 +1,15 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { normalizePlaytestFeedback } from "../src/playtest-feedback.js";
+let passed = 0;
+const root = (n) => readFileSync(fileURLToPath(new URL(`../../${n}`, import.meta.url)), "utf8");
+const app = root("public/app.js"), server = root("server/server.mjs"), pkg = JSON.parse(root("package.json"));
+function test(n, f) { f(); passed++; console.log(`✓ ${n}`); }
+test("v7.54 version markers", () => { assert.ok(Number(String(pkg.version).split(".")[1]) >= 54); assert.match(server, /version: "7\.\d+\.0"/); });
+test("alpha sessions are tab scoped and non-secret", () => { assert.match(app, /sessionStorage\.getItem\(ALPHA_TEST_SESSION_KEY\)/); assert.match(app, /makeAlphaSessionId/); });
+test("lobby exposes current session and reset", () => { assert.match(app, /TEST SESSION/); assert.match(app, /New test session/); });
+test("human feedback stores session id", () => { const f = normalizePlaytestFeedback('R', 'P', { sessionId: 'A-TEST', pace: 'GOOD' }); assert.equal(f.sessionId, 'A-TEST'); assert.match(app, /sessionId:alphaTestSessionId\(\)/); });
+test("match result carries session id", () => assert.match(app, /SESSION \$\{esc\(alphaTestSessionId\(\)\)\}/));
+test("session id does not replace room or profile identity", () => { assert.match(app, /state\.session\.roomId/); assert.match(app, /state\.serverProfile/); });
+console.log(`${passed}/6 v7.54 tests passed.`);

@@ -1,0 +1,14 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+let passed = 0;
+const root = (n) => readFileSync(fileURLToPath(new URL(`../../${n}`, import.meta.url)), "utf8");
+const app = root("public/app.js"), css = root("public/styles.css"), server = root("server/server.mjs"), pkg = JSON.parse(root("package.json"));
+function test(n, f) { f(); passed++; console.log(`✓ ${n}`); }
+test("v7.55 version markers", () => { assert.ok(Number(String(pkg.version).split(".")[1]) >= 55); assert.match(server, /version: "7\.\d+\.0"/); });
+test("SSE reconnect uses bounded backoff with jitter", () => { assert.match(app, /streamReconnectDelay/); assert.match(app, /Math\.min\(15000/); assert.match(app, /reconnectAttempt/); });
+test("healthy stream resets reconnect backoff", () => assert.ok((app.match(/state\.reconnectAttempt = 0/g) || []).length >= 2));
+test("only read requests receive client timeout", () => { assert.match(app, /method==='GET'/); assert.match(app, /AbortController/); assert.match(app, /NETWORK_TIMEOUT/); });
+test("background and BFCache recovery resync safely", () => { assert.match(app, /pageshow/); assert.match(app, /pagehide/); assert.match(app, /event\.persisted/); assert.match(app, /visibilitychange/); });
+test("cross-browser visual fallbacks exist", () => { assert.match(css, /@supports not \(backdrop-filter/); assert.match(app, /orientationchange/); });
+console.log(`${passed}/6 v7.55 tests passed.`);
