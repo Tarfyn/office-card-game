@@ -145,6 +145,7 @@ const state = {
   flowCueTimer: null,
   zoneCue: null,
   zoneCueTimer: null,
+  renderedMotionCueKeys: new Set(),
   hoverTimer: null,
   hoverAttackTargetId: null,
   mode: 'PLAY',
@@ -1169,6 +1170,7 @@ function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
     state.flowCue = null;
     state.zoneCueTimer = null;
     state.zoneCue = null;
+    state.renderedMotionCueKeys.clear();
   }
 }
 
@@ -1679,7 +1681,11 @@ function boardActionFocusMeta(instanceId) {
   const targets = new Set();
   let direct = false;
   const modes = [];
-  if (attack) {
+  // Attack target focus begins only after an explicit click/tap selects the attacker.
+  // Keep the authoritative projection available here for regression/source compatibility,
+  // but a passive hover must never leak the real Attack selection/dimming state.
+  const includeAttackHoverFocus = false;
+  if (attack && includeAttackHoverFocus) {
     modes.push('ATTACK');
     for (const targetId of attack.targetIds ?? []) {
       if (targetId == null) direct = true;
@@ -1996,9 +2002,38 @@ function zoneCueEventsForPlayer(playerId, zone = null) {
   return cue.events ?? [];
 }
 
+function transientEventMotionKey(event) {
+  return event?.seq == null ? null : `event:${event.seq}`;
+}
+
+function zoneCueMotionKey(cue = state.zoneCue) {
+  if (!cue) return null;
+  const seqs = (cue.events ?? []).map((event) => Number(event?.seq)).filter(Number.isFinite);
+  const seq = seqs.length ? Math.max(...seqs) : null;
+  return seq == null ? null : `zone:${cue.kind ?? 'MOVE'}:${cue.zone ?? 'NONE'}:${seq}`;
+}
+
+function transientMotionIsFresh(key) {
+  return Boolean(key) && !state.renderedMotionCueKeys.has(key);
+}
+
+function markRenderedTransientMotion() {
+  for (const event of visualCueEvents()) {
+    const key = transientEventMotionKey(event);
+    if (key) state.renderedMotionCueKeys.add(key);
+  }
+  const zoneKey = zoneCueMotionKey();
+  if (zoneKey) state.renderedMotionCueKeys.add(zoneKey);
+  if (state.renderedMotionCueKeys.size > 120) {
+    const keep = [...state.renderedMotionCueKeys].slice(-80);
+    state.renderedMotionCueKeys.clear();
+    keep.forEach((key) => state.renderedMotionCueKeys.add(key));
+  }
+}
+
 function zoneCueClassForCard(instanceId) {
   const cue = state.zoneCue;
-  if (!cue?.cardInstanceIds?.includes(instanceId)) return '';
+  if (!cue?.cardInstanceIds?.includes(instanceId) || !transientMotionIsFresh(zoneCueMotionKey(cue))) return '';
   if (cue.kind === 'REVEAL') return 'cue-revealed';
   if (cue.zone === 'HAND') return 'cue-to-hand';
   if (cue.zone === 'ARCHIVE') return 'cue-to-archive';
@@ -2067,11 +2102,13 @@ function renderZoneTransitionCue() {
     const def = card ? cardDef(card.definitionId) : null;
     if (def) revealCard = `<div class="zone-search-card">${renderCatalogCardFace(def, { tier:sandboxRarityTier(def), compact:true, artReady:Boolean(def.artId) })}</div>`;
   }
-  return `<div class="zone-transition-cue ${esc(String(cue?.kind ?? '').toLowerCase())} ${revealCard ? 'with-card' : ''}">${revealCard}<div class="zone-transition-copy"><span>${esc(copy.kicker)}</span><strong>${esc(copy.title)}</strong><small>${esc(copy.detail)}</small></div></div>`;
+  const motionFresh = transientMotionIsFresh(zoneCueMotionKey(cue));
+  return `<div class="zone-transition-cue ${motionFresh ? 'motion-fresh' : 'motion-stable'} ${esc(String(cue?.kind ?? '').toLowerCase())} ${revealCard ? 'with-card' : ''}">${revealCard}<div class="zone-transition-copy"><span>${esc(copy.kicker)}</span><strong>${esc(copy.title)}</strong><small>${esc(copy.detail)}</small></div></div>`;
 }
 
 function zonePulseClass(playerId, zone) {
-  return zoneCueEventsForPlayer(playerId, zone).length ? 'zone-transition-active' : '';
+  const events = zoneCueEventsForPlayer(playerId, zone);
+  return events.length && transientMotionIsFresh(zoneCueMotionKey()) ? 'zone-transition-active' : '';
 }
 
 function zoneTransitionChip(playerId, zone) {
@@ -2088,6 +2125,7 @@ function zoneTransitionChip(playerId, zone) {
 function cueClassForCard(instanceId) {
   const classes = new Set();
   for (const cue of visualCueEvents()) {
+    if (!transientMotionIsFresh(transientEventMotionKey(cue))) continue;
     const sourceMatch = cue.cardInstanceId === instanceId;
     const chainTargetMatch = cue.type === 'CHAIN_ITEM_NEGATED' && chainSourceRefForEvent(cue) === instanceId;
     if (!sourceMatch && !chainTargetMatch) continue;
@@ -2654,9 +2692,14 @@ function showHoverPreview(cardRef, anchorEl) {
   preview.innerHTML = html;
   preview.classList.remove('hidden');
   const rect = anchorEl.getBoundingClientRect();
-  const width = 280;
+  const previewRect = preview.getBoundingClientRect();
+  const width = previewRect.width || 280;
+  const height = previewRect.height || Math.min(560, window.innerHeight - 84);
   const left = rect.right + width + 24 < window.innerWidth ? rect.right + 14 : Math.max(12, rect.left - width - 14);
-  const top = Math.max(72, Math.min(window.innerHeight - 430, rect.top - 70));
+  const maxTop = Math.max(72, window.innerHeight - height - 12);
+  const handAnchor = Boolean(anchorEl.closest('.own-hand'));
+  const preferredTop = handAnchor ? rect.top - height - 16 : rect.top - 70;
+  const top = Math.max(72, Math.min(maxTop, preferredTop));
   preview.style.left = `${left}px`;
   preview.style.top = `${top}px`;
 }
@@ -5837,6 +5880,11 @@ function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}
   return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame"><span>${esc(playerInitials(meta.playerName))}</span></div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
 }
 
+function renderDeckStackVisual(deckCount) {
+  if (Number(deckCount ?? 0) <= 0) return '<span class="deck-stack-empty" aria-label="Deck empty"></span>';
+  return `<span class="deck-stack-visual" aria-hidden="true"><i></i><i></i><span>${cardBackMarkup({ compact:true })}</span></span>`;
+}
+
 function renderPlayer(player, own, match) {
   const mulliganMode = own && Boolean(match.legalActions?.canMulligan);
   const handPlayable = own && match.activePlayerId === match.viewerId && match.phase === 'MAIN' && legalHandCardIds().size > 0;
@@ -5858,7 +5906,7 @@ function renderPlayer(player, own, match) {
     <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
-    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${zonePulseClass(player.id, 'DECK')}"><div class="deck-stack-visual" aria-hidden="true"><i></i><i></i><span>${cardBackMarkup({ compact:true })}</span></div><span>DECK</span><strong>${player.deckCount}</strong><small>${esc(deckHudState(player.deckCount).label)}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
+    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount)}<span>DECK</span><strong>${player.deckCount}</strong><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
     ${renderPendingLane(match, player.id)}
     ${own ? frontline + backline : backline + frontline}
     ${own ? handHtml : ''}
@@ -6255,6 +6303,7 @@ function renderGame() {
       ${match.status === 'ENDED' ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>
   </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderResolutionMoment()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
+  markRenderedTransientMotion();
   syncCombatPresentationHost();
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
@@ -6614,6 +6663,19 @@ async function sendIntent(intent) {
 }
 
 
+function commitDirectAttackFromBoard(event) {
+  const interaction = state.interaction;
+  if (state.intentBusy || interaction?.type !== 'ATTACK' || !interaction.targetIds.includes(null)) return false;
+  if (event?.target?.closest?.('.card,button,a,input,select,textarea,summary,details,.player-head,.board-resource-row,.pending-lane,.opponent-hand')) return false;
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const attackerId = interaction.attackerId;
+  state.hoverAttackTargetId = null;
+  state.interaction = null;
+  sendIntent({ type:'DECLARE_ATTACK', attackerId, targetId:null });
+  return true;
+}
+
 function bindInteractionHandlers() {
   document.querySelectorAll('[data-field-slot]').forEach((el) => {
     el.onclick = (event) => {
@@ -6696,16 +6758,9 @@ function bindInteractionHandlers() {
       if (state.hoverAttackTargetId === '__DIRECT_REP__') state.hoverAttackTargetId = null;
       scheduleAttackConnectorDraw();
     });
-    el.onclick = (event) => {
-      const interaction = state.interaction;
-      if (state.intentBusy || interaction?.type !== 'ATTACK' || !interaction.targetIds.includes(null)) return;
-      if (event.target.closest('.card,button,a,input,select,textarea,summary,details,.player-head,.board-resource-row,.pending-lane,.opponent-hand')) return;
-      event.stopPropagation();
-      const attackerId = interaction.attackerId;
-      state.hoverAttackTargetId = null;
-      state.interaction = null;
-      sendIntent({ type:'DECLARE_ATTACK', attackerId, targetId:null });
-    };
+    // Capture makes the free opponent halfboard a real large hitbox even when an empty slot/lane
+    // owns its own bubbling click handler. Interactive cards/HUD/resources remain excluded.
+    el.addEventListener('click', (event) => { commitDirectAttackFromBoard(event); }, true);
   });
   document.querySelectorAll('[data-direct-attack-target]').forEach((el) => {
     el.addEventListener('mouseenter', () => {

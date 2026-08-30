@@ -23,10 +23,10 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.10");
-  assert.match(server,/version: "7\.69\.10"/);
-  assert.match(server,/Office Card Game v7\.69\.10 server/);
-  assert.match(html,/v7\.69\.10 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.11");
+  assert.match(server,/version: "7\.69\.11"/);
+  assert.match(server,/Office Card Game v7\.69\.11 server/);
+  assert.match(html,/v7\.69\.11 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
   assert.match(readme,/## v7\.69\.6 — Lobby Balance \+ Card Presentation Polish/);
