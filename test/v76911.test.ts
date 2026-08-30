@@ -16,19 +16,17 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.11 — stable transient motion,
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.11 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.11");
-  assert.match(server,/version: "7\.69\.11"/);
-  assert.match(server,/version:"7\.69\.11"/);
-  assert.match(html,/v7\.69\.11 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.12");
+  assert.match(server,/version: "7\.69\.12"/);
+  assert.match(server,/version:"7\.69\.12"/);
+  assert.match(html,/v7\.69\.12 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.11 — Render Stability \+ Pile Polish/);
   assert.match(pkg.scripts.test,/dist\/test\/v76911\.test\.js/);
 });
 
-test("hand hover preview uses measured height and prefers a position above the hand",()=>{
+test("hand hover preview keeps measured-height viewport clamping",()=>{
   const hover=between(app,"function showHoverPreview", "function bindHoverPreviewHandlers");
   assert.match(hover,/preview\.getBoundingClientRect\(\)/);
-  assert.match(hover,/anchorEl\.closest\('\.own-hand'\)/);
-  assert.match(hover,/rect\.top - height - 16/);
   assert.match(hover,/window\.innerHeight - height - 12/);
 });
 

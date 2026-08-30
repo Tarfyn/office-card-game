@@ -2,6 +2,14 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.12 — Preview + Board Interaction Polish
+
+- Centers every desktop hover closeup in one stable battlefield preview zone instead of anchoring it differently to hand and field cards.
+- Keeps Employee/System/Incident slot placement board-native: highlighted legal slots are the choice surface, with source-card toggle and Escape as cancel paths.
+- Re-centers the 1K desktop hand on the actual playable lane geometry rather than the outer halfboard box.
+- Rebuilds desktop Deck/Archive presentation around a materially larger visible card stack with tighter chrome; zero-card states show counts only and never fake a remaining card.
+- Leaves the now-stable board-wide Direct Attack interaction and combat presentation unchanged.
+
 ## v7.69.11 — Render Stability + Pile Polish
 
 - Direct attacks use the free opponent halfboard as the large click/tap hitbox whenever the server projects `null` as a legal attack target; REP remains the visual connector destination.

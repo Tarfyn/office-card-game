@@ -26,8 +26,8 @@ test("v7.23 keeps targeted interaction sources explicit through target selection
 test("v7.23 uses one source target selected role language", () => {
   assert.match(app,/function renderInteractionRoleLegend/);
   assert.match(app,/SOURCE/);
-  assert.match(app,/targetLabel:'EMPLOYEE SLOT'/);
-  assert.match(app,/targetLabel:'SUPPORT SLOT'/);
+  assert.match(app,/data-field-slot-zone/);
+  assert.match(app,/slot-candidate/);
   assert.match(app,/targetLabel:'MATERIALS'/);
   assert.match(app,/SELECTED \$\{selected\}\/\$\{max\}/);
   assert.match(css,/\.interaction-role-legend/);

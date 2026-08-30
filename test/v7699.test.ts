@@ -20,11 +20,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69.9 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.11");
-  assert.match(server,/version: "7\.69\.11"/);
-  assert.match(server,/version:"7\.69\.11"/);
-  assert.match(server,/Office Card Game v7\.69\.11 server/);
-  assert.match(html,/v7\.69\.11 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.12");
+  assert.match(server,/version: "7\.69\.12"/);
+  assert.match(server,/version:"7\.69\.12"/);
+  assert.match(server,/Office Card Game v7\.69\.12 server/);
+  assert.match(html,/v7\.69\.12 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.9 — Responsive Board \+ Interaction Follow-up/);
   assert.match(pkg.scripts.test,/dist\/test\/v7699\.test\.js/);
 });
@@ -86,7 +86,7 @@ test("attack mode is board-native, toggleable, escape-cancellable and supports d
   const handlers=sliceBetween(app,"function bindInteractionHandlers", "function bindCardInfoHandlers");
   assert.match(handlers,/\[data-direct-attack-target\]/);
   assert.match(handlers,/__DIRECT_REP__/);
-  assert.match(app,/event\.key === 'Escape'[\s\S]*?interaction\?\.type === 'ATTACK'[\s\S]*?cancelInteraction\(\)/);
+  assert.match(app,/event\.key === 'Escape'[\s\S]*?\['ATTACK','EMPLOYEE','SUPPORT'\]\.includes[\s\S]*?cancelInteraction\(\)/);
 });
 
 test("combat overlay is keyed and mounted once outside normal match rerenders",()=>{
