@@ -23,10 +23,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.6");
-  assert.match(server,/version: "7\.69\.6"/);
-  assert.match(server,/Office Card Game v7\.69\.6 server/);
-  assert.match(html,/v7\.69\.6 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.7");
+  assert.match(server,/version: "7\.69\.7"/);
+  assert.match(server,/Office Card Game v7\.69\.7 server/);
+  assert.match(html,/v7\.69\.7 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
   assert.match(readme,/## v7\.69\.6 — Lobby Balance \+ Card Presentation Polish/);
   assert.match(readme,/## v7\.69\.5 — Full-Desk Lobby Geometry, Artwork Rollout \+ Match HUD Fixes/);
   assert.match(readme,/## v7\.69\.3 — Executive Desk Lobby \+ Rematch Gate/);
@@ -371,9 +372,9 @@ test("v7.69.5 integrates the supplied card artwork batch with canonical web slug
   const supplied=cards.filter(card=>String(card.artId??'').endsWith('.webp'));
   const missing=cards.filter(card=>!card.artId);
   assert.equal(cards.length,107);
-  assert.equal(illustrated.length,82);
-  assert.equal(supplied.length,81);
-  assert.equal(missing.length,25);
+  assert.equal(illustrated.length,107);
+  assert.equal(supplied.length,106);
+  assert.equal(missing.length,0);
   assert.equal(cards.find(card=>card.id==='CS-002')?.artId,'alpha/call-center-agent.webp');
   assert.equal(cards.find(card=>card.id==='IT-006')?.artId,'alpha/erp-specialist.webp');
   assert.equal(cards.find(card=>card.id==='IT-014')?.artId,'alpha/server-cluster.webp');

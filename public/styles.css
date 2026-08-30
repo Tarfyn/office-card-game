@@ -9601,3 +9601,388 @@ body.match-mode .own-hand .hand-fan-card {
   .desk-tools-tray .rules-primer,
   .desk-tools-tray .lobby-playtest-drawer { color:#2f241a; }
 }
+
+/* v7.69.7 — card consistency, mirrored field geometry + restrained material completion */
+/* Base cards keep the existing frame/type axis, but the body reads as printed stock instead of UI panels. */
+.card:not(.hidden-card),
+.catalog-card-face {
+  background-image:
+    linear-gradient(180deg,color-mix(in srgb,var(--type-soft) 82%,rgba(255,255,255,.88)) 0 33px,rgba(248,245,237,.91) 33px 100%),
+    url('/ui/materials/paper-offwhite/basecolor.webp');
+  background-size:auto,520px 520px;
+  background-blend-mode:normal,multiply;
+}
+.card-rules-mini,
+.catalog-rules {
+  border-color:rgba(90,79,65,.20);
+  border-radius:3px;
+  background:rgba(247,243,234,.72);
+  box-shadow:inset 0 1px rgba(255,255,255,.54),inset 0 0 0 1px rgba(96,81,62,.025);
+}
+.card-tags span,
+.catalog-tags span {
+  border-color:color-mix(in srgb,var(--type-color) 26%,rgba(92,79,62,.24));
+  border-radius:2px;
+  background:color-mix(in srgb,var(--type-soft) 24%,rgba(248,244,235,.68));
+  box-shadow:none;
+  letter-spacing:.075em;
+}
+.card.type-employee .power-cluster .power-badge,
+.hover-card-face .power-cluster .power-badge { background:#287ba5; }
+
+/* A set Support/Incident is one complete portrait card back. The wrapper remains the interaction target. */
+body.match-mode .board-lane .card.face-down-support {
+  padding:0 !important;
+  border-width:1px;
+  border-top-width:1px;
+  border-color:#b79b61;
+  background:#0b1418 !important;
+  box-shadow:0 7px 18px rgba(0,0,0,.28),inset 0 0 0 1px rgba(230,204,148,.22);
+}
+body.match-mode .board-lane .card.face-down-support::after { display:none; }
+body.match-mode .board-lane .card.face-down-support > .ocg-card-back { inset:0; border-radius:3px; }
+body.match-mode .board-lane .card.face-down-support > .face-down-card-state {
+  position:absolute;
+  z-index:4;
+  left:4px;
+  right:4px;
+  bottom:4px;
+  min-height:0;
+  margin:0;
+  pointer-events:none;
+}
+body.match-mode .board-lane .card.face-down-support .card-info {
+  top:3px;
+  right:3px;
+  width:13px;
+  min-width:13px;
+  height:13px;
+  min-height:13px;
+  padding:0;
+  font-size:5.5px;
+  background:rgba(241,232,210,.90);
+}
+body.match-mode .board-lane .card.face-down-support.hidden-card .card-info { display:none; }
+body.match-mode .board-lane .card.face-down-support .card-ability { z-index:5; }
+.opponent-hand-card > .ocg-card-back { inset:0; }
+
+/* Own and Opponent retain identical 5+4 slot rules. The outer rows compensate only for asymmetric HUD/hand reserves,
+   leaving the actual lane/card area equal on both sides. */
+body.match-mode .battlefield-surface {
+  --field-seam:26px;
+  --field-seam-half:13px;
+  --field-board-half-balance:57px; /* (154px own reserve - 40px opponent reserve) / 2 */
+  grid-template-rows:
+    minmax(0,calc(50% - var(--field-seam-half) - var(--field-board-half-balance)))
+    var(--field-seam)
+    minmax(0,calc(50% - var(--field-seam-half) + var(--field-board-half-balance)));
+}
+body.match-mode .opponent-board { padding-top:40px; }
+body.match-mode .own-board { padding-bottom:154px; }
+
+/* Live cards use the same anatomy as the Deckbuilder: type/department, name, cost, art, rules, tags and Power. */
+body.match-mode .board-lane .card:not(.face-down-support),
+body.match-mode .own-hand .hand-fan-card:not(.face-down-support) {
+  display:flex;
+  flex-direction:column;
+}
+body.match-mode .board-lane .card .card-rules-mini,
+body.match-mode .own-hand .hand-fan-card .card-rules-mini { display:-webkit-box; }
+body.match-mode .board-lane .card .card-tags,
+body.match-mode .own-hand .hand-fan-card .card-tags { display:flex; }
+body.match-mode .board-lane .card .card-detail-row,
+body.match-mode .own-hand .hand-fan-card .card-detail-row { display:none; }
+body.match-mode .board-lane .card .card-type-strip,
+body.match-mode .own-hand .hand-fan-card .card-type-strip {
+  flex:0 0 auto;
+  min-height:10px;
+  margin:-1px 16px 2px 0;
+  display:flex;
+  align-items:center;
+  gap:3px;
+}
+body.match-mode .board-lane .card .card-type-strip span,
+body.match-mode .board-lane .card .card-type-strip b,
+body.match-mode .own-hand .hand-fan-card .card-type-strip span,
+body.match-mode .own-hand .hand-fan-card .card-type-strip b { font-size:4.5px; line-height:1; }
+body.match-mode .board-lane .card .card-type-strip span,
+body.match-mode .own-hand .hand-fan-card .card-type-strip span { padding:1px 3px; }
+body.match-mode .board-lane .card .card-name-row,
+body.match-mode .own-hand .hand-fan-card .card-name-row { flex:0 0 auto; min-height:18px; }
+body.match-mode .board-lane .card .card-name,
+body.match-mode .own-hand .hand-fan-card .card-name {
+  min-height:0;
+  padding-right:17px;
+  font-size:6.2px;
+  line-height:1.06;
+}
+body.match-mode .board-lane .card .card-cost-badge,
+body.match-mode .own-hand .hand-fan-card .card-cost-badge { transform:scale(.58); transform-origin:top right; }
+body.match-mode .board-lane .card .card-art-stage,
+body.match-mode .own-hand .hand-fan-card .card-art-stage { flex:0 0 auto; margin:0 0 2px; border-width:1px; border-radius:3px; }
+body.match-mode .board-lane .card .card-art-window,
+body.match-mode .own-hand .hand-fan-card .card-art-window { margin:0; border-radius:2px; }
+body.match-mode .board-lane .card .card-rules-mini,
+body.match-mode .own-hand .hand-fan-card .card-rules-mini {
+  flex:1 1 auto;
+  min-height:0;
+  margin:1px 0 0;
+  padding:3px 3px 2px;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+  overflow:hidden;
+  font-size:4.6px;
+  line-height:1.14;
+}
+body.match-mode .board-lane .card .card-rules-mini.rules-dense,
+body.match-mode .own-hand .hand-fan-card .card-rules-mini.rules-dense { font-size:4.2px; }
+body.match-mode .board-lane .card .card-rules-mini.rules-ultra,
+body.match-mode .own-hand .hand-fan-card .card-rules-mini.rules-ultra { font-size:3.9px; }
+body.match-mode .board-lane .card .card-tags,
+body.match-mode .own-hand .hand-fan-card .card-tags {
+  flex:0 0 auto;
+  flex-wrap:nowrap;
+  align-items:flex-end;
+  gap:1px;
+  min-height:7px;
+  margin:2px 0 0;
+  overflow:hidden;
+}
+body.match-mode .board-lane .card .card-tags span,
+body.match-mode .own-hand .hand-fan-card .card-tags span {
+  flex:0 1 auto;
+  min-width:0;
+  padding:1px 2px;
+  overflow:hidden;
+  font-size:3.4px;
+  line-height:1.05;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+body.match-mode .board-lane .card.has-power .card-tags,
+body.match-mode .own-hand .hand-fan-card.has-power .card-tags { padding-right:31px; }
+body.match-mode .board-lane .card.has-power.power-changed .card-tags,
+body.match-mode .own-hand .hand-fan-card.has-power.power-changed .card-tags { padding-right:55px; }
+body.match-mode .board-lane .card .power-cluster,
+body.match-mode .own-hand .hand-fan-card .power-cluster { transform:scale(.66); transform-origin:bottom right; }
+
+@media (min-width:761px) and (max-height:1000px) {
+  body.match-mode .battlefield-surface {
+    --field-seam:24px;
+    --field-seam-half:12px;
+    --field-board-half-balance:60px; /* (162px - 42px) / 2 */
+  }
+  body.match-mode .opponent-board { padding-top:42px; }
+  body.match-mode .own-board { padding-bottom:162px; }
+}
+
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .battlefield-surface {
+    --field-board-half-balance:88px; /* (216px - 40px) / 2 */
+  }
+  body.match-mode .opponent-board { padding-top:40px; }
+  body.match-mode .own-board { padding-bottom:216px; }
+  body.match-mode .board-lane .card .card-type-strip span,
+  body.match-mode .board-lane .card .card-type-strip b { font-size:5.4px; }
+  body.match-mode .board-lane .card .card-name { font-size:7.5px; }
+  body.match-mode .board-lane .card .card-rules-mini { font-size:5.6px; line-height:1.16; }
+  body.match-mode .board-lane .card .card-rules-mini.rules-dense { font-size:5.1px; }
+  body.match-mode .board-lane .card .card-rules-mini.rules-ultra { font-size:4.7px; }
+  body.match-mode .board-lane .card .card-tags span { font-size:4.2px; }
+  body.match-mode .board-lane .card .power-cluster { transform:scale(.78); }
+
+  /* Five dossiers stay side-by-side; the added depth grows downward into the 4K deskmat. */
+  .desk-starter-tray .starter-identity {
+    min-height:clamp(250px,14vh,310px);
+    padding:20px 15px 16px;
+    gap:10px;
+  }
+  .desk-starter-tray .starter-identity > strong { font-size:clamp(12px,.52vw,16px); line-height:1.28; }
+  .desk-starter-tray .starter-identity > small { font-size:clamp(9px,.39vw,12px); line-height:1.42; }
+  .desk-starter-tray .starter-identity > em { font-size:clamp(8px,.34vw,10px); line-height:1.35; }
+}
+
+@media (max-width:760px) {
+  body.match-mode .battlefield-surface {
+    --field-seam:22px;
+    --field-seam-half:11px;
+    --field-board-half-balance:68.5px; /* (168px - 31px) / 2 */
+  }
+  body.match-mode .opponent-board { padding-top:31px; }
+  body.match-mode .own-board { padding-bottom:168px; }
+  body.match-mode .board-lane .card .card-type-strip,
+  body.match-mode .own-hand .hand-fan-card .card-type-strip {
+    display:flex;
+    min-height:5px;
+    margin:-1px 9px 1px 0;
+    gap:1px;
+  }
+  body.match-mode .board-lane .card .card-type-strip span,
+  body.match-mode .board-lane .card .card-type-strip b,
+  body.match-mode .own-hand .hand-fan-card .card-type-strip span,
+  body.match-mode .own-hand .hand-fan-card .card-type-strip b { font-size:2.7px; }
+  body.match-mode .board-lane .card .card-type-strip span,
+  body.match-mode .own-hand .hand-fan-card .card-type-strip span { padding:1px 2px; }
+  body.match-mode .board-lane .card .card-name-row,
+  body.match-mode .own-hand .hand-fan-card .card-name-row { min-height:9px; }
+  body.match-mode .board-lane .card .card-name,
+  body.match-mode .own-hand .hand-fan-card .card-name { font-size:3.7px; padding-right:9px; }
+  body.match-mode .board-lane .card .card-cost-badge,
+  body.match-mode .own-hand .hand-fan-card .card-cost-badge { transform:scale(.36); }
+  body.match-mode .board-lane .card .card-rules-mini,
+  body.match-mode .own-hand .hand-fan-card .card-rules-mini {
+    padding:1.5px 2px 1px;
+    -webkit-line-clamp:2;
+    font-size:2.75px;
+    line-height:1.08;
+  }
+  body.match-mode .board-lane .card .card-rules-mini.rules-dense,
+  body.match-mode .board-lane .card .card-rules-mini.rules-ultra,
+  body.match-mode .own-hand .hand-fan-card .card-rules-mini.rules-dense,
+  body.match-mode .own-hand .hand-fan-card .card-rules-mini.rules-ultra { font-size:2.45px; }
+  body.match-mode .board-lane .card .card-tags,
+  body.match-mode .own-hand .hand-fan-card .card-tags { min-height:4px; margin-top:1px; gap:1px; }
+  body.match-mode .board-lane .card .card-tags span,
+  body.match-mode .own-hand .hand-fan-card .card-tags span { padding:.5px 1px; font-size:2.1px; }
+  body.match-mode .board-lane .card.has-power .card-tags,
+  body.match-mode .own-hand .hand-fan-card.has-power .card-tags { padding-right:18px; }
+  body.match-mode .board-lane .card.has-power.power-changed .card-tags,
+  body.match-mode .own-hand .hand-fan-card.has-power.power-changed .card-tags { padding-right:30px; }
+  body.match-mode .board-lane .card .power-cluster,
+  body.match-mode .own-hand .hand-fan-card .power-cluster { transform:scale(.42); }
+  body.match-mode .board-lane .card.face-down-support .card-info { width:11px; min-width:11px; height:11px; min-height:11px; font-size:4px; }
+}
+
+/* Deckbuilder: same desk family, deliberately much quieter than the lobby. No layout/measurement changes. */
+body.collection-mode {
+  --collection-paper-texture:url('/ui/materials/paper-offwhite/basecolor.webp');
+  --collection-folder-texture:url('/ui/materials/folder-manila/basecolor.webp');
+  --collection-plastic-texture:url('/ui/materials/plastic-dark-matte/basecolor.webp');
+  --collection-metal-texture:url('/ui/materials/metal-black-coated/basecolor.webp');
+  --collection-wood-texture:url('/ui/materials/wood-dark-walnut/basecolor.webp');
+  background-image:
+    linear-gradient(rgba(244,241,234,.88),rgba(235,230,219,.90)),
+    var(--collection-wood-texture);
+  background-size:auto,900px 900px;
+}
+body.collection-mode .collection-shell {
+  background-image:
+    linear-gradient(rgba(28,33,30,.93),rgba(20,25,22,.95)),
+    var(--collection-plastic-texture);
+  background-size:auto,520px 520px;
+  border-color:#3b403b;
+  box-shadow:0 13px 34px rgba(32,25,18,.18),inset 0 1px rgba(255,255,255,.045);
+}
+body.collection-mode .collection-toolbar,
+body.collection-mode .collection-discovery {
+  background-image:
+    linear-gradient(rgba(29,34,31,.94),rgba(19,24,21,.96)),
+    var(--collection-plastic-texture);
+  background-size:auto,460px 460px;
+  border-color:#4a4f49;
+  box-shadow:inset 0 1px rgba(255,255,255,.04),0 4px 12px rgba(0,0,0,.12);
+}
+body.collection-mode .collection-browser {
+  background-image:
+    linear-gradient(rgba(244,240,232,.94),rgba(231,224,213,.95)),
+    var(--collection-paper-texture);
+  background-size:auto,620px 620px;
+  border-color:#9f9586;
+  box-shadow:inset 0 1px rgba(255,255,255,.62),inset 0 0 28px rgba(84,67,44,.055);
+}
+body.collection-mode .collection-filters {
+  background-image:
+    linear-gradient(rgba(236,231,222,.94),rgba(224,217,206,.95)),
+    var(--collection-paper-texture);
+  background-size:auto,520px 520px;
+  border-color:#716b61;
+  box-shadow:0 6px 18px rgba(36,29,21,.15),inset 0 1px rgba(255,255,255,.55);
+}
+body.collection-mode .collection-filters input,
+body.collection-mode .collection-filters select,
+body.collection-mode .deck-builder-panel input,
+body.collection-mode .deck-builder-panel select {
+  border-color:#77756d;
+  background:rgba(249,246,239,.94);
+  box-shadow:inset 0 0 0 1px rgba(42,45,42,.05);
+}
+body.collection-mode .builder-starter-shelf,
+body.collection-mode .builder-starter-card {
+  background-image:
+    linear-gradient(rgba(246,235,214,.80),rgba(225,206,174,.82)),
+    var(--collection-folder-texture);
+  background-size:auto,460px 460px;
+  border-color:#a48964;
+}
+body.collection-mode .deck-builder-panel {
+  color:#34312b;
+  border-color:#8b8172;
+  background-image:
+    linear-gradient(rgba(244,239,230,.92),rgba(226,216,202,.94)),
+    var(--collection-paper-texture);
+  background-size:auto,620px 620px;
+  box-shadow:0 13px 32px rgba(34,26,18,.20),inset 0 1px rgba(255,255,255,.58);
+}
+body.collection-mode .deck-builder-panel label,
+body.collection-mode .deck-builder-panel .muted { color:#6d665d; }
+body.collection-mode .deck-builder-panel .deck-total {
+  border-color:#4e514c;
+  background-image:
+    linear-gradient(rgba(26,31,28,.94),rgba(18,23,20,.96)),
+    var(--collection-plastic-texture);
+  background-size:auto,360px 360px;
+  color:#eee7dc;
+}
+body.collection-mode .deck-builder-panel .deck-total.valid { color:#98ddb0; }
+body.collection-mode .deck-builder-panel .collection-preview,
+body.collection-mode .deck-builder-panel .deck-stats,
+body.collection-mode .deck-builder-panel .deck-completion-check,
+body.collection-mode .deck-builder-panel .deck-identity,
+body.collection-mode .deck-builder-panel .deck-engine-coverage,
+body.collection-mode .deck-builder-panel .deck-engine-fits {
+  background-image:
+    linear-gradient(rgba(250,247,241,.90),rgba(235,228,217,.91)),
+    var(--collection-paper-texture);
+  background-size:auto,480px 480px;
+  border-color:#b3aa9c;
+  color:#34312b;
+  box-shadow:inset 0 1px rgba(255,255,255,.58),0 3px 9px rgba(52,40,27,.07);
+}
+body.collection-mode .collection-preview.empty {
+  border-style:solid;
+  border-color:#b7ad9e;
+  background-image:
+    linear-gradient(rgba(247,243,235,.88),rgba(233,226,215,.89)),
+    var(--collection-paper-texture);
+  background-size:auto,460px 460px;
+  box-shadow:inset 0 3px 10px rgba(67,53,37,.07),inset 0 0 0 1px rgba(255,255,255,.45);
+}
+body.collection-mode .collection-toolbar button,
+body.collection-mode .deck-builder-panel button,
+body.collection-mode .builder-starter-card button {
+  border-color:#3f433f;
+  background-image:
+    linear-gradient(rgba(49,54,50,.90),rgba(28,33,30,.94)),
+    var(--collection-plastic-texture);
+  background-size:auto,320px 320px;
+  color:#eee8dd;
+  box-shadow:inset 0 1px rgba(255,255,255,.07),0 2px 4px rgba(0,0,0,.10);
+}
+body.collection-mode .collection-toolbar .collection-mode-toggle button.active {
+  border-color:#8c7345;
+  background-image:linear-gradient(180deg,#ead8a9,#bb9143);
+  color:#201c15;
+}
+body.collection-mode .deck-builder-panel button.danger {
+  border-color:#c58e8e;
+  background-image:none;
+  background:#fff1f1;
+  color:#8b1a1a;
+}
+body.collection-mode .deck-builder-panel button.ghost {
+  border-color:transparent;
+  background-image:none;
+  background:transparent;
+  color:#5f5a52;
+  box-shadow:none;
+}

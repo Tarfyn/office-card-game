@@ -1079,7 +1079,8 @@
     ],
     "rulesText": "",
     "flavorText": "Which queue does this belong in?",
-    "implementationStatus": "FULL"
+    "implementationStatus": "FULL",
+    "artId": "alpha/triage-agent.webp"
   },
   {
     "id": "CS-022",
@@ -1143,7 +1144,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/warm-transfer.webp"
   },
   {
     "id": "IT-001",
@@ -2223,7 +2225,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/rollback-plan.webp"
   },
   {
     "id": "OFC-001",
@@ -2274,7 +2277,8 @@
         ]
       }
     ],
-    "flavorText": "It’s already on your desk."
+    "flavorText": "It’s already on your desk.",
+    "artId": "alpha/administrative-assistant.webp"
   },
   {
     "id": "OFC-002",
@@ -2334,7 +2338,8 @@
         ]
       }
     ],
-    "flavorText": "I moved three meetings to make this meeting possible."
+    "flavorText": "I moved three meetings to make this meeting possible.",
+    "artId": "alpha/executive-assistant.webp"
   },
   {
     "id": "OFC-003",
@@ -2394,7 +2399,8 @@
         ]
       }
     ],
-    "flavorText": "Who booked this room?"
+    "flavorText": "Who booked this room?",
+    "artId": "alpha/office-manager.webp"
   },
   {
     "id": "OFC-004",
@@ -2440,7 +2446,8 @@
     ],
     "rulesText": "The first Process card you play or set each turn costs 1 less.",
     "implementationStatus": "FULL",
-    "flavorText": "There’s a process for that."
+    "flavorText": "There’s a process for that.",
+    "artId": "alpha/process-manager.webp"
   },
   {
     "id": "OFC-005",
@@ -2503,7 +2510,8 @@
         ]
       }
     ],
-    "flavorText": "Can we align on this first?"
+    "flavorText": "Can we align on this first?",
+    "artId": "alpha/department-manager.webp"
   },
   {
     "id": "OFC-006",
@@ -2588,7 +2596,8 @@
     ],
     "rulesText": "Promotion 2 — Office. The first Meeting or Process Action you play each turn costs 1 less. The first time an opponent’s card is delayed each turn, draw 1 card.",
     "implementationStatus": "FULL",
-    "flavorText": "Let’s standardize the exception."
+    "flavorText": "Let’s standardize the exception.",
+    "artId": "alpha/operations-director.webp"
   },
   {
     "id": "OFC-007",
@@ -2697,7 +2706,8 @@
         ]
       }
     ],
-    "flavorText": "I’m technically available after 16:30."
+    "flavorText": "I’m technically available after 16:30.",
+    "artId": "alpha/calendar-block.webp"
   },
   {
     "id": "OFC-009",
@@ -2775,7 +2785,8 @@
     "rulesText": "Target up to 3 Employees you control; they each get +1 Power until end of turn. If you control a Lead or Executive, one of them gets an additional +1 Power.",
     "implementationStatus": "FULL",
     "implementationNotes": "Base group buff plus optional selected bonus target are implemented; BONUS must be among TARGETS.",
-    "flavorText": "This could not have been an email. Apparently."
+    "flavorText": "This could not have been an email. Apparently.",
+    "artId": "alpha/all-hands-meeting.webp"
   },
   {
     "id": "OFC-010",
@@ -2817,7 +2828,8 @@
     ],
     "rulesText": "Look at the top 3 cards of your Deck. You may reveal a Meeting or Process card and add it to your hand. Put the rest on the bottom in any order.",
     "implementationStatus": "FULL",
-    "flavorText": "Please find attached. This time, actually attached."
+    "flavorText": "Please find attached. This time, actually attached.",
+    "artId": "alpha/please-find-attached.webp"
   },
   {
     "id": "OFC-011",
@@ -2865,7 +2877,8 @@
     ],
     "rulesText": "The first Office Action with printed cost 2 or more you play each turn costs 1 less.",
     "implementationStatus": "FULL",
-    "flavorText": "Only four more signatures."
+    "flavorText": "Only four more signatures.",
+    "artId": "alpha/approval-workflow.webp"
   },
   {
     "id": "OFC-012",
@@ -2913,7 +2926,8 @@
         ]
       }
     ],
-    "flavorText": "For documentation purposes."
+    "flavorText": "For documentation purposes.",
+    "artId": "alpha/paper-trail.webp"
   },
   {
     "id": "OFC-013",
@@ -2961,7 +2975,8 @@
         ]
       }
     ],
-    "flavorText": "We’re five minutes over. Again."
+    "flavorText": "We’re five minutes over. Again.",
+    "artId": "alpha/meeting-overrun.webp"
   },
   {
     "id": "OFC-014",
@@ -2995,7 +3010,8 @@
     ],
     "rulesText": "When your opponent activates a targeted Action or effect, delay it until the start of their next Main Phase. Its current targets remain if legal.",
     "implementationStatus": "FULL",
-    "flavorText": "Still with Legal."
+    "flavorText": "Still with Legal.",
+    "artId": "alpha/pending-approval.webp"
   },
   {
     "id": "OFC-015",
@@ -3046,7 +3062,8 @@
         ]
       }
     ],
-    "flavorText": "Approved. Please don’t change anything."
+    "flavorText": "Approved. Please don’t change anything.",
+    "artId": "alpha/signed-and-approved.webp"
   },
   {
     "id": "OFC-016",
@@ -3098,7 +3115,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/receptionist.webp"
   },
   {
     "id": "OFC-017",
@@ -3151,7 +3169,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/meeting-minutes.webp"
   },
   {
     "id": "MKT-001",
@@ -4007,7 +4026,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/damage-control.webp"
   },
   {
     "id": "MKT-017",
@@ -4063,7 +4083,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/creative-sync.webp"
   },
   {
     "id": "PRD-001",
@@ -4915,7 +4936,8 @@
     ],
     "rulesText": "The first time a Production Employee you control destroys an opposing Employee by battle each turn, target another Production Employee you control; it gets +1 Power until end of turn.",
     "implementationStatus": "FULL",
-    "flavorText": "If it fits, it ships."
+    "flavorText": "If it fits, it ships.",
+    "artId": "alpha/packaging-machine.webp"
   },
   {
     "id": "PRD-016",
@@ -4968,7 +4990,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/emergency-shutdown.webp"
   },
   {
     "id": "PRD-017",
@@ -5015,7 +5038,8 @@
           }
         ]
       }
-    ]
+    ],
+    "artId": "alpha/quality-hold.webp"
   },
   {
     "id": "N-001",
@@ -5676,6 +5700,7 @@
           "period": "TURN"
         }
       }
-    ]
+    ],
+    "artId": "alpha/shared-inbox.webp"
   }
 ]
