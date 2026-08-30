@@ -11489,3 +11489,92 @@ body.match-mode .opponent-board::before { transform:rotate(180deg); }
     background-size:155% 155%,180% 180%,200% 200%;
   }
 }
+
+/* v7.69.15 — board-skin clarity, resource rail balance + lobby large-card finish */
+/* A real board skin owns the lane surface. Keep the interaction slots, but let the artwork breathe. */
+body.match-mode .player-board[class*="board-skin-"] .board-lane {
+  background:transparent !important;
+  border-color:transparent !important;
+  box-shadow:none !important;
+}
+body.match-mode .player-board[class*="board-skin-"] .board-lane::before { display:none !important; }
+
+/* Resource rail: the Archive remains visibly related to the Deck instead of collapsing into a tiny counter. */
+@media (min-width:761px) and (min-height:601px) {
+  body.match-mode .board-resource-row { width:118px; }
+  body.match-mode .archive-compact.is-empty summary {
+    min-height:58px;
+    padding:6px 8px;
+  }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy {
+    min-height:44px;
+    display:grid;
+    place-items:center;
+    gap:4px;
+    border:1px dashed rgba(142,213,255,.13);
+    border-radius:5px;
+  }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy span { font-size:6px; }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-size:16px; }
+}
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .board-resource-row { width:174px; }
+  body.match-mode .deck-pile { min-height:184px; overflow:hidden; }
+  body.match-mode .deck-stack-visual { width:120px; height:168px; }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .deck-stack-visual > span { width:114px; height:160px; }
+  body.match-mode .archive-compact.is-empty summary { min-height:82px; padding:8px 10px; }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy { min-height:62px; }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy span { font-size:7px; }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-size:20px; }
+}
+
+/* Mobile: the 4-slot support group is centered on the same five-column gameplay axis. */
+@media (max-width:760px) {
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support {
+    width:80%;
+    margin-inline:auto;
+    grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+    justify-content:center !important;
+  }
+  body.match-mode .board-lane .card,
+  body.match-mode .board-lane .empty-slot { aspect-ratio:5/7 !important; }
+}
+
+/* Lobby large cards keep the shared Deckbuilder face, but scale its typography/anatomy for showcase duty. */
+.desk-card-fan-item > .catalog-card-face {
+  display:flex;
+  flex-direction:column;
+}
+.desk-card-fan-item > .catalog-card-face .catalog-rules { flex:0 0 auto; }
+.desk-card-fan-item > .catalog-card-face .catalog-tags { margin-top:auto; }
+/* The legacy T3 sweep created a visible bar over real artwork; the shared foil masks remain intact. */
+.desk-card-fan-item .catalog-foil-sheen { display:none !important; }
+
+@media (min-width:761px) {
+  .desk-card-fan-item > .catalog-card-face .catalog-rules {
+    min-height:46px;
+    max-height:58px;
+    font-size:8px;
+    line-height:1.2;
+    -webkit-line-clamp:4;
+  }
+  .desk-card-fan-item > .catalog-card-face .catalog-tags { min-height:18px; max-height:18px; }
+}
+@media (min-width:2200px) and (min-height:1100px) {
+  .desk-card-fan-item > .catalog-card-face .catalog-rules {
+    min-height:72px;
+    max-height:88px;
+    padding:8px;
+    font-size:11px;
+    line-height:1.22;
+    -webkit-line-clamp:5;
+  }
+  .desk-card-fan-item > .catalog-card-face .catalog-tags {
+    min-height:26px;
+    max-height:26px;
+    align-items:flex-end;
+  }
+  .desk-card-fan-item > .catalog-card-face .catalog-tags span { font-size:7px; padding:3px 5px; }
+}

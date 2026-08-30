@@ -16,13 +16,13 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.14 — provisional Classic Offi
 
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
-test("v7.69.14 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.14");
-  assert.match(server,/version: "7\.69\.14"/);
-  assert.match(server,/version:"7\.69\.14"/);
-  assert.match(server,/Office Card Game v7\.69\.14 server/);
-  assert.match(html,/v7\.69\.14 Alpha Playtest/);
-  assert.match(readme,/## v7\.69\.14 — Provisional Classic Office Board \+ Responsive Card Polish/);
+test("v7.69.15 version markers are current",()=>{
+  assert.equal(pkg.version,"7.69.15");
+  assert.match(server,/version: "7\.69\.15"/);
+  assert.match(server,/version:"7\.69\.15"/);
+  assert.match(server,/Office Card Game v7\.69\.15 server/);
+  assert.match(html,/v7\.69\.15 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.15 — Board Skin Clarity \+ Resource Rail \+ Lobby Finish/);
   assert.match(pkg.scripts.test,/dist\/test\/v76914\.test\.js/);
 });
 
@@ -75,4 +75,4 @@ test("v7.69.13 localization and direct-attack work remain intact",()=>{
   assert.match(css,/\/\* v7\.69\.12 — centered hover preview, board-native placement \+ compact physical piles \*\//);
 });
 
-console.log(`\n${passed}/${passed} v7.69.14 tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.15 tests passed.`);
