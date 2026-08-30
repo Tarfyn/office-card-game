@@ -2,6 +2,14 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.9 — Responsive Board + Interaction Follow-up
+
+- Recovers the match board on mobile portrait/landscape, keeps both 5+4 halfboards full-width, and makes the phase seam five exact full-height segments below modal/inspector layers.
+- Expands the cosmetic-ready player identity bars, removes department/deck-name identity leakage from live match surfaces, and removes the artificial vertical split inside each halfboard.
+- Makes attack targeting board-native with attacker toggle/Escape cancel and direct REP targeting, while the authoritative combat overlay is deduplicated into a persistent one-shot presentation host.
+- Improves card readability with a dedicated hover-inspector footer, stronger Employee-blue identity, readable opponent played-card reveals, and deck/archive stack presentation.
+- Fixes loss-state styling so Defeat is red and keeps the v7.69.8 hidden-information/card-back behavior intact.
+
 ## v7.69.8 — Board Geometry + Combat Readability
 
 - Splits the battlefield into two equal mirrored halfboards separated by a compact neutral START / DRAW / MAIN / BATTLE / END phase seam, freeing the former top phase HUD.

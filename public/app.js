@@ -1841,6 +1841,7 @@ function gameplayPresentationFromEvent(event) {
   if (!event || !GAMEPLAY_PRESENTATION_TYPES.has(event.type)) return null;
   const viewerId = state.view?.match?.viewerId;
   const opponent = Boolean(viewerId && event.playerId && event.playerId !== viewerId);
+  if (event.type === 'CARD_PLAYED' && !opponent) return null;
   const cardRef = event.cardInstanceId ?? null;
   const cardName = cardRef ? cardLabel(cardRef) : '';
   let kicker = opponent ? 'OPPONENT ACTION' : 'GAMEPLAY';
@@ -1942,6 +1943,7 @@ function renderInteractionRoleLegend({ targetLabel = 'TARGET', selected = null, 
 
 function beginAttack(attackerId) {
   state.pendingActionConfirmation = null;
+  if (state.interaction?.type === 'ATTACK' && state.interaction.attackerId === attackerId) return cancelInteraction();
   const attack = state.view?.match?.legalActions?.attacks?.find((x) => x.attackerId === attackerId);
   if (!attack) return;
   state.hoverAttackTargetId = null;
@@ -1978,11 +1980,7 @@ function renderInteraction(match) {
   if (interaction.type === 'SUPPORT') {
     return `<div class="interaction-panel slot-guidance interaction-role-panel"><strong>${interaction.kind === 'SYSTEM' ? 'Play' : 'Set'} ${esc(cardLabel(interaction.cardId))}</strong>${renderInteractionRoleLegend({ targetLabel:'SUPPORT SLOT' })}<div class="muted small-copy">Source is marked. Choose one of the highlighted Support slots on your board.</div><button class="small ghost" data-interaction="cancel">Cancel</button></div>`;
   }
-  if (interaction.type === 'ATTACK') {
-    const direct = interaction.targetIds.includes(null);
-    const fieldTargets = interaction.targetIds.filter((id) => id != null).length;
-    return `<div class="interaction-panel interaction-role-panel"><strong>Attack with ${esc(cardLabel(interaction.attackerId))}</strong>${renderInteractionRoleLegend({ targetLabel:'TARGET' })}<div class="muted small-copy">Source is locked. Choose ${fieldTargets ? `one of ${fieldTargets} highlighted Employee target${fieldTargets === 1 ? '' : 's'}` : 'the highlighted target'}${direct ? ' or attack Company Reputation directly' : ''}.</div>${direct ? `<button class="small primary" data-interaction="direct-attack">Attack Company Reputation</button>` : ''}<button class="small ghost" data-interaction="cancel">Cancel</button></div>`;
-  }
+  if (interaction.type === 'ATTACK') return ''; // Board-native target state: attacker/targets/REP carry the interaction.
   if (interaction.type === 'TARGETS') {
     const choice = interaction.targetChoices[interaction.index];
     const selected = interaction.selections[choice.selectorId] ?? [];
@@ -2215,6 +2213,33 @@ function renderCombatMoment() {
   return '';
 }
 
+function combatPresentationKey() {
+  const cues = visualCueEvents();
+  const battle = [...cues].reverse().find((event) => event.type === 'BATTLE_RESOLVED');
+  if (battle) return `battle:${battle.seq}`;
+  const directAttack = [...cues].reverse().find((event) => event.type === 'ATTACK_DECLARED' && event.data?.targetId == null);
+  const directRep = directAttack ? [...cues].reverse().find((event) => event.type === 'REPUTATION_CHANGED' && event.data?.reason === 'DIRECT_ATTACK') : null;
+  if (directAttack && directRep) return `direct:${directAttack.seq}:${directRep.seq}`;
+  const promotion = [...cues].reverse().find((event) => event.type === 'PROMOTION_COMPLETED');
+  return promotion ? `promotion:${promotion.seq}` : '';
+}
+
+function syncCombatPresentationHost() {
+  let host = document.querySelector('#combatPresentationHost');
+  const key = combatPresentationKey();
+  const html = key ? renderCombatMoment() : '';
+  if (!html) { host?.remove(); return; }
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'combatPresentationHost';
+    host.className = 'combat-presentation-host';
+    document.body.appendChild(host);
+  }
+  if (host.dataset.presentationKey === key) return;
+  host.dataset.presentationKey = key;
+  host.innerHTML = html;
+}
+
 function resolutionOutcomeEvent() {
   const cues = visualCueEvents();
   const negatedAction = [...cues].reverse().find((event) => event.type === 'ACTION_RESOLVED' && event.data?.negated);
@@ -2356,8 +2381,9 @@ function renderPlayerVitals(player) {
   const deck = deckHudState(player.deckCount);
   const handTone = player.handCount >= 8 ? 'limit' : 'stable';
   const directDefender = directAttackDefenderId();
+  const directPreview = state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(null) && player.id !== state.view?.match?.viewerId;
   return `<div class="player-vitals" aria-label="Live match resources">
-    <span class="vital rep reputation-target-anchor ${esc(rep.tone)} ${directDefender === player.id ? 'attack-destination' : ''} ${reputationImpactClass(player.id)}" data-reputation-player="${esc(player.id)}"><small>REP</small><b>${esc(player.reputation)}</b>${reputationImpactAmount(player.id) ? `<em class="vital-reputation-delta ${reputationImpactAmount(player.id) < 0 ? 'loss' : 'gain'}">${reputationImpactAmount(player.id) > 0 ? '+' : ''}${esc(reputationImpactAmount(player.id))}</em>` : ''}</span>
+    <span class="vital rep reputation-target-anchor ${esc(rep.tone)} ${directDefender === player.id ? 'attack-destination' : ''} ${directPreview ? 'target-candidate direct-target-candidate' : ''} ${reputationImpactClass(player.id)}" data-reputation-player="${esc(player.id)}" ${directPreview ? 'data-direct-attack-target="1"' : ''}><small>REP</small><b>${esc(player.reputation)}</b>${reputationImpactAmount(player.id) ? `<em class="vital-reputation-delta ${reputationImpactAmount(player.id) < 0 ? 'loss' : 'gain'}">${reputationImpactAmount(player.id) > 0 ? '+' : ''}${esc(reputationImpactAmount(player.id))}</em>` : ''}</span>
     <span class="vital cap"><small>CAP</small><b>${esc(player.availableCapacity)}/${esc(player.maxCapacity)}</b></span>
     <span class="vital hand ${handTone}"><small>HAND</small><b>${esc(player.handCount)}/8</b></span>
     <span class="vital deck ${esc(deck.tone)}"><small>DECK</small><b>${esc(player.deckCount)}</b></span>
@@ -2413,8 +2439,9 @@ function drawAttackConnector() {
   if (!svg || !path || !attackerId || (!pending && !targetId)) { path?.setAttribute('d',''); glowPath?.setAttribute('d',''); return; }
   const source = document.querySelector(`[data-card-ref="${CSS.escape(attackerId)}"]`);
   const defenderId = directAttackDefenderId(match);
-  const target = targetId === null
-    ? document.querySelector(`.reputation-target-anchor[data-reputation-player="${CSS.escape(defenderId ?? '')}"]`)
+  const directPreview = targetId === '__DIRECT_REP__';
+  const target = targetId === null || directPreview
+    ? document.querySelector(`.reputation-target-anchor[data-reputation-player="${CSS.escape((directPreview ? (state.view?.match?.viewerId === 'P1' ? 'P2' : 'P1') : defenderId) ?? '')}"]`)
     : document.querySelector(`[data-card-ref="${CSS.escape(targetId)}"]`);
   if (!source || !target) { path.setAttribute('d',''); glowPath?.setAttribute('d',''); return; }
   const a = source.getBoundingClientRect();
@@ -4454,7 +4481,7 @@ function renderMatchResultPanel(match) {
   const nextLabel = rewardClaimed ? (rated ? 'Queue another' : rematchReady ? 'Join rematch' : 'Rematch') : (rated ? 'Claim + queue another' : rematchReady ? 'Claim + join rematch' : 'Claim + rematch');
   return `<section id="matchResultPanel" class="match-result-panel ${esc(tone)}">
     <div class="match-result-emblem"><span>${outcome === 'WIN' ? 'W' : outcome === 'DRAW' ? '=' : 'L'}</span><small>YOU</small></div>
-    <div class="match-result-copy"><span>MATCH COMPLETE</span><strong>${esc(title)}</strong><p>${esc(mine.playerName)} · ${esc(mine.name)} <i>vs</i> ${esc(theirs.playerName)} · ${esc(theirs.name)}</p><div class="match-scoreline"><span>YOU <b>${esc(myRep)}</b></span><i>COMPANY REPUTATION</i><span>OPP <b>${esc(theirRep)}</b></span></div><div class="match-result-chips"><b>${esc(matchEndReasonLabel(match.reason))}</b><b>${esc(ratingLine)}</b><b>${esc(roomTimerLabel())}</b><b>SESSION ${esc(alphaTestSessionId())}</b></div></div>
+    <div class="match-result-copy"><span>MATCH COMPLETE</span><strong>${esc(title)}</strong><p>${esc(mine.playerName)} <i>vs</i> ${esc(theirs.playerName)}</p><div class="match-scoreline"><span>YOU <b>${esc(myRep)}</b></span><i>COMPANY REPUTATION</i><span>OPP <b>${esc(theirRep)}</b></span></div><div class="match-result-chips"><b>${esc(matchEndReasonLabel(match.reason))}</b><b>${esc(ratingLine)}</b><b>${esc(roomTimerLabel())}</b><b>SESSION ${esc(alphaTestSessionId())}</b></div></div>
     <div class="match-result-actions"><button data-download-bug-report>Report issue</button><button id="reviewCurrentMatch">Review match</button><button id="resultChangeDeck">Change deck</button><button id="resultBackLobby">Back to lobby</button>${rated ? '' : `<button id="resultAlternateRematch" ${state.rewardBusy||rematchReady?'disabled':''}>Alternate opener</button>`}<button class="primary" id="resultPlayAnother" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?'Claiming…':esc(nextLabel)}</button></div>
     <div class="match-result-summary"><span><small>TURNS</small><b>${esc(match.turnNumber)}</b></span><span><small>DURATION</small><b>${elapsed == null ? '—' : esc(formatTelemetrySeconds(elapsed))}</b></span><span><small>SEAT</small><b>${esc(seatLabel)}</b></span><span><small>FINAL REP</small><b>${esc(myRep)}–${esc(theirRep)}</b></span></div>
     ${renderMatchRewardPanel(match)}
@@ -5681,11 +5708,17 @@ function renderDecisionCenter(match) {
   return `<section id="decisionCenter" class="decision-center ${responseActive ? 'response-active' : ''}">${chain}${blocks.join('')}</section>`;
 }
 
+function renderArchiveStackVisual(last) {
+  if (!last) return '<span class="archive-stack-empty" aria-hidden="true"></span>';
+  const def = cardDef(last.definitionId);
+  return `<span class="archive-stack-visual type-${esc(String(def?.cardType ?? 'card').toLowerCase())}" aria-hidden="true"><i></i><i></i><span>${def ? renderArtwork(def) : ''}</span></span>`;
+}
+
 function renderArchive(player) {
   const last = player.archive.at(-1);
   const impacted = archiveImpactForPlayer(player.id) || Boolean(zoneCueEventsForPlayer(player.id, 'ARCHIVE').length);
   const transitionChip = zoneTransitionChip(player.id, 'ARCHIVE');
-  return `<details class="archive-compact ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"><summary><span>Archive</span><strong>${player.archive.length}</strong>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
+  return `<details class="archive-compact ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
     <div class="archive-grid">${player.archive.length ? player.archive.slice().reverse().map((c) => renderCard(c)).join('') : '<div class="zone-empty-state archive-empty"><span>ARCHIVE CLEAR</span><small>Destroyed, resolved and archived cards will collect here.</small></div>'}</div>
   </details>`;
 }
@@ -5801,8 +5834,7 @@ function playerInitials(name = 'Player') {
 
 function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}) {
   const meta = roomDeckMeta(playerId);
-  const department = roomDepartmentForPlayer(playerId);
-  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame"><span>${esc(playerInitials(meta.playerName))}</span></div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}<small>${esc(departmentMark(department))}</small></div>`;
+  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame"><span>${esc(playerInitials(meta.playerName))}</span></div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
 }
 
 function renderPlayer(player, own, match) {
@@ -5810,8 +5842,8 @@ function renderPlayer(player, own, match) {
   const handPlayable = own && match.activePlayerId === match.viewerId && match.phase === 'MAIN' && legalHandCardIds().size > 0;
   const handSelectionActive = own && Boolean(match.legalActions?.canMulligan || match.legalActions?.archiveExcessHandIds?.length || (match.pendingHandSelection?.playerId === match.viewerId));
   const department = roomDepartmentForPlayer(player.id);
-  const deckName = roomDeckNameForPlayer(player.id);
   const deckMeta = roomDeckMeta(player.id);
+  const playerTitle = roomPlayerTitle(player.id);
   const handHtml = own
     ? `<div class="zone-title hand-title">Your hand <span>${esc(handZoneHint(match))}</span>${zoneTransitionChip(player.id, 'HAND')}</div><div class="hand own-hand ${zonePulseClass(player.id, 'HAND')} ${mulliganMode ? 'mulligan-hand' : ''} ${handPlayable ? 'actionable-hand' : ''} ${handSelectionActive ? 'selection-mode' : ''} ${player.hand.length ? '' : 'is-empty'}">${player.hand.length ? player.hand.map((c, i) => renderCard(c,{selectable: Boolean(state.view?.match?.legalActions?.canMulligan || state.view?.match?.legalActions?.archiveExcessHandIds?.length || state.view?.match?.legalActions?.canResolveHandSelection), handIndex:i, handCount:player.hand.length})).join('') : '<div class="hand-empty-state"><span>NO CARDS</span><small>Your hand is empty</small></div>'}</div>`
     : renderOpponentHand(player);
@@ -5822,10 +5854,10 @@ function renderPlayer(player, own, match) {
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(departmentThemeClass(department))}${deskState}">
     ${!own ? handHtml : ''}
-    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div><strong>${esc(deckMeta.playerName)}</strong><small>${esc(deckName)}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
+    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
-    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${zonePulseClass(player.id, 'DECK')}"><span>DECK</span><strong>${player.deckCount}</strong><small>${esc(deckHudState(player.deckCount).label)}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
+    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${zonePulseClass(player.id, 'DECK')}"><div class="deck-stack-visual" aria-hidden="true"><i></i><i></i><span>${cardBackMarkup({ compact:true })}</span></div><span>DECK</span><strong>${player.deckCount}</strong><small>${esc(deckHudState(player.deckCount).label)}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
     ${renderPendingLane(match, player.id)}
     ${own ? frontline + backline : backline + frontline}
     ${own ? handHtml : ''}
@@ -5971,6 +6003,11 @@ function roomDeckMeta(playerId) {
   return { name:state.view?.guestDeckName ?? state.view?.guestDeckId ?? 'Deck', department:state.view?.guestDepartment ?? 'NEUTRAL', playerName:state.view?.guestDisplayName ?? 'Player 2' };
 }
 
+function roomPlayerTitle(playerId) {
+  const raw = playerId === 'P1' ? state.view?.hostPlayerTitle : state.view?.guestPlayerTitle;
+  return typeof raw === 'string' ? raw.trim().slice(0,48) : '';
+}
+
 function matchArenaPreference() {
   const fallback = MATCH_ARENAS.default;
   try {
@@ -6007,7 +6044,8 @@ function renderMatchEndOverlay(match) {
   if (!match || match.status !== 'ENDED' || state.matchEndOverlayDismissedRoomId === state.view?.roomId) return '';
   const outcome = matchRewardOutcome(match) ?? 'DRAW';
   const title = outcome === 'WIN' ? 'VICTORY' : outcome === 'DRAW' ? 'DRAW' : 'DEFEAT';
-  return `<div class="match-end-overlay tone-${esc(outcome.toLowerCase())}" role="dialog" aria-modal="true" aria-labelledby="matchEndOverlayTitle"><div class="match-end-overlay-card"><span>MATCH COMPLETE</span><strong id="matchEndOverlayTitle">${esc(title)}</strong><p>${esc(matchEndOverlayReason(match,outcome))}</p><button class="primary" id="viewMatchResults">View results</button></div></div>`;
+  const tone = outcome === 'WIN' ? 'win' : outcome === 'DRAW' ? 'draw' : 'loss';
+  return `<div class="match-end-overlay tone-${esc(tone)}" role="dialog" aria-modal="true" aria-labelledby="matchEndOverlayTitle"><div class="match-end-overlay-card"><span>MATCH COMPLETE</span><strong id="matchEndOverlayTitle">${esc(title)}</strong><p>${esc(matchEndOverlayReason(match,outcome))}</p><button class="primary" id="viewMatchResults">View results</button></div></div>`;
 }
 
 function bindMatchEndOverlay() {
@@ -6098,9 +6136,9 @@ function renderMatchOpening(match) {
   const openerIsYou = match.firstPlayerId === match.viewerId;
   const openerName = openerIsYou ? 'You' : theirs.playerName;
   return `<section class="match-opening opening-hands">
-    <div class="match-deck you"><span>YOU</span><div><small>YOU · ${esc(mine.playerName)}</small><strong>${esc(mine.name)}</strong></div></div>
+    <div class="match-deck you"><span>YOU</span><div><small>YOU</small><strong>${esc(mine.playerName)}</strong></div></div>
     <div class="match-opening-center"><em>VS</em><b>OPENING HANDS</b><span>${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} · one free mulligan each</span><small>${esc(roomModeLabel())} · ${esc(roomTimerLabel())}</small></div>
-    <div class="match-deck opponent"><div><small>OPPONENT · ${esc(theirs.playerName)}</small><strong>${esc(theirs.name)}</strong></div><span>OPP</span></div>
+    <div class="match-deck opponent"><div><small>OPPONENT</small><strong>${esc(theirs.playerName)}</strong></div><span>OPP</span></div>
   </section>`;
 }
 
@@ -6113,7 +6151,7 @@ function renderTurnFlowCue(match) {
   const turnNumber = Number(cue.data?.turnNumber ?? match.turnNumber ?? 0);
   const firstTurn = turnNumber === 1 && playerId === match.firstPlayerId;
   const player = match.players?.[playerId];
-  const resource = yours && player ? `Capacity ${player.availableCapacity}/${player.maxCapacity}` : esc(meta.name);
+  const resource = yours && player ? `Capacity ${player.availableCapacity}/${player.maxCapacity}` : 'Opponent is active';
   return `<div class="turn-flow-cue ${yours ? 'yours' : 'opponent'}" role="status" aria-live="polite"><div class="turn-flow-emblem">${yours ? 'YOU' : 'OPP'}</div><div><span>TURN ${esc(turnNumber)}</span><strong>${yours ? 'YOUR TURN' : 'OPPONENT TURN'}</strong><small>${firstTurn ? 'The office opens · first Draw skipped' : resource}</small></div></div>`;
 }
 
@@ -6215,7 +6253,8 @@ function renderGame() {
       </div>
       ${match.status === 'ENDED' ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>
-  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderCombatMoment()}${renderResolutionMoment()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
+  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderResolutionMoment()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
+  syncCombatPresentationHost();
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   document.querySelector('#resultPlayAnother')?.addEventListener('click', playAnotherMatch);
@@ -6646,6 +6685,26 @@ function bindInteractionHandlers() {
       render();
     };
   });
+  document.querySelectorAll('[data-direct-attack-target]').forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      if (state.interaction?.type !== 'ATTACK' || !state.interaction.targetIds.includes(null)) return;
+      state.hoverAttackTargetId = '__DIRECT_REP__';
+      scheduleAttackConnectorDraw();
+    });
+    el.addEventListener('mouseleave', () => {
+      if (state.hoverAttackTargetId === '__DIRECT_REP__') state.hoverAttackTargetId = null;
+      scheduleAttackConnectorDraw();
+    });
+    el.onclick = (event) => {
+      event.stopPropagation();
+      const interaction = state.interaction;
+      if (state.intentBusy || interaction?.type !== 'ATTACK' || !interaction.targetIds.includes(null)) return;
+      const attackerId = interaction.attackerId;
+      state.hoverAttackTargetId = null;
+      state.interaction = null;
+      sendIntent({ type:'DECLARE_ATTACK', attackerId, targetId:null });
+    };
+  });
   document.querySelectorAll('[data-card-ability]').forEach((button) => {
     button.onclick = (event) => {
       event.stopPropagation();
@@ -6904,7 +6963,10 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('orientationchange', () => setTimeout(()=>scheduleAttackConnectorDraw(),120));
 
 document.addEventListener('keydown', (event) => {
-  if (!state.focusedCardRef) return;
+  if (!state.focusedCardRef) {
+    if (event.key === 'Escape' && state.interaction?.type === 'ATTACK') { event.preventDefault(); cancelInteraction(); }
+    return;
+  }
   if (event.key === 'Tab') {
     const panel = document.querySelector('[data-modal-panel]');
     const focusable = [...(panel?.querySelectorAll('button:not(:disabled),[href],input:not(:disabled),select:not(:disabled),[tabindex]:not([tabindex="-1"])') ?? [])];
