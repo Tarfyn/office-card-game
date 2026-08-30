@@ -20,11 +20,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69.10 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.13");
-  assert.match(server,/version: "7\.69\.13"/);
-  assert.match(server,/version:"7\.69\.13"/);
-  assert.match(server,/Office Card Game v7\.69\.13 server/);
-  assert.match(html,/v7\.69\.13 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.14");
+  assert.match(server,/version: "7\.69\.14"/);
+  assert.match(server,/version:"7\.69\.14"/);
+  assert.match(server,/Office Card Game v7\.69\.14 server/);
+  assert.match(html,/v7\.69\.14 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.10 — Direct Attack Target \+ Phase Alignment/);
   assert.match(pkg.scripts.test,/dist\/test\/v76910\.test\.js/);
 });

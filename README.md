@@ -2,6 +2,15 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.14 — Provisional Classic Office Board + Responsive Card Polish
+
+- Uses the supplied `classic-office.webp` as the single provisional board-half asset for both players.
+- Own half uses the source orientation; opponent half renders the same file rotated 180 degrees.
+- No board selection/loadout UI is introduced yet.
+- Mobile Support slots are centered and live field cards use a cleaner compact 5:7 presentation.
+- Deck/Archive piles gain more physical-card presence at 1K/4K.
+- Lobby showcase cards reuse the Deckbuilder card face for visual parity.
+
 ## v7.69.13 — Localization + Mobile Geometry + Showcase Polish
 
 - Normalizes mobile Employee and Support/System lanes to one 5:7 card geometry while centering the gameplay lanes independently from the Deck/Archive side rail.

@@ -20,11 +20,11 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.13 — mobile slot parity, phys
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.13 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.13");
-  assert.match(server,/version: "7\.69\.13"/);
-  assert.match(server,/version:"7\.69\.13"/);
-  assert.match(server,/Office Card Game v7\.69\.13 server/);
-  assert.match(html,/v7\.69\.13 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.14");
+  assert.match(server,/version: "7\.69\.14"/);
+  assert.match(server,/version:"7\.69\.14"/);
+  assert.match(server,/Office Card Game v7\.69\.14 server/);
+  assert.match(html,/v7\.69\.14 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.13 — Localization \+ Mobile Geometry \+ Showcase Polish/);
   assert.match(pkg.scripts.test,/dist\/test\/v76913\.test\.js/);
 });
@@ -44,19 +44,11 @@ test("desktop and 4K piles emphasize the physical card while empty Archive stays
   assert.match(polish,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?deck-stack-visual,[\s\S]*?archive-stack-visual \{ width:86px; height:120px; \}/);
 });
 
-test("Lobby showcase uses the live card anatomy instead of the stretched catalog face",()=>{
+test("Lobby showcase renderer remains a single shared helper",()=>{
   const helper=between(app,"function renderLobbyLiveCardFace", "function renderLobbyDeckShowcase");
-  assert.match(helper,/class="card lobby-live-card type-/);
-  assert.match(helper,/card-type-strip/);
-  assert.match(helper,/card-name-row/);
-  assert.match(helper,/card-art-stage/);
-  assert.match(helper,/card-rules-mini/);
-  assert.match(helper,/card-tags/);
-  assert.match(helper,/renderPowerDisplay\(null, def\)/);
+  assert.match(helper,/renderCatalogCardFace\(def/);
   const showcase=between(app,"function renderLobbyDeckShowcase", "function renderLobbyDeckPrep");
   assert.match(showcase,/renderLobbyLiveCardFace\(entry\.def\)/);
-  assert.doesNotMatch(showcase,/renderCatalogCardFace\(entry\.def/);
-  assert.match(polish,/desk-card-fan-item > \.lobby-live-card/);
 });
 
 test("German match localization covers phase, mulligan, slot and inspector surfaces",()=>{

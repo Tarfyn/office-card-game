@@ -1,5 +1,5 @@
 export const en = Object.freeze({
-  meta: { title: "Office Card Game — v7.69.13 Alpha Playtest" },
+  meta: { title: "Office Card Game — v7.69.14 Alpha Playtest" },
   accessibility: { skipToGame: "Skip to game content" },
   nav: { backToLobby: "Back to lobby", lobby: "Lobby" },
   language: { label: "Language", english: "English", german: "German" },

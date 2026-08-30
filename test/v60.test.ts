@@ -22,7 +22,7 @@ test("v6.0 carries starter department identity onto both live player boards", ()
   assert.match(app,/player-department-mark/);
   assert.match(app,/roomPlayerTitle\(player\.id\)/);
   assert.doesNotMatch(app,/roomDeckNameForPlayer\(player\.id\)/);
-  assert.match(app,/player-board \$\{own \? 'own-board' : 'opponent-board'\} \$\{esc\(departmentThemeClass\(department\)\)\}/);
+  assert.match(app,/player-board \$\{own \? 'own-board' : 'opponent-board'\}[\s\S]*?\$\{esc\(departmentThemeClass\(department\)\)\}/);
   assert.match(css,/\.player-board\.dept-customer_service/);
   assert.match(css,/\.player-board\.dept-production/);
 });
