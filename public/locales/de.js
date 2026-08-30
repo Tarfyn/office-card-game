@@ -1,5 +1,5 @@
 export const de = Object.freeze({
-  meta: { title: "Office Card Game — v7.69.14 Alpha-Playtest" },
+  meta: { title: "Office Card Game — v7.69.15 Alpha-Playtest" },
   accessibility: { skipToGame: "Zum Spielinhalt springen" },
   nav: { backToLobby: "Zurück zur Lobby", lobby: "Lobby" },
   language: { label: "Sprache", english: "Englisch", german: "Deutsch" },
@@ -200,7 +200,7 @@ export const deLegacyPhrases = Object.freeze({
   "Legal starter":"Legales Starterdeck",
   "OWNED READY":"BESITZ BEREIT",
 
-  /* v7.69.14 match-surface localization audit */
+  /* v7.69.15 match-surface localization audit */
   "OPENING HANDS":"STARTHÄNDE",
   "YOUR":"DU",
   "OPPONENT":"GEGNER",

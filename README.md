@@ -2,7 +2,7 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
-## v7.69.14 — Provisional Classic Office Board + Responsive Card Polish
+## v7.69.15 — Provisional Classic Office Board + Responsive Card Polish
 
 - Uses the supplied `classic-office.webp` as the single provisional board-half asset for both players.
 - Own half uses the source orientation; opponent half renders the same file rotated 180 degrees.
@@ -1753,4 +1753,12 @@ Friendly rematch is now a two-seat handshake: the first player can claim the rew
 
 ## v7.69.2 — Collision-Free HUD + Responsive Rail Geometry
 
-v7.69.2 hardens the board-first layout after hosted 1K, 4K and mobile QA. Player identity and live status now have separate reserved HUD columns, the local hand has dedicated bottom-board space instead of covering Support/System or the player profile, and the right Match HUD is vertical-scroll only with its internal stat grids reflowing to the available rail width. Mobile uses the compact phase HUD instead of the desktop phase pill, keeps hand / Archive / command dock / own profile in non-overlapping zones, and the detailed result view suppresses battlefield chrome once `View results` is opened. Large-screen card/HUD scaling is increased while the recessed 3D slot treatment remains unchanged.
+v7.69.2 hardens the board-first layout after hosted 1K, 4K and mobile QA. Player identity and live status now have separate reserved HUD columns, the local hand has dedicated bottom-board space instead of covering Support/System or the player profile, and the right Match HUD is vertical-scroll only with its internal stat grids reflowing to the available rail width. Mobile uses the compact phase HUD instead of the desktop phase pill, keeps hand / Archive / command dock / own profile in non-overlapping zones, and the detailed result view suppresses battlefield chrome once `View results` is opened. Large-screen card/HUD scaling is increased while the recessed 3D slot treatment remains unchanged.## v7.69.15 — Board Skin Clarity + Resource Rail + Lobby Finish
+
+- Replaces the provisional Classic Office board asset with the updated user-supplied board.
+- Hides large lane surfaces whenever a board skin is active while retaining card slots as interaction guides.
+- Rebalances Deck/Archive rails, with a more substantial empty Archive state at 1K and 4K.
+- Centers the four-slot mobile Support row on the five-column gameplay axis.
+- Keeps the shared Deckbuilder card renderer in the Lobby while scaling rules/tags for large showcase cards and removing the legacy art sweep.
+
+
