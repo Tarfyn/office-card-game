@@ -3528,6 +3528,24 @@ function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
   return chosen;
 }
 
+function renderLobbyLiveCardFace(def) {
+  if (!def) return '<div class="card lobby-live-card missing">Unknown card</div>';
+  const costParts = cardCostParts(def);
+  const finishTier = String(sandboxRarityTier(def) ?? 'T0');
+  const detailBits = [def.rank, def.promotion?.required ? `PROMOTION ${def.promotion.required}` : ''].filter(Boolean);
+  const longName = def.name.length >= 22;
+  const hasPower = def.cardType === 'EMPLOYEE' && def.power != null;
+  return `<div class="card lobby-live-card type-${esc(def.cardType.toLowerCase())} dept-${esc((def.department ?? 'neutral').toLowerCase())} tier-${esc(finishTier.toLowerCase())} ${hasPower ? 'has-power' : ''}">
+    <div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b></div>
+    <div class="card-name-row"><div class="card-name ${longName ? 'long-name' : ''}">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
+    <div class="card-art-stage">${renderArtwork(def)}</div>
+    <div class="card-detail-row">${detailBits.length ? detailBits.map((bit) => `<span>${esc(bit)}</span>`).join('') : '<span class="detail-spacer"></span>'}</div>
+    ${def.rulesText ? `<div class="card-rules-mini ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText)}</div>` : '<div class="card-rules-mini empty"></div>'}
+    <div class="card-tags ${def.tags?.length ? '' : 'empty'}">${def.tags?.length ? def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('') : ''}</div>
+    ${hasPower ? renderPowerDisplay(null, def) : ''}
+  </div>`;
+}
+
 function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
   const deck = lobbyDeckSummary(value);
   if (!deck) return `<section class="desk-deck-showcase empty"><div class="desk-deck-sheet"><span>${lobbyCopy('CURRENT DECK','AKTUELLES DECK')}</span><strong>${lobbyCopy('No deck selected','Kein Deck ausgewählt')}</strong></div></section>`;
@@ -3550,7 +3568,7 @@ function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
       <small>${esc(typeLine)}</small>
     </div>
     <div class="desk-card-fan" aria-label="${esc(lobbyCopy('Rotating cards from selected deck','Wechselnde Karten aus dem ausgewählten Deck'))}">
-      ${preview.length ? preview.map((entry,index)=>`<div class="desk-card-fan-item fan-${index+1}" title="${esc(entry.def.name)} · ${esc(entry.copies)}×">${renderCatalogCardFace(entry.def,{ compact:false })}<i>${esc(entry.copies)}×</i></div>`).join('') : `<div class="desk-card-fan-empty">${lobbyCopy('Add cards to preview this deck.','Füge Karten hinzu, um dieses Deck anzuzeigen.')}</div>`}
+      ${preview.length ? preview.map((entry,index)=>`<div class="desk-card-fan-item fan-${index+1}" title="${esc(entry.def.name)} · ${esc(entry.copies)}×">${renderLobbyLiveCardFace(entry.def)}<i>${esc(entry.copies)}×</i></div>`).join('') : `<div class="desk-card-fan-empty">${lobbyCopy('Add cards to preview this deck.','Füge Karten hinzu, um dieses Deck anzuzeigen.')}</div>`}
     </div>
   </section>`;
 }

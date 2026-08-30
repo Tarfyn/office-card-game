@@ -2,6 +2,14 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.13 — Localization + Mobile Geometry + Showcase Polish
+
+- Normalizes mobile Employee and Support/System lanes to one 5:7 card geometry while centering the gameplay lanes independently from the Deck/Archive side rail.
+- Rebalances desktop/4K Deck and Archive piles around larger physical card stacks and a compact zero-card Archive state.
+- Expands German match-surface localization across mulligan, phases, guidance, decisions, combat, hand/slot labels and match controls without changing canonical server/rules terminology.
+- Renders Lobby showcase cards with the live card anatomy used in the match instead of stretching the catalog card face on large displays.
+- Preserves the stable centered hand/hover preview, board-native placement and board-wide Direct Attack interaction from v7.69.12.
+
 ## v7.69.12 — Preview + Board Interaction Polish
 
 - Centers every desktop hover closeup in one stable battlefield preview zone instead of anchoring it differently to hand and field cards.
