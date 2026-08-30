@@ -59,7 +59,49 @@ export function localizedCardCoverage() {
 
 function translateLegacyLiteral(value) {
   if (locale !== 'de') return value;
-  return deLegacyPhrases[value] ?? value;
+  const exact = deLegacyPhrases[value];
+  if (exact != null) return exact;
+
+  const phaseName = (phase) => ({ START:'START', DRAW:'ZIEH', MAIN:'MAIN', BATTLE:'KAMPF', END:'END', MULLIGAN:'MULLIGAN' })[phase] ?? phase;
+  let match = String(value).match(/^YOUR (START|DRAW|MAIN|BATTLE|END|MULLIGAN) PHASE$/);
+  if (match) return `DEINE ${phaseName(match[1])}-PHASE`;
+  match = String(value).match(/^OPPONENT (START|DRAW|MAIN|BATTLE|END|MULLIGAN) PHASE$/);
+  if (match) return `GEGNERISCHE ${phaseName(match[1])}-PHASE`;
+  match = String(value).match(/^Turn (\d+) · Capacity (\d+)\/(\d+)$/);
+  if (match) return `Zug ${match[1]} · Kapazität ${match[2]}/${match[3]}`;
+  match = String(value).match(/^Turn (\d+) · waiting for (.+)$/);
+  if (match) return `Zug ${match[1]} · wartet auf ${match[2]}`;
+  match = String(value).match(/^Turn (\d+) · (START|DRAW|MAIN|BATTLE|END)$/);
+  if (match) return `Zug ${match[1]} · ${phaseName(match[2])}`;
+  match = String(value).match(/^EMPLOYEE (\d+)$/);
+  if (match) return `MITARBEITER ${match[1]}`;
+  match = String(value).match(/^SUPPORT (\d+)$/);
+  if (match) return `SUPPORT ${match[1]}`;
+  match = String(value).match(/^(\d+) card(?:s)?$/);
+  if (match) return `${match[1]} Karte${match[1] === '1' ? '' : 'n'}`;
+  match = String(value).match(/^(\d+) hand play(?:s)? ready$/);
+  if (match) return `${match[1]} Handkarte${match[1] === '1' ? '' : 'n'} spielbar`;
+  match = String(value).match(/^(\d+) Employee(?:s)? ready to attack$/);
+  if (match) return `${match[1]} Mitarbeiter angriffsbereit`;
+  match = String(value).match(/^(\d+) activated (ability|abilities) ready$/);
+  if (match) return `${match[1]} aktivierte ${match[1] === '1' ? 'Fähigkeit' : 'Fähigkeiten'} bereit`;
+  match = String(value).match(/^(\d+) PLAYABLE$/);
+  if (match) return `${match[1]} SPIELBAR`;
+  match = String(value).match(/^(\d+) ATTACK(?:S)?$/);
+  if (match) return `${match[1]} ANGRIFF${match[1] === '1' ? '' : 'E'}`;
+  match = String(value).match(/^(\d+) ABILIT(?:Y|IES)$/);
+  if (match) return `${match[1]} FÄHIGKEIT${match[1] === '1' ? '' : 'EN'}`;
+  match = String(value).match(/^(\d+) RESPONSE(?:S)?$/);
+  if (match) return `${match[1]} REAKTION${match[1] === '1' ? '' : 'EN'}`;
+  match = String(value).match(/^(\d+) REMAIN$/);
+  if (match) return `${match[1]} OFFEN`;
+  match = String(value).match(/^Last: (.+)$/);
+  if (match) return `Zuletzt: ${match[1]}`;
+  match = String(value).match(/^Connection: (.+)$/);
+  if (match) return `Verbindung: ${match[1]}`;
+  match = String(value).match(/^Chain (\d+)$/i);
+  if (match) return `Kette ${match[1]}`;
+  return value;
 }
 
 export function applyLegacyAppTranslations(root = document.querySelector('#app')) {

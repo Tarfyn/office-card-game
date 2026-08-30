@@ -23,10 +23,10 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.12");
-  assert.match(server,/version: "7\.69\.12"/);
-  assert.match(server,/Office Card Game v7\.69\.12 server/);
-  assert.match(html,/v7\.69\.12 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.13");
+  assert.match(server,/version: "7\.69\.13"/);
+  assert.match(server,/Office Card Game v7\.69\.13 server/);
+  assert.match(html,/v7\.69\.13 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
   assert.match(readme,/## v7\.69\.6 — Lobby Balance \+ Card Presentation Polish/);
@@ -321,7 +321,7 @@ test("v7.69.4 stages three real selected-deck cards and updates them with deck c
   assert.match(helpers,/cardDef\(entry\.definitionId\)/);
   assert.match(helpers,/\['EMPLOYEE','ACTION','SYSTEM','INCIDENT'\]/);
   assert.match(helpers,/function renderLobbyDeckShowcase/);
-  assert.match(helpers,/renderCatalogCardFace\(entry\.def/);
+  assert.match(helpers,/renderLobbyLiveCardFace\(entry\.def\)/);
   assert.match(helpers,/desk-card-fan-item fan-\$\{index\+1\}/);
   assert.match(helpers,/querySelectorAll\('\[data-lobby-deck-showcase-host\]'\)/);
   assert.match(helpers,/classList\.toggle\('selected', selected\)/);

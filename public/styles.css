@@ -11227,3 +11227,141 @@ body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-si
   body.match-mode .deck-pile.is-empty,
   body.match-mode .archive-compact.is-empty summary { min-height:38px; }
 }
+
+/* v7.69.13 — mobile slot parity, physical piles + live-card lobby showcase */
+/* Desktop piles prioritize the actual cards. Empty Archive is a compact status, never a blank card tile. */
+@media (min-width:761px) and (min-height:601px) {
+  body.match-mode .board-resource-row {
+    width:96px;
+    gap:5px;
+  }
+  body.match-mode .deck-pile,
+  body.match-mode .archive-compact summary {
+    min-height:104px;
+    padding:6px;
+  }
+  body.match-mode .deck-stack-visual,
+  body.match-mode .archive-stack-visual {
+    width:66px;
+    height:92px;
+  }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .archive-stack-visual > i,
+  body.match-mode .deck-stack-visual > span,
+  body.match-mode .archive-stack-visual > span {
+    width:62px;
+    height:87px;
+  }
+  body.match-mode .deck-summary-copy,
+  body.match-mode .archive-summary-copy {
+    right:3px;
+    top:3px;
+  }
+  body.match-mode .archive-summary-copy strong {
+    min-width:0;
+    width:auto;
+    height:auto;
+    border-radius:0;
+    background:transparent;
+  }
+  body.match-mode .archive-compact.is-empty summary {
+    min-height:34px;
+    padding:5px 7px;
+  }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    width:100%;
+  }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy span { font-size:5px; }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-size:12px; color:#9cabbc; }
+}
+
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .board-resource-row { width:126px; gap:7px; }
+  body.match-mode .deck-pile,
+  body.match-mode .archive-compact summary { min-height:136px; padding:8px; }
+  body.match-mode .deck-stack-visual,
+  body.match-mode .archive-stack-visual { width:86px; height:120px; }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .archive-stack-visual > i,
+  body.match-mode .deck-stack-visual > span,
+  body.match-mode .archive-stack-visual > span { width:81px; height:113px; }
+  body.match-mode .archive-compact.is-empty summary { min-height:44px; }
+  body.match-mode .deck-summary-copy,
+  body.match-mode .archive-summary-copy { right:5px; top:5px; min-width:29px; padding:3px 4px; }
+  body.match-mode .deck-summary-copy strong,
+  body.match-mode .archive-summary-copy strong { font-size:15px; }
+}
+
+/* Mobile gameplay is centered independently of the right-side Deck/Archive rail. Both lanes use one card width. */
+@media (max-width:760px) {
+  body.match-mode .opponent-board { padding:var(--player-outer-reserve) 20px 0 !important; }
+  body.match-mode .own-board { padding:0 20px var(--player-outer-reserve) !important; }
+
+  body.match-mode .slots.employee-row,
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support {
+    --mobile-lane-gap:2px;
+    gap:var(--mobile-lane-gap);
+    justify-content:center;
+    align-items:center;
+  }
+  body.match-mode .slots.employee-row {
+    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+  }
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support {
+    grid-template-columns:repeat(4,minmax(0,calc((100% - 8px) / 5))) !important;
+  }
+  body.match-mode .employee-row > .card,
+  body.match-mode .support-row > .card,
+  body.match-mode .employee-row > .empty-slot,
+  body.match-mode .support-row > .empty-slot {
+    width:100% !important;
+    max-width:none !important;
+    height:auto !important;
+    max-height:100% !important;
+    aspect-ratio:5/7 !important;
+    align-self:center;
+  }
+  body.match-mode .board-lane .card:not(.face-down-support) {
+    min-height:0;
+  }
+  body.match-mode .board-lane .card.face-down-support > .ocg-card-back {
+    width:100%;
+    height:100%;
+  }
+}
+
+/* Lobby showcase cards are the same live card anatomy players see in the match, not a stretched catalog mockup. */
+.desk-card-fan-item > .lobby-live-card {
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+  max-width:none;
+  max-height:none;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  box-sizing:border-box;
+  pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.72),0 9px 20px rgba(0,0,0,.20);
+}
+.desk-card-fan-item > .lobby-live-card .card-art-stage { flex:0 0 auto; }
+.desk-card-fan-item > .lobby-live-card .card-rules-mini { flex:1 1 auto; min-height:0; }
+.desk-card-fan-item > .lobby-live-card .card-tags { flex:0 0 auto; }
+
+@media (min-width:2200px) and (min-height:1100px) {
+  .desk-card-fan-item { width:clamp(245px,7.1vw,285px); }
+  .desk-card-fan-item > .lobby-live-card { padding:7px 7px 6px; }
+  .desk-card-fan-item > .lobby-live-card .card-type-strip span,
+  .desk-card-fan-item > .lobby-live-card .card-type-strip b { font-size:7px; }
+  .desk-card-fan-item > .lobby-live-card .card-name { font-size:13px; }
+  .desk-card-fan-item > .lobby-live-card .card-name.long-name { font-size:11.5px; }
+  .desk-card-fan-item > .lobby-live-card .card-rules-mini { font-size:7.8px; line-height:1.18; }
+  .desk-card-fan-item > .lobby-live-card .card-tags span { font-size:5.7px; }
+}
