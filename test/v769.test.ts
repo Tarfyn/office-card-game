@@ -23,10 +23,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.7");
-  assert.match(server,/version: "7\.69\.7"/);
-  assert.match(server,/Office Card Game v7\.69\.7 server/);
-  assert.match(html,/v7\.69\.7 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.8");
+  assert.match(server,/version: "7\.69\.8"/);
+  assert.match(server,/Office Card Game v7\.69\.8 server/);
+  assert.match(html,/v7\.69\.8 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
   assert.match(readme,/## v7\.69\.6 — Lobby Balance \+ Card Presentation Polish/);
   assert.match(readme,/## v7\.69\.5 — Full-Desk Lobby Geometry, Artwork Rollout \+ Match HUD Fixes/);
@@ -96,7 +97,7 @@ test("v7.69 gives battlefield slots recessed depth without geometry-changing 3D 
 
 test("v7.69 queues longer gameplay feedback while preserving independent attack pacing",()=>{
   assert.match(app,/const ATTACK_PRESENTATION_MS = 2400/);
-  assert.match(app,/const GAMEPLAY_PRESENTATION_MS = 2800/);
+  assert.match(app,/const GAMEPLAY_PRESENTATION_MS = 3400/);
   assert.match(app,/gameplayPresentationQueue/);
   assert.match(app,/enqueueGameplayPresentations\(freshCues\)/);
   assert.match(app,/OPPONENT PLAYED/);
