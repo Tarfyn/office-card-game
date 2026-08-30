@@ -23,10 +23,10 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.8");
-  assert.match(server,/version: "7\.69\.8"/);
-  assert.match(server,/Office Card Game v7\.69\.8 server/);
-  assert.match(html,/v7\.69\.8 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.9");
+  assert.match(server,/version: "7\.69\.9"/);
+  assert.match(server,/Office Card Game v7\.69\.9 server/);
+  assert.match(html,/v7\.69\.9 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
   assert.match(readme,/## v7\.69\.6 — Lobby Balance \+ Card Presentation Polish/);
@@ -50,7 +50,7 @@ test("v7.69 keeps player identity faction-neutral and deck-aware",()=>{
   const player=sliceBetween(app,"function renderPlayer(player, own, match)", "function actionButton");
   assert.match(player,/roomDeckMeta\(player\.id\)/);
   assert.match(player,/playerName/);
-  assert.match(player,/deckName/);
+  assert.doesNotMatch(player,/deckName/); // v7.69.9: public live-match HUD no longer exposes free-form deck names.
   assert.match(player,/player-role-mark/);
   assert.doesNotMatch(player,/identity\.label/);
   assert.doesNotMatch(player,/HOSTILE|RIVAL CORP|YOUR DEPARTMENT/i);
