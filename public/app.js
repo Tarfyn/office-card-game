@@ -3529,21 +3529,10 @@ function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
 }
 
 function renderLobbyLiveCardFace(def) {
-  if (!def) return '<div class="card lobby-live-card missing">Unknown card</div>';
-  const costParts = cardCostParts(def);
-  const finishTier = String(sandboxRarityTier(def) ?? 'T0');
-  const detailBits = [def.rank, def.promotion?.required ? `PROMOTION ${def.promotion.required}` : ''].filter(Boolean);
-  const longName = def.name.length >= 22;
-  const hasPower = def.cardType === 'EMPLOYEE' && def.power != null;
-  return `<div class="card lobby-live-card type-${esc(def.cardType.toLowerCase())} dept-${esc((def.department ?? 'neutral').toLowerCase())} tier-${esc(finishTier.toLowerCase())} ${hasPower ? 'has-power' : ''}">
-    <div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b></div>
-    <div class="card-name-row"><div class="card-name ${longName ? 'long-name' : ''}">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
-    <div class="card-art-stage">${renderArtwork(def)}</div>
-    <div class="card-detail-row">${detailBits.length ? detailBits.map((bit) => `<span>${esc(bit)}</span>`).join('') : '<span class="detail-spacer"></span>'}</div>
-    ${def.rulesText ? `<div class="card-rules-mini ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText)}</div>` : '<div class="card-rules-mini empty"></div>'}
-    <div class="card-tags ${def.tags?.length ? '' : 'empty'}">${def.tags?.length ? def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('') : ''}</div>
-    ${hasPower ? renderPowerDisplay(null, def) : ''}
-  </div>`;
+  if (!def) return '<div class="catalog-card-face missing">Unknown card</div>';
+  // The lobby showcase deliberately reuses the exact Deckbuilder card face.
+  // This keeps type strips, frame treatment, art window, rules, tags, rarity and Power visually identical.
+  return renderCatalogCardFace(def,{ artReady:Boolean(def.artId) });
 }
 
 function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
@@ -5900,6 +5889,17 @@ function renderDeckStackVisual(deckCount) {
   return `<span class="deck-stack-visual" aria-hidden="true"><i></i><i></i><span>${cardBackMarkup({ compact:true })}</span></span>`;
 }
 
+function roomBoardSkinId(playerId) {
+  const fallback = 'classic-office';
+  if (playerId === 'P1') return state.view?.hostBoardSkinId ?? fallback;
+  return state.view?.guestBoardSkinId ?? fallback;
+}
+
+function boardSkinClass(playerId) {
+  const id = String(roomBoardSkinId(playerId) || 'classic-office').toLowerCase().replace(/[^a-z0-9-]/g,'');
+  return `board-skin-${id || 'classic-office'}`;
+}
+
 function renderPlayer(player, own, match) {
   const mulliganMode = own && Boolean(match.legalActions?.canMulligan);
   const handPlayable = own && match.activePlayerId === match.viewerId && match.phase === 'MAIN' && legalHandCardIds().size > 0;
@@ -5916,7 +5916,7 @@ function renderPlayer(player, own, match) {
   const backline = `<div class="zone-title backline-title"><strong>Support</strong><span>${esc(fieldZoneSummary(player, 'SUPPORT', own))}</span>${zoneTransitionChip(player.id, 'SUPPORT_FIELD')}</div><div class="slots support support-row board-lane support-lane ${supportOccupied ? 'lane-occupied' : 'lane-clear'} ${zonePulseClass(player.id, 'SUPPORT_FIELD')}" aria-label="${own ? 'Your' : 'Opponent'} support row">${renderFieldRow(player.supportField, 'SUPPORT', own)}</div>`;
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   const directBoardTarget = !own && state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(null);
-  return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(departmentThemeClass(department))}${deskState}${directBoardTarget ? ' direct-attack-board-target' : ''}" ${directBoardTarget ? 'data-direct-attack-board="1"' : ''}>
+  return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(boardSkinClass(player.id))} ${esc(departmentThemeClass(department))}${deskState}${directBoardTarget ? ' direct-attack-board-target' : ''}" data-board-skin="${esc(roomBoardSkinId(player.id))}" ${directBoardTarget ? 'data-direct-attack-board="1"' : ''}>
     ${!own ? handHtml : ''}
     <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}

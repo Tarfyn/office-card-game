@@ -39,6 +39,8 @@ export type RoomStatus = "WAITING" | "ACTIVE" | "ENDED";
 export type RoomSeatConnectionStatus = "CONNECTED" | "DISCONNECTED";
 export type RoomMatchMode = "FRIENDLY" | "RANKED";
 
+const DEFAULT_BOARD_SKIN_ID = "classic-office";
+
 export interface RoomMatchSettings {
   mode: RoomMatchMode;
   timerProfileId: string;
@@ -125,6 +127,7 @@ export interface PersistedRoomSeat {
   deckId: string;
   deckName: string;
   department: string;
+  boardSkinId: string;
   cards: DeckEntry[];
 }
 
@@ -199,6 +202,8 @@ export interface RoomClientView {
   guestDepartment: string | null;
   hostDisplayName: string | null;
   guestDisplayName: string | null;
+  hostBoardSkinId: string;
+  guestBoardSkinId: string | null;
   settings: RoomMatchSettings;
   lifecycle: RoomLifecycleView;
   timer: RoomTimerView;
@@ -437,7 +442,7 @@ export class RoomService {
     const room: RoomRecord = {
       id: roomId,
       roomVersion: 1,
-      host: { playerId: "P1", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, cards: deck.cards },
+      host: { playerId: "P1", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cards: deck.cards },
       guest: null,
       state: null,
       processedIntents: new Map(),
@@ -463,7 +468,7 @@ export class RoomService {
     const room = this.getRoom(roomId);
     if (room.guest) throw new RoomError("ROOM_FULL", "Room already has two players.");
     const token = this.tokenFactory();
-    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, cards: deck.cards };
+    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cards: deck.cards };
     room.state = createMatch({
       matchId: `match-${room.id}`,
       seed: this.seedFactory(),
@@ -815,8 +820,8 @@ export class RoomService {
       const room: RoomRecord = {
         id: String(saved.id).toUpperCase(),
         roomVersion: Math.max(1, Number(saved.roomVersion ?? 1)),
-        host: structuredClone(saved.host),
-        guest: saved.guest ? structuredClone(saved.guest) : null,
+        host: { ...structuredClone(saved.host), boardSkinId: saved.host.boardSkinId || DEFAULT_BOARD_SKIN_ID },
+        guest: saved.guest ? { ...structuredClone(saved.guest), boardSkinId: saved.guest.boardSkinId || DEFAULT_BOARD_SKIN_ID } : null,
         state: saved.state ? structuredClone(saved.state) : null,
         processedIntents: new Map((saved.processedIntents ?? []).filter((entry) => entry?.key && entry.cached?.response).map((entry) => [entry.key, structuredClone(entry.cached)])),
         listeners: new Set(),
@@ -928,6 +933,8 @@ export class RoomService {
       guestDepartment: room.guest?.department ?? null,
       hostDisplayName: room.host.displayName,
       guestDisplayName: room.guest?.displayName ?? null,
+      hostBoardSkinId: room.host.boardSkinId || DEFAULT_BOARD_SKIN_ID,
+      guestBoardSkinId: room.guest?.boardSkinId || (room.guest ? DEFAULT_BOARD_SKIN_ID : null),
       settings: structuredClone(room.settings),
       lifecycle: {
         serverNow: this.nowFactory(),
