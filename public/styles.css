@@ -9986,3 +9986,480 @@ body.collection-mode .deck-builder-panel button.ghost {
   color:#5f5a52;
   box-shadow:none;
 }
+
+/* v7.69.8 — board geometry, inspect affordance + readable combat resolution */
+/* The phase track is now the neutral full-width seam between two truly equal player halfboards. */
+body.match-mode .arena-top-stack {
+  min-height:28px;
+  display:flex;
+  align-items:stretch;
+  gap:5px;
+}
+body.match-mode .arena-top-stack > .connection-banner { flex:0 1 360px; margin:0; }
+body.match-mode .arena-top-stack > .turn-banner { flex:1 1 auto; min-width:0; }
+body.match-mode .turn-banner {
+  min-height:28px;
+  padding:4px 8px;
+}
+body.match-mode .turn-label { font-size:8px; }
+body.match-mode .turn-detail { font-size:7px; }
+
+body.match-mode .battlefield-surface {
+  --field-seam:30px;
+  --player-outer-reserve:142px;
+  grid-template-rows:minmax(0,1fr) var(--field-seam) minmax(0,1fr);
+  gap:0;
+}
+body.match-mode .opponent-board {
+  grid-row:1;
+  padding:var(--player-outer-reserve) 104px 6px 158px;
+}
+body.match-mode .own-board {
+  grid-row:3;
+  padding:6px 104px var(--player-outer-reserve) 158px;
+}
+body.match-mode .player-board::after { display:none; }
+
+body.match-mode .office-divider.board-phase-divider {
+  position:relative;
+  z-index:31;
+  grid-row:2;
+  left:auto;
+  top:auto;
+  transform:none;
+  width:100%;
+  height:var(--field-seam);
+  min-height:var(--field-seam);
+  max-height:none;
+  margin:0;
+  padding:0 8px;
+  display:flex;
+  align-items:center;
+  overflow:visible;
+  pointer-events:none;
+  border-top:1px solid rgba(199,174,92,.34);
+  border-bottom:1px solid rgba(142,213,255,.18);
+  background:
+    linear-gradient(180deg,rgba(76,71,42,.58),rgba(18,25,28,.96) 46%,rgba(8,16,29,.98));
+  box-shadow:0 -2px 8px rgba(0,0,0,.24),0 2px 9px rgba(0,0,0,.32),inset 0 1px rgba(255,255,255,.045);
+}
+body.match-mode .office-divider.board-phase-divider::before,
+body.match-mode .office-divider.board-phase-divider::after { display:none; }
+body.match-mode .board-phase-divider .phase-track {
+  position:relative;
+  inset:auto;
+  transform:none;
+  width:100%;
+  min-height:0;
+  height:100%;
+  margin:0;
+  padding:3px clamp(16px,7vw,150px);
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:clamp(4px,1.1vw,20px);
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  backdrop-filter:none;
+}
+body.match-mode .board-phase-divider .phase-track span {
+  position:relative;
+  min-width:0;
+  display:grid;
+  place-items:center;
+  padding:0 5px;
+  border:0;
+  border-radius:2px;
+  background:transparent;
+  color:#6e7b89;
+  box-shadow:none;
+  text-align:center;
+}
+body.match-mode .board-phase-divider .phase-track span b {
+  font-size:6.5px;
+  line-height:1;
+  letter-spacing:.16em;
+}
+body.match-mode .board-phase-divider .phase-track span.complete { color:#7f8f9c; }
+body.match-mode .board-phase-divider .phase-track span.active {
+  color:#83f2a2;
+  background:linear-gradient(180deg,rgba(74,225,118,.04),rgba(74,225,118,.13));
+  box-shadow:inset 0 -2px #4ae176,0 0 18px rgba(74,225,118,.10);
+}
+body.match-mode .board-phase-divider .phase-track span.active::after {
+  content:'';
+  position:absolute;
+  left:18%;
+  right:18%;
+  bottom:1px;
+  height:2px;
+  border-radius:999px;
+  background:#4ae176;
+  box-shadow:0 0 9px rgba(74,225,118,.66);
+}
+
+/* Player identity is now a dedicated cosmetic-ready zone. The monogram is only the fallback avatar. */
+body.match-mode .player-head {
+  width:clamp(285px,25vw,390px);
+  min-height:40px;
+  padding:5px 7px;
+}
+body.match-mode .opponent-board .player-head { top:5px; }
+body.match-mode .own-board .player-head { bottom:5px; }
+body.match-mode .player-identity { min-width:0; display:flex; align-items:center; gap:7px; }
+body.match-mode .player-identity > div:not(.player-avatar-slot) { min-width:0; }
+body.match-mode .player-identity > div:not(.player-avatar-slot) > strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.match-mode .player-identity > div:not(.player-avatar-slot) > small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.player-avatar-slot {
+  position:relative;
+  flex:0 0 30px;
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+}
+.player-avatar-frame {
+  width:100%;
+  height:100%;
+  display:grid;
+  place-items:center;
+  border:2px solid rgba(142,213,255,.48);
+  border-radius:6px;
+  background:linear-gradient(145deg,#1d3149,#091322);
+  color:#dcecff;
+  box-shadow:inset 0 0 0 2px rgba(4,11,20,.76),0 2px 6px rgba(0,0,0,.34);
+  overflow:hidden;
+}
+.player-avatar-slot.opponent .player-avatar-frame { border-color:rgba(255,146,154,.52); }
+.player-avatar-frame span { font-size:9px; font-weight:950; letter-spacing:.05em; }
+.player-avatar-slot > small {
+  position:absolute;
+  right:-3px;
+  bottom:-3px;
+  padding:1px 2px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:2px;
+  background:#08111f;
+  color:#8fa2b7;
+  font-size:4px;
+  font-weight:900;
+  line-height:1;
+}
+body.match-mode .player-department-mark.player-role-mark {
+  min-width:24px;
+  height:18px;
+  padding:0 4px;
+  font-size:5px;
+}
+body.match-mode .opponent-board .board-resource-row { top:50px; }
+body.match-mode .own-board .board-resource-row { bottom:50px; }
+body.match-mode .opponent-board .pending-lane { top:50px; }
+body.match-mode .own-board .pending-lane { bottom:50px; }
+
+/* The board itself stays visual: permanent branding and unreadable lane labels are removed. */
+body.match-mode .arena-surface-layer::after { display:none; content:none; }
+body.match-mode .employee-row::after,
+body.match-mode .support-row::after { display:none; content:none; }
+
+/* Controller-visible set Incidents keep their printed face; only the opponent receives the full card back. */
+body.match-mode .board-lane .card.owner-visible-set {
+  outline:1px solid rgba(200,159,83,.55);
+  outline-offset:-1px;
+}
+body.match-mode .board-lane .card.owner-visible-set .runtime-badge.incident-set {
+  background:rgba(137,45,38,.92);
+  color:#fff4ee;
+  border-color:rgba(226,115,102,.72);
+}
+
+/* Hover is the fast read path everywhere, right click pins the inspector; the i affordance remains fallback-only. */
+body.match-mode .hover-card-preview { z-index:370; }
+body.match-mode .board-lane .card .card-info,
+body.match-mode .own-hand .hand-fan-card .card-info {
+  opacity:.34;
+  transform:scale(.82);
+  transition:opacity .12s ease;
+}
+body.match-mode .board-lane .card:hover .card-info,
+body.match-mode .board-lane .card:focus-within .card-info,
+body.match-mode .own-hand .hand-fan-card:hover .card-info,
+body.match-mode .own-hand .hand-fan-card:focus-within .card-info { opacity:.78; }
+body.match-mode .hover-inspect-hint b { min-width:28px; }
+
+/* Attack targeting previews the existing red connector before commitment. */
+.attack-overlay.attack-preview-overlay path#attackPath {
+  stroke:#ef5c52;
+  stroke-width:3;
+  opacity:.92;
+}
+.attack-overlay.attack-preview-overlay path#attackGlowPath { stroke:rgba(239,92,82,.22); stroke-width:10; }
+.game-shell.interaction-attack .card.interaction-attacker {
+  box-shadow:0 14px 30px rgba(203,68,55,.20),0 0 0 3px rgba(239,92,82,.64),0 0 20px rgba(239,92,82,.16);
+}
+.game-shell.interaction-attack .card.target-candidate:hover {
+  box-shadow:0 14px 30px rgba(203,68,55,.20),0 0 0 3px rgba(239,92,82,.62),0 0 20px rgba(239,92,82,.14);
+}
+
+/* Authoritative combat result overlay: cards/portrait carry the result instead of a millisecond toast. */
+.battle-resolution-overlay {
+  position:fixed;
+  z-index:390;
+  inset:46px 0 0;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  pointer-events:none;
+  background:radial-gradient(circle at center,rgba(5,12,22,.28),rgba(4,9,17,.08) 45%,transparent 72%);
+  animation:battle-overlay-life 3.35s ease both;
+}
+.battle-stage {
+  display:grid;
+  grid-template-columns:minmax(150px,220px) auto minmax(150px,220px);
+  align-items:center;
+  justify-items:center;
+  gap:clamp(20px,4vw,70px);
+  padding:18px 24px;
+  border:1px solid rgba(142,213,255,.20);
+  border-radius:8px;
+  background:rgba(7,15,27,.84);
+  box-shadow:0 28px 90px rgba(0,0,0,.46),inset 0 1px rgba(255,255,255,.035);
+  backdrop-filter:blur(8px);
+}
+.battle-card-side,
+.battle-player-side { display:grid; justify-items:center; gap:7px; }
+.battle-side-label {
+  color:#8fa1b5;
+  font:800 7px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.18em;
+}
+.battle-card-shell {
+  position:relative;
+  width:clamp(150px,10.5vw,210px);
+  aspect-ratio:5/7;
+  animation:battle-card-clash .72s cubic-bezier(.28,.76,.28,1) .30s both;
+}
+.battle-card-shell > .card {
+  width:100%;
+  min-width:100%;
+  max-width:none;
+  height:100%;
+  min-height:100%;
+  max-height:none;
+  pointer-events:none;
+}
+.battle-card-shell .card-info,
+.battle-card-shell .card-ability { display:none !important; }
+.battle-card-side.winner .battle-card-shell {
+  animation:battle-card-clash .72s cubic-bezier(.28,.76,.28,1) .30s both,battle-winner-glow 1.65s ease .92s both;
+}
+.battle-card-side.archived .battle-card-shell { filter:saturate(.78); }
+.battle-vs { display:grid; justify-items:center; gap:6px; }
+.battle-vs span {
+  color:#f2f5fb;
+  font-size:clamp(25px,2.2vw,42px);
+  font-weight:1000;
+  letter-spacing:.08em;
+  text-shadow:0 0 20px rgba(142,213,255,.20);
+}
+.battle-vs small {
+  padding:3px 6px;
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:999px;
+  background:rgba(255,255,255,.045);
+  color:#aebac8;
+  font-size:7px;
+  font-weight:850;
+}
+.archive-stamp,
+.prevented-stamp {
+  position:absolute;
+  z-index:8;
+  left:50%;
+  top:51%;
+  transform:translate(-50%,-50%) rotate(-8deg) scale(.78);
+  padding:7px 10px 6px;
+  border:4px double #c64139;
+  background:rgba(245,231,218,.12);
+  color:#d74b43;
+  font:1000 clamp(15px,1.35vw,25px)/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.08em;
+  text-shadow:0 1px rgba(255,255,255,.22);
+  box-shadow:0 0 0 1px rgba(104,22,18,.20);
+  opacity:0;
+  animation:archive-stamp-in .24s cubic-bezier(.16,.84,.34,1.2) .94s forwards;
+}
+.prevented-stamp {
+  border-color:#4ea56e;
+  color:#71ca8c;
+  transform:translate(-50%,-50%) rotate(5deg) scale(.78);
+}
+.battle-player-side .player-avatar-slot {
+  width:clamp(132px,9.5vw,190px);
+  height:clamp(132px,9.5vw,190px);
+  flex-basis:auto;
+}
+.battle-player-side .player-avatar-frame {
+  border-width:5px;
+  border-radius:14px;
+  box-shadow:inset 0 0 0 4px rgba(4,11,20,.78),0 14px 32px rgba(0,0,0,.40);
+}
+.battle-player-side .player-avatar-frame span { font-size:clamp(30px,3vw,52px); }
+.battle-player-side .player-avatar-slot > small {
+  right:4px;
+  bottom:4px;
+  padding:3px 5px;
+  font-size:7px;
+}
+.combat-rep-delta {
+  position:absolute;
+  z-index:5;
+  left:50%;
+  bottom:-24px;
+  transform:translateX(-50%);
+  min-width:max-content;
+  color:#ff7f82;
+  font-size:16px;
+  font-weight:1000;
+  text-shadow:0 2px 12px rgba(190,43,43,.42);
+}
+.battle-player-side.hit .player-avatar-slot {
+  animation:player-rep-hit .72s cubic-bezier(.35,.08,.3,.95) .34s both;
+}
+.battle-player-side.hit .player-avatar-frame {
+  box-shadow:inset 0 0 0 4px rgba(91,15,20,.72),0 0 0 4px rgba(224,71,73,.38),0 0 34px rgba(224,71,73,.26);
+}
+
+@keyframes battle-overlay-life {
+  0% { opacity:0; }
+  10%,86% { opacity:1; }
+  100% { opacity:0; }
+}
+@keyframes battle-card-clash {
+  0% { transform:translateY(10px) scale(.96); opacity:.35; }
+  38% { transform:translateY(-4px) scale(1.025) rotate(-.7deg); opacity:1; }
+  56% { transform:translateY(2px) scale(1.015) rotate(.8deg); }
+  72% { transform:translateY(-1px) scale(1.01) rotate(-.4deg); }
+  100% { transform:none; opacity:1; }
+}
+@keyframes battle-winner-glow {
+  0% { filter:none; box-shadow:none; }
+  28%,78% { filter:brightness(1.08) saturate(1.04); box-shadow:0 0 0 3px rgba(74,225,118,.48),0 0 34px rgba(74,225,118,.30); }
+  100% { filter:none; box-shadow:0 0 0 1px rgba(74,225,118,.22); }
+}
+@keyframes archive-stamp-in {
+  0% { opacity:0; transform:translate(-50%,-50%) rotate(-8deg) scale(1.45); }
+  70% { opacity:1; transform:translate(-50%,-50%) rotate(-8deg) scale(.94); }
+  100% { opacity:1; transform:translate(-50%,-50%) rotate(-8deg) scale(1); }
+}
+@keyframes player-rep-hit {
+  0% { transform:none; filter:none; }
+  32% { transform:translateX(-8px) rotate(-1.5deg) scale(1.025); filter:brightness(1.14) saturate(1.25); }
+  48% { transform:translateX(7px) rotate(1.2deg) scale(1.025); }
+  65% { transform:translateX(-4px) rotate(-.6deg) scale(1.018); }
+  82% { transform:translateX(2px) scale(1.01); }
+  100% { transform:none; filter:none; }
+}
+
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .battlefield-surface {
+    --field-seam:38px;
+    --player-outer-reserve:190px;
+  }
+  body.match-mode .player-head { width:clamp(340px,23vw,480px); min-height:46px; }
+  .player-avatar-slot { width:36px; height:36px; flex-basis:36px; }
+  .player-avatar-frame span { font-size:11px; }
+  body.match-mode .board-phase-divider .phase-track span b { font-size:8px; }
+}
+
+@media (min-width:761px) and (max-height:1000px) {
+  body.match-mode .battlefield-surface {
+    --field-seam:26px;
+    --player-outer-reserve:126px;
+  }
+  body.match-mode .player-head { min-height:34px; }
+  .player-avatar-slot { width:26px; height:26px; flex-basis:26px; }
+}
+
+@media (max-width:760px) {
+  body.match-mode .arena-top-stack { min-height:28px; display:flex; }
+  body.match-mode .turn-banner { min-height:28px; padding:3px 5px; }
+  body.match-mode .battlefield-surface {
+    --field-seam:24px;
+    --player-outer-reserve:clamp(74px,14vh,104px);
+    grid-template-rows:minmax(0,1fr) var(--field-seam) minmax(0,1fr);
+  }
+  body.match-mode .opponent-board { grid-row:1; padding:var(--player-outer-reserve) 36px 2px; }
+  body.match-mode .own-board { grid-row:3; padding:2px 36px var(--player-outer-reserve); }
+  body.match-mode .office-divider.board-phase-divider {
+    grid-row:2;
+    height:var(--field-seam);
+    min-height:var(--field-seam);
+    padding:0 3px;
+  }
+  body.match-mode .board-phase-divider .phase-track {
+    position:relative;
+    z-index:auto;
+    inset:auto;
+    transform:none;
+    width:100%;
+    height:100%;
+    min-height:0;
+    padding:2px 4px;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:2px;
+    border-radius:0;
+    background:transparent;
+  }
+  body.match-mode .board-phase-divider .phase-track span { padding:0 1px; }
+  body.match-mode .board-phase-divider .phase-track span b { font-size:4.5px; letter-spacing:.07em; }
+  body.match-mode .player-head {
+    width:min(250px,calc(100% - 42px));
+    min-height:27px;
+  }
+  .player-avatar-slot { width:22px; height:22px; flex-basis:22px; }
+  .player-avatar-frame span { font-size:6px; }
+  body.match-mode .player-department-mark.player-role-mark { display:none; }
+  body.match-mode .opponent-board .board-resource-row { top:31px; }
+  body.match-mode .own-board .board-resource-row { bottom:31px; }
+  .battle-resolution-overlay { inset:44px 0 0; padding:8px; }
+  .battle-stage {
+    grid-template-columns:minmax(94px,124px) auto minmax(94px,124px);
+    gap:10px;
+    padding:12px 10px 20px;
+  }
+  .battle-card-shell { width:min(118px,30vw); }
+  .battle-vs span { font-size:20px; }
+  .archive-stamp,.prevented-stamp { border-width:3px; padding:5px 6px; font-size:12px; }
+  .battle-player-side .player-avatar-slot { width:min(112px,28vw); height:min(112px,28vw); }
+  .combat-rep-delta { bottom:-20px; font-size:13px; }
+}
+
+/* Readable notification windows: keep the visual lifetime aligned with the JS queue/state lifetime. */
+.visual-cue { animation:v7698-readable-cue 3.5s ease both; }
+.resolution-moment { animation:v7698-readable-resolution 5s ease both; }
+.zone-transition-cue { animation-duration:2.5s; }
+.zone-transition-cue.search_complete.with-card { animation-duration:3.25s; }
+@keyframes v7698-readable-cue {
+  0% { opacity:0; transform:translateX(-50%) translateY(-5px) scale(.97); }
+  7%,88% { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+  100% { opacity:0; transform:translateX(-50%) translateY(-4px) scale(.99); }
+}
+@keyframes v7698-readable-resolution {
+  0% { opacity:0; transform:translate(-50%,-45%) scale(.94); }
+  7%,90% { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  100% { opacity:0; transform:translate(-50%,-54%) scale(.99); }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .visual-cue,
+  .resolution-moment,
+  .zone-transition-cue,
+  .battle-resolution-overlay,
+  .battle-card-shell,
+  .battle-card-side.winner .battle-card-shell,
+  .archive-stamp,
+  .prevented-stamp,
+  .battle-player-side.hit .player-avatar-slot { animation:none !important; }
+  .archive-stamp,.prevented-stamp { opacity:1; transform:translate(-50%,-50%) rotate(-8deg) scale(1); }
+}

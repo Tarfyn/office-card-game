@@ -23,14 +23,16 @@ function sliceBetween(source:string,start:string,end:string){
   return source.slice(a,b);
 }
 
-const polish=css.slice(css.lastIndexOf("/* v7.69.7 — card consistency, mirrored field geometry + restrained material completion */"));
+const polishStart=css.lastIndexOf("/* v7.69.7 — card consistency, mirrored field geometry + restrained material completion */");
+const polishEnd=css.indexOf("/* v7.69.8 — board geometry, inspect affordance + readable combat resolution */",polishStart);
+const polish=css.slice(polishStart,polishEnd>polishStart?polishEnd:undefined);
 
 test("v7.69.7 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.7");
-  assert.match(server,/version: "7\.69\.7"/);
-  assert.match(server,/version:"7\.69\.7"/);
-  assert.match(server,/Office Card Game v7\.69\.7 server/);
-  assert.match(html,/v7\.69\.7 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.8");
+  assert.match(server,/version: "7\.69\.8"/);
+  assert.match(server,/version:"7\.69\.8"/);
+  assert.match(server,/Office Card Game v7\.69\.8 server/);
+  assert.match(html,/v7\.69\.8 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
 });
 
@@ -58,7 +60,7 @@ test("v7.69.7 restores live-card rules and bottom tags while keeping the existin
 
 test("v7.69.7 renders set Support cards as one full portrait back while retaining interaction overlays",()=>{
   const renderCard=sliceBetween(app,"function renderCard(card", "function renderModalCardFace");
-  assert.match(renderCard,/if \(faceDownSupport\) return `<div class="\$\{cardClassName\}"[\s\S]*?\$\{cardBackMarkup\(\)\}/);
+  assert.match(renderCard,/if \(concealedFaceDownSupport\) return `<div class="\$\{cardClassName\}"[\s\S]*?\$\{cardBackMarkup\(\)\}/);
   assert.match(renderCard,/face-down-card-state/);
   assert.match(renderCard,/data-card-ability/);
   assert.match(polish,/\.card\.face-down-support \{[\s\S]*?padding:0 !important/);

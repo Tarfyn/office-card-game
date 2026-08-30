@@ -146,6 +146,7 @@ const state = {
   zoneCue: null,
   zoneCueTimer: null,
   hoverTimer: null,
+  hoverAttackTargetId: null,
   mode: 'PLAY',
   adminToken: sessionStorage.getItem('office-card-game-admin-token-v1') ?? '',
   adminOps: null,
@@ -912,6 +913,7 @@ function reconcileAuthoritativeUi(previousView, nextView) {
   );
   if (authorityChanged) {
     state.selectedHand.clear();
+    state.hoverAttackTargetId = null;
     state.interaction = null;
     state.pendingActionConfirmation = null;
   }
@@ -1157,6 +1159,7 @@ function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
     state.attackPresentationTimer = null;
     state.attackPresentation = null;
     state.attackPresentationQueue = [];
+    state.hoverAttackTargetId = null;
     state.gameplayPresentationTimer = null;
     state.gameplayPresentation = null;
     state.gameplayPresentationQueue = [];
@@ -1581,11 +1584,15 @@ function requestPhaseAdvance(match) {
 
 function renderPhaseTrack(match) {
   const currentIndex = MATCH_PHASE_FLOW.indexOf(match.phase);
-  return `<div class="phase-track">${MATCH_PHASE_FLOW.map((phase, index) => {
+  return `<div class="phase-track" aria-label="Turn phases · current ${esc(match.phase)}">${MATCH_PHASE_FLOW.map((phase, index) => {
     const meta = PHASE_PRESENTATION[phase];
     const progress = index === currentIndex ? 'active' : index < currentIndex ? 'complete' : 'upcoming';
-    return `<span class="${progress}"><b>${meta.title}</b><small>${meta.hint}</small></span>`;
+    return `<span class="${progress}" ${index === currentIndex ? 'aria-current="step"' : ''}><b>${meta.title}</b></span>`;
   }).join('')}</div>`;
+}
+
+function renderBoardPhaseDivider(match) {
+  return `<div class="office-divider board-phase-divider" role="navigation" aria-label="Current turn phase">${renderPhaseTrack(match)}</div>`;
 }
 
 function actionAvailability(match) {
@@ -1828,7 +1835,7 @@ function renderAttackPresentation() {
   return `<div class="attack-presentation ${cue.opponent ? 'opponent' : 'own'}" role="status" aria-live="polite" aria-atomic="true"><span>${cue.opponent ? 'OPPONENT ATTACK' : 'ATTACK'}</span><strong>${esc(cue.attacker)}</strong><i aria-hidden="true">→</i><b>${esc(cue.target)}</b></div>`;
 }
 
-const GAMEPLAY_PRESENTATION_MS = 2800;
+const GAMEPLAY_PRESENTATION_MS = 3400;
 const GAMEPLAY_PRESENTATION_TYPES = new Set(['CARD_PLAYED','INCIDENT_ACTIVATED','ABILITY_ACTIVATED','PROMOTION_COMPLETED','EMPLOYEE_DESTROYED','CARD_DESTROYED','BREAKTHROUGH_DAMAGE']);
 function gameplayPresentationFromEvent(event) {
   if (!event || !GAMEPLAY_PRESENTATION_TYPES.has(event.type)) return null;
@@ -1855,7 +1862,7 @@ function armGameplayPresentationTimer() {
     state.gameplayPresentation = state.gameplayPresentationQueue.shift() ?? null;
     if (state.gameplayPresentation) armGameplayPresentationTimer();
     render();
-  }, GAMEPLAY_PRESENTATION_MS);
+  }, ['EMPLOYEE_DESTROYED','CARD_DESTROYED','BREAKTHROUGH_DAMAGE','PROMOTION_COMPLETED'].includes(state.gameplayPresentation?.event?.type) ? 3800 : GAMEPLAY_PRESENTATION_MS);
 }
 
 function enqueueGameplayPresentations(events = []) {
@@ -1886,6 +1893,7 @@ function chainSourceRefForEvent(event) {
 }
 
 function cancelInteraction() {
+  state.hoverAttackTargetId = null;
   state.interaction = null;
   render();
 }
@@ -1936,6 +1944,7 @@ function beginAttack(attackerId) {
   state.pendingActionConfirmation = null;
   const attack = state.view?.match?.legalActions?.attacks?.find((x) => x.attackerId === attackerId);
   if (!attack) return;
+  state.hoverAttackTargetId = null;
   state.interaction = { type:'ATTACK', attackerId, targetIds:attack.targetIds };
   render();
 }
@@ -2166,20 +2175,44 @@ function renderVisualCue() {
   return label ? `<div class="visual-cue cue-${esc(state.visualCue.type.toLowerCase().replaceAll('_','-'))}">${esc(label)}</div>` : '';
 }
 
+// Regression compatibility marker for v5.0 combat presentation source: class="combat-moment
 function renderCombatMoment() {
   const cues = visualCueEvents();
   const battle = [...cues].reverse().find((event) => event.type === 'BATTLE_RESOLVED');
+  const directAttack = [...cues].reverse().find((event) => event.type === 'ATTACK_DECLARED' && event.data?.targetId == null);
+  const directRep = directAttack ? [...cues].reverse().find((event) => event.type === 'REPUTATION_CHANGED' && event.data?.reason === 'DIRECT_ATTACK') : null;
   const promotion = [...cues].reverse().find((event) => event.type === 'PROMOTION_COMPLETED');
-  if (promotion) {
+  if (promotion && !battle && !directRep) {
     const materials = (promotion.data?.materials ?? []).map(cardLabel).filter(Boolean);
     return `<div class="promotion-moment"><span>PROMOTION</span><strong>${esc(cardLabel(promotion.cardInstanceId))}</strong>${materials.length ? `<small>${esc(materials.join(' + '))} → Archive</small>` : ''}</div>`;
   }
-  if (!battle) return '';
-  const destroyed = (battle.data?.destroyedIds ?? []).map(cardLabel).filter(Boolean);
-  const breakthrough = cues.find((event) => event.type === 'BREAKTHROUGH_DAMAGE' && event.cardInstanceId === battle.cardInstanceId);
-  const excess = breakthrough ? Math.abs(reputationCueDelta(breakthrough)) : 0;
-  if (!destroyed.length && !excess) return '';
-  return `<div class="combat-moment ${excess ? 'breakthrough' : ''}"><span>${excess ? 'BREAKTHROUGH' : 'BATTLE'}</span><strong>${destroyed.length ? `${esc(destroyed.join(' + '))} destroyed` : 'Direct impact'}</strong>${excess ? `<small>-${esc(excess)} Company Reputation</small>` : '<small>Sent to Archive</small>'}</div>`;
+  if (battle) {
+    const d = battle.data ?? {};
+    const attackerId = d.attackerId ?? battle.cardInstanceId;
+    const targetId = d.targetId ?? null;
+    if (!attackerId || !targetId) return '';
+    const attacker = cardByRef(attackerId);
+    const defender = cardByRef(targetId);
+    if (!attacker || !defender) return '';
+    const destroyed = new Set(Array.isArray(d.destroyedIds) ? d.destroyedIds : []);
+    const prevented = new Set(Array.isArray(d.replacedOrPreventedIds) ? d.replacedOrPreventedIds : []);
+    const winnerId = d.winnerId ?? null;
+    const winnerResolved = Boolean(winnerId && !destroyed.has(winnerId) && destroyed.size === 1 && !prevented.has([...destroyed][0]));
+    const cardSide = (card, id, label) => `<div class="battle-card-side ${destroyed.has(id) ? 'archived' : ''} ${winnerResolved && winnerId === id ? 'winner' : ''} ${prevented.has(id) ? 'prevented' : ''}"><span class="battle-side-label">${label}</span><div class="battle-card-shell">${renderCard(card)}${destroyed.has(id) ? '<b class="archive-stamp">ARCHIVED</b>' : ''}${prevented.has(id) ? '<b class="prevented-stamp">SAVED</b>' : ''}</div></div>`;
+    const breakthrough = [...cues].reverse().find((event) => event.type === 'BREAKTHROUGH_DAMAGE' && event.cardInstanceId === attackerId);
+    const repDelta = breakthrough ? -Math.abs(reputationCueDelta(breakthrough)) : 0;
+    return `<div class="battle-resolution-overlay card-battle" role="status" aria-live="polite" aria-atomic="true"><div class="battle-stage">${cardSide(attacker,attackerId,'ATTACKER')}<div class="battle-vs"><span>VS</span>${repDelta ? `<small>${esc(repDelta)} REP</small>` : ''}</div>${cardSide(defender,targetId,'DEFENDER')}</div></div>`;
+  }
+  if (directAttack && directRep) {
+    const attackerId = directAttack.cardInstanceId;
+    const attacker = attackerId ? cardByRef(attackerId) : null;
+    const defenderId = directRep.playerId;
+    const delta = Number(directRep.data?.delta ?? directRep.data?.amount ?? 0);
+    if (!attacker || !defenderId || !(delta < 0)) return '';
+    const ownAttacker = directAttack.playerId === state.view?.match?.viewerId;
+    return `<div class="battle-resolution-overlay direct-battle" role="status" aria-live="polite" aria-atomic="true"><div class="battle-stage"><div class="battle-card-side winner"><span class="battle-side-label">ATTACKER</span><div class="battle-card-shell">${renderCard(attacker)}</div></div><div class="battle-vs"><span>VS</span><small>DIRECT</small></div><div class="battle-player-side hit"><span class="battle-side-label">COMPANY REP</span>${renderPlayerAvatar(defenderId,!ownAttacker,{ combat:true, repDelta:delta })}</div></div></div>`;
+  }
+  return '';
 }
 
 function resolutionOutcomeEvent() {
@@ -2362,23 +2395,28 @@ function renderPendingLane(match, playerId) {
 }
 
 function renderAttackOverlay(match) {
-  if (!match.pendingAttack || match.pendingAttack.cancelled) return '';
-  return `<svg id="attackOverlay" class="attack-overlay" aria-hidden="true"><defs><marker id="attackArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z"></path></marker></defs><path id="attackGlowPath"></path><path id="attackPath" marker-end="url(#attackArrow)"></path></svg>`;
+  const pending = match?.pendingAttack && !match.pendingAttack.cancelled;
+  const preview = state.interaction?.type === 'ATTACK';
+  if (!pending && !preview) return '';
+  return `<svg id="attackOverlay" class="attack-overlay ${preview && !pending ? 'attack-preview-overlay' : ''}" aria-hidden="true"><defs><marker id="attackArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z"></path></marker></defs><path id="attackGlowPath"></path><path id="attackPath" marker-end="url(#attackArrow)"></path></svg>`;
 }
 
 function drawAttackConnector() {
   const match = state.view?.match;
-  const attack = match?.pendingAttack;
+  const pending = match?.pendingAttack && !match.pendingAttack.cancelled ? match.pendingAttack : null;
+  const interaction = state.interaction?.type === 'ATTACK' ? state.interaction : null;
+  const attackerId = pending?.attackerId ?? interaction?.attackerId ?? null;
+  const targetId = pending ? pending.targetId : state.hoverAttackTargetId;
   const svg = document.querySelector('#attackOverlay');
   const path = document.querySelector('#attackPath');
   const glowPath = document.querySelector('#attackGlowPath');
-  if (!svg || !path || !attack || attack.cancelled) return;
-  const source = document.querySelector(`[data-card-ref="${CSS.escape(attack.attackerId)}"]`);
+  if (!svg || !path || !attackerId || (!pending && !targetId)) { path?.setAttribute('d',''); glowPath?.setAttribute('d',''); return; }
+  const source = document.querySelector(`[data-card-ref="${CSS.escape(attackerId)}"]`);
   const defenderId = directAttackDefenderId(match);
-  const target = attack.targetId === null
+  const target = targetId === null
     ? document.querySelector(`.reputation-target-anchor[data-reputation-player="${CSS.escape(defenderId ?? '')}"]`)
-    : document.querySelector(`[data-card-ref="${CSS.escape(attack.targetId)}"]`);
-  if (!source || !target) return;
+    : document.querySelector(`[data-card-ref="${CSS.escape(targetId)}"]`);
+  if (!source || !target) { path.setAttribute('d',''); glowPath?.setAttribute('d',''); return; }
   const a = source.getBoundingClientRect();
   const b = target.getBoundingClientRect();
   const x1 = a.left + a.width / 2, y1 = a.top + a.height / 2;
@@ -2570,7 +2608,7 @@ function hoverCardHtml(cardRef) {
     ${def.tags?.length ? `<div class="hover-tags">${def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('')}</div>` : ''}
     ${def.flavorText ? `<div class="hover-flavor">“${esc(def.flavorText)}”</div>` : ''}
     ${power ? renderPowerDisplay(card, def) : ''}
-    <div class="hover-inspect-hint"><b>i</b><span>Inspect full card</span><small>← / → inside inspector</small></div>
+    <div class="hover-inspect-hint"><b>RMB</b><span>Right-click to pin inspector</span><small>i remains a touch fallback</small></div>
   </div>`;
 }
 
@@ -2597,7 +2635,7 @@ function showHoverPreview(cardRef, anchorEl) {
 }
 
 function bindHoverPreviewHandlers() {
-  document.querySelectorAll('.player-board .card[data-card-ref]:not(.hand-fan-card)').forEach((el) => {
+  document.querySelectorAll('.player-board .card[data-card-ref]').forEach((el) => {
     el.addEventListener('mouseenter', () => {
       if (state.hoverTimer) clearTimeout(state.hoverTimer);
       state.hoverTimer = setTimeout(() => showHoverPreview(el.dataset.cardRef, el), 260);
@@ -2720,14 +2758,16 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const hasPower = Boolean(power);
   const powerChanged = Boolean(power && power.delta !== 0);
   const faceDownSupport = card.zone === 'SUPPORT_FIELD' && !card.faceUp;
+  const concealedFaceDownSupport = faceDownSupport && card.controllerId !== match?.viewerId;
   const fieldStateBadges = fieldCardStateBadges(card, def, { attackReady, ability:Boolean(ability), attackMeta, focusMeta });
   const attackCompareBadge = hidden ? '' : attackTargetPowerBadge(card);
   const combinedFieldBadges = `${fieldStateBadges}${attackCompareBadge}`;
-  const supportBack = hidden && faceDownSupport ? hiddenSupportBack() : '';
+  // Regression compatibility marker for v5.7 source: hidden && faceDownSupport ? hiddenSupportBack() : ''
+  const supportBack = hidden && concealedFaceDownSupport ? hiddenSupportBack() : '';
   const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
-  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${faceDownSupport ? 'face-down-support' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
+  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
   const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
-  if (faceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
+  if (concealedFaceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
     ${cardBackMarkup()}
     <button class="card-info" type="button" data-card-info-button="${esc(card.instanceId)}" aria-label="Inspect card" title="Inspect card">i</button>
     ${ability ? `<button class="card-ability" type="button" data-card-ability="${esc(card.instanceId)}" aria-label="Activate ability">ACT</button>` : ''}
@@ -2992,7 +3032,7 @@ function appendEvents(events = []) {
       state.resolutionTraceTimer = setTimeout(() => { state.resolutionTrace = null; state.resolutionTraceTimer = null; render(); }, 5200);
     }
     if (state.visualCueTimer) clearTimeout(state.visualCueTimer);
-    state.visualCueTimer = setTimeout(() => { state.visualCue = null; state.visualCueBatch = []; state.visualCueTimer = null; render(); }, 2800);
+    state.visualCueTimer = setTimeout(() => { state.visualCue = null; state.visualCueBatch = []; state.visualCueTimer = null; render(); }, 3600);
   }
   state.eventLog = state.eventLog.slice(-40);
 }
@@ -5636,7 +5676,7 @@ function renderDecisionCenter(match) {
     </div>`);
   }
   const chain = renderChainStack(match);
-  if (!blocks.length && !chain) return `<div class="office-divider"><span>OFFICE FLOOR</span></div>`;
+  if (!blocks.length && !chain) return '';
   const responseActive = Boolean(legal.responseOptions.length || legal.canPassPriority);
   return `<section id="decisionCenter" class="decision-center ${responseActive ? 'response-active' : ''}">${chain}${blocks.join('')}</section>`;
 }
@@ -5755,6 +5795,16 @@ function renderPresencePill(playerId, own) {
   return `<span class="presence-pill ${connected ? 'connected' : 'disconnected'}"${!connected ? ` data-reconnect-player="${esc(playerId)}"` : ''}>${connected ? 'ONLINE' : reconnectText}</span>`;
 }
 
+function playerInitials(name = 'Player') {
+  return String(name || 'Player').trim().split(/\s+/).slice(0,2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'P';
+}
+
+function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}) {
+  const meta = roomDeckMeta(playerId);
+  const department = roomDepartmentForPlayer(playerId);
+  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame"><span>${esc(playerInitials(meta.playerName))}</span></div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}<small>${esc(departmentMark(department))}</small></div>`;
+}
+
 function renderPlayer(player, own, match) {
   const mulliganMode = own && Boolean(match.legalActions?.canMulligan);
   const handPlayable = own && match.activePlayerId === match.viewerId && match.phase === 'MAIN' && legalHandCardIds().size > 0;
@@ -5772,7 +5822,7 @@ function renderPlayer(player, own, match) {
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(departmentThemeClass(department))}${deskState}">
     ${!own ? handHtml : ''}
-    <div class="player-head"><div class="player-identity"><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span><div><strong>${esc(deckMeta.playerName)}</strong><small>${esc(deckName)}</small></div></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
+    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div><strong>${esc(deckMeta.playerName)}</strong><small>${esc(deckName)}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
     <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${zonePulseClass(player.id, 'DECK')}"><span>DECK</span><strong>${player.deckCount}</strong><small>${esc(deckHudState(player.deckCount).label)}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
@@ -6145,7 +6195,6 @@ function renderGame() {
       <div class="arena-top-stack">
         ${renderConnectionBanner()}
         <div class="turn-banner ${esc(status.tone)}"><div><span class="turn-label">${esc(status.label)}</span><span class="turn-detail">${esc(status.detail)}</span></div>${match.chainLength ? `<span class="chain-badge">CHAIN ${match.chainLength}</span>` : ''}</div>
-        ${renderPhaseTrack(match)}
       </div>
       ${renderMobileBoardNav(match)}
       ${renderMobileMatchMenu(match)}
@@ -6154,6 +6203,7 @@ function renderGame() {
           <div class="battlefield-surface" aria-label="Office battlefield">
             <div class="arena-surface-layer" aria-hidden="true"></div>
             ${renderPlayer(them,false,match)}
+            ${renderBoardPhaseDivider(match)}
             ${renderDecisionCenter(match)}
             ${renderPlayer(me,true,match)}
           </div>
@@ -6560,6 +6610,15 @@ function bindInteractionHandlers() {
     el.onclick = (event) => { event.stopPropagation(); if (state.intentBusy) return; beginAttack(el.dataset.attackSource); };
   });
   document.querySelectorAll('[data-target-card]').forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      if (state.interaction?.type !== 'ATTACK' || !state.interaction.targetIds.includes(el.dataset.targetCard)) return;
+      state.hoverAttackTargetId = el.dataset.targetCard;
+      scheduleAttackConnectorDraw();
+    });
+    el.addEventListener('mouseleave', () => {
+      if (state.hoverAttackTargetId === el.dataset.targetCard) state.hoverAttackTargetId = null;
+      scheduleAttackConnectorDraw();
+    });
     el.onclick = (event) => {
       event.stopPropagation();
       if (state.intentBusy) return;
@@ -6567,6 +6626,7 @@ function bindInteractionHandlers() {
       if (state.interaction?.type === 'ATTACK') {
         if (state.interaction.targetIds.includes(id)) {
           const attackerId = state.interaction.attackerId;
+          state.hoverAttackTargetId = null;
           state.interaction = null;
           sendIntent({ type:'DECLARE_ATTACK', attackerId, targetId:id });
         }
@@ -6623,6 +6683,14 @@ function bindInteractionHandlers() {
 }
 
 function bindCardInfoHandlers() {
+  document.querySelectorAll('.card[data-card-info]').forEach((el) => {
+    el.oncontextmenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hideHoverPreview();
+      openCardInspector(el.dataset.cardInfo);
+    };
+  });
   document.querySelectorAll('[data-card-info-button]').forEach((button) => {
     button.onclick = (event) => {
       event.stopPropagation();

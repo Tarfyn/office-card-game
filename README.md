@@ -2,6 +2,14 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.8 — Board Geometry + Combat Readability
+
+- Splits the battlefield into two equal mirrored halfboards separated by a compact neutral START / DRAW / MAIN / BATTLE / END phase seam, freeing the former top phase HUD.
+- Removes permanent board watermark/lane labels and prepares the player identity bars for future avatar/frame cosmetics without implementing the cosmetic inventory itself.
+- Keeps set Incidents readable to their controller while opponents continue to receive the full card back, preserving hidden information per viewer.
+- Makes hover the fast card-reading path everywhere and right-click the pinned Inspector path while keeping ordinary left-click play/attack behavior unchanged; the small info button remains a fallback.
+- Adds authoritative card-vs-card and direct-REP combat presentation with VS staging, winner glow, ARCHIVED outcome stamping and player-portrait REP impact, plus longer resolution feedback timing.
+
 ## v7.69.7 — Card Consistency + Artwork Completion
 
 - Restores compact Rules Text and printed Tags to live hand and field cards while retaining the existing Cost / printed Power / modified Power language.
