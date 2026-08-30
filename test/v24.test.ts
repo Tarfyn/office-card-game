@@ -15,8 +15,8 @@ const html = readFileSync(fileURLToPath(new URL("../../public/index.html", impor
 test("v2.4 direct placement renders legal board slots instead of requiring slot buttons", () => {
   assert.match(app, /function renderFieldSlot/);
   assert.match(app, /data-field-slot-zone/);
-  assert.match(app, /Choose one of the highlighted Employee slots on your board/);
-  assert.match(app, /Choose one of the highlighted Support slots on your board/);
+  assert.match(app, /interaction\.type === 'EMPLOYEE'\) return ''/);
+  assert.match(app, /interaction\.type === 'SUPPORT'\) return ''/);
   assert.match(css, /\.empty-slot\.slot-candidate/);
 });
 

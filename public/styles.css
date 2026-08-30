@@ -11118,3 +11118,112 @@ body.match-mode .hover-card-preview { bottom:auto; }
 @media (min-width:761px) and (max-width:1180px) and (max-height:600px) {
   body.match-mode .deck-stack-empty { width:25px; height:35px; grid-row:auto; }
 }
+
+/* v7.69.12 — centered hover preview, board-native placement + compact physical piles */
+/* Hover closeups use one stable battlefield-centered preview zone regardless of card origin. */
+body.match-mode .hover-card-preview { margin:0; }
+
+/* Desktop hand follows the visual center of the playable lane geometry (158px left / 104px right reserve). */
+@media (min-width:761px) and (max-width:2199px) and (min-height:601px) {
+  body.match-mode .own-hand { left:calc(50% + 27px); }
+}
+
+/* Deck/archive should read as physical piles, not roomy dashboard tiles. */
+body.match-mode .board-resource-row { width:82px; gap:6px; }
+body.match-mode .deck-pile,
+body.match-mode .archive-compact {
+  border-color:rgba(142,213,255,.13);
+  background:rgba(7,15,27,.72);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.012),0 4px 12px rgba(0,0,0,.16);
+}
+body.match-mode .deck-pile,
+body.match-mode .archive-compact summary {
+  position:relative;
+  min-height:86px;
+  padding:5px;
+  display:grid;
+  grid-template-columns:1fr;
+  grid-template-rows:1fr;
+  place-items:center;
+}
+body.match-mode .deck-stack-visual,
+body.match-mode .archive-stack-visual { width:52px; height:73px; grid-row:auto; }
+body.match-mode .deck-stack-visual > i,
+body.match-mode .archive-stack-visual > i,
+body.match-mode .deck-stack-visual > span,
+body.match-mode .archive-stack-visual > span { width:48px; height:67px; }
+body.match-mode .deck-stack-visual > i:first-child,
+body.match-mode .archive-stack-visual > i:first-child { left:0; top:5px; }
+body.match-mode .deck-stack-visual > i:nth-child(2),
+body.match-mode .archive-stack-visual > i:nth-child(2) { left:2px; top:2px; }
+body.match-mode .deck-summary-copy,
+body.match-mode .archive-summary-copy {
+  position:absolute;
+  z-index:5;
+  right:4px;
+  top:4px;
+  min-width:23px;
+  padding:2px 3px;
+  display:grid;
+  gap:1px;
+  border:1px solid rgba(142,213,255,.18);
+  border-radius:3px;
+  background:rgba(5,13,24,.90);
+  color:#dce8fa;
+  text-align:center;
+  box-shadow:0 2px 6px rgba(0,0,0,.26);
+}
+body.match-mode .deck-summary-copy span,
+body.match-mode .archive-summary-copy span { font-size:4px; line-height:1; letter-spacing:.08em; color:#8090a2; text-transform:uppercase; }
+body.match-mode .deck-summary-copy strong,
+body.match-mode .archive-summary-copy strong { font-size:12px; line-height:1; color:#dce8fa; }
+body.match-mode .deck-pile > small,
+body.match-mode .archive-compact summary > small { display:none; }
+
+/* Zero really means empty: no fake card silhouette or fake stack remains. */
+body.match-mode .deck-stack-empty,
+body.match-mode .archive-stack-empty { display:none !important; }
+body.match-mode .deck-pile.is-empty,
+body.match-mode .archive-compact.is-empty summary { min-height:48px; opacity:.82; }
+body.match-mode .deck-pile.is-empty .deck-summary-copy,
+body.match-mode .archive-compact.is-empty .archive-summary-copy {
+  position:static;
+  min-width:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+}
+body.match-mode .deck-pile.is-empty .deck-summary-copy span,
+body.match-mode .archive-compact.is-empty .archive-summary-copy span { font-size:5px; }
+body.match-mode .deck-pile.is-empty .deck-summary-copy strong,
+body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-size:14px; }
+
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .board-resource-row { width:104px; }
+  body.match-mode .deck-pile,
+  body.match-mode .archive-compact summary { min-height:104px; }
+  body.match-mode .deck-stack-visual,
+  body.match-mode .archive-stack-visual { width:62px; height:87px; }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .archive-stack-visual > i,
+  body.match-mode .deck-stack-visual > span,
+  body.match-mode .archive-stack-visual > span { width:58px; height:81px; }
+}
+
+/* Preserve the proven mobile/short-landscape footprint; only the desktop pile gets materially larger. */
+@media (max-width:760px), (min-width:761px) and (max-width:1180px) and (max-height:600px) {
+  body.match-mode .board-resource-row { width:31px; gap:2px; }
+  body.match-mode .deck-pile,
+  body.match-mode .archive-compact summary { min-height:38px; padding:2px; }
+  body.match-mode .deck-stack-visual,
+  body.match-mode .archive-stack-visual { width:24px; height:34px; }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .archive-stack-visual > i,
+  body.match-mode .deck-stack-visual > span,
+  body.match-mode .archive-stack-visual > span { width:21px; height:30px; }
+  body.match-mode .deck-summary-copy,
+  body.match-mode .archive-summary-copy { display:none; }
+  body.match-mode .deck-pile.is-empty,
+  body.match-mode .archive-compact.is-empty summary { min-height:38px; }
+}
