@@ -23,11 +23,11 @@ function sliceBetween(source:string,start:string,end:string){
 const polish=css.slice(css.lastIndexOf("/* v7.69.8 — board geometry, inspect affordance + readable combat resolution */"));
 
 test("v7.69.8 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.9");
-  assert.match(server,/version: "7\.69\.9"/);
-  assert.match(server,/version:"7\.69\.9"/);
-  assert.match(server,/Office Card Game v7\.69\.9 server/);
-  assert.match(html,/v7\.69\.9 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.10");
+  assert.match(server,/version: "7\.69\.10"/);
+  assert.match(server,/version:"7\.69\.10"/);
+  assert.match(server,/Office Card Game v7\.69\.10 server/);
+  assert.match(html,/v7\.69\.10 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(pkg.scripts.test,/dist\/test\/v7698\.test\.js/);
 });

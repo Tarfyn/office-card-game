@@ -3036,7 +3036,7 @@ body {
 .inspector-nav-buttons button:not(:disabled):focus-visible {
   background:#fff;
   border-color:#aaa198;
-  transform:translateY(-1px);
+  transform:translateY(-0.5px);
 }
 .inspector-nav-buttons button:disabled { opacity:.28; cursor:default; }
 
@@ -4130,7 +4130,7 @@ body {
 .match-feed-item:nth-child(n+4) { display:none; }
 .match-feed-item.latest { background:#fff; border-color:#d8d0c5; box-shadow:0 5px 13px rgba(50,42,33,.055); }
 .match-feed-item[role="button"] { cursor:pointer; }
-.match-feed-item[role="button"]:hover { border-color:#bdb2a4; transform:translateY(-1px); }
+.match-feed-item[role="button"]:hover { border-color:#bdb2a4; transform:translateY(-0.5px); }
 .match-feed-item[role="button"]:focus-visible { outline:2px solid #49769b; outline-offset:2px; }
 .match-feed-code { display:grid; place-items:center; width:34px; min-height:27px; padding:3px; border-radius:7px; background:#eeeae4; color:#6f6960; font-size:7px; line-height:1; font-weight:950; letter-spacing:.04em; text-align:center; }
 .match-feed-item > div { min-width:0; display:grid; gap:2px; }
@@ -11037,4 +11037,24 @@ body.match-mode .archive-compact[open] .archive-grid > .card {
   body.match-mode .arena-top-stack { flex:0 0 auto; width:100%; order:1; }
   body.match-mode .arena-top-stack:not(:has(.connection-banner)) { min-height:0; height:0; display:none; }
   body.match-mode .arena-layout { flex:1 1 0; height:auto; min-height:0; order:2; }
+}
+
+
+/* v7.69.10 — phase baseline + board-wide direct attack target */
+body.match-mode .board-phase-divider .phase-track span b {
+  display:block;
+  transform:translateY(-0.5px);
+}
+body.match-mode .opponent-board.direct-attack-board-target {
+  cursor:crosshair;
+  box-shadow:inset 0 0 0 1px rgba(220,72,72,.22), inset 0 0 34px rgba(183,48,48,.045);
+}
+body.match-mode .opponent-board.direct-attack-board-target:hover {
+  box-shadow:inset 0 0 0 1px rgba(232,82,82,.42), inset 0 0 44px rgba(183,48,48,.075);
+}
+@media (hover:none), (pointer:coarse) {
+  body.match-mode .opponent-board.direct-attack-board-target {
+    cursor:default;
+    box-shadow:inset 0 0 0 1px rgba(232,82,82,.28), inset 0 0 30px rgba(183,48,48,.055);
+  }
 }
