@@ -5852,7 +5852,8 @@ function renderPlayer(player, own, match) {
   const frontline = `<div class="zone-title frontline-title"><strong>Employees</strong><span>${esc(fieldZoneSummary(player, 'EMPLOYEE', own))}</span>${zoneTransitionChip(player.id, 'EMPLOYEE_FIELD')}</div><div class="slots employee-row board-lane employee-lane ${employeeOccupied ? 'lane-occupied' : 'lane-clear'} ${zonePulseClass(player.id, 'EMPLOYEE_FIELD')}" aria-label="${own ? 'Your' : 'Opponent'} employee row">${renderFieldRow(player.employeeField, 'EMPLOYEE', own)}</div>`;
   const backline = `<div class="zone-title backline-title"><strong>Support</strong><span>${esc(fieldZoneSummary(player, 'SUPPORT', own))}</span>${zoneTransitionChip(player.id, 'SUPPORT_FIELD')}</div><div class="slots support support-row board-lane support-lane ${supportOccupied ? 'lane-occupied' : 'lane-clear'} ${zonePulseClass(player.id, 'SUPPORT_FIELD')}" aria-label="${own ? 'Your' : 'Opponent'} support row">${renderFieldRow(player.supportField, 'SUPPORT', own)}</div>`;
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
-  return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(departmentThemeClass(department))}${deskState}">
+  const directBoardTarget = !own && state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(null);
+  return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(departmentThemeClass(department))}${deskState}${directBoardTarget ? ' direct-attack-board-target' : ''}" ${directBoardTarget ? 'data-direct-attack-board="1"' : ''}>
     ${!own ? handHtml : ''}
     <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
@@ -6683,6 +6684,27 @@ function bindInteractionHandlers() {
       }
       interaction.selections[choice.selectorId] = [...selected];
       render();
+    };
+  });
+  document.querySelectorAll('[data-direct-attack-board]').forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      if (state.interaction?.type !== 'ATTACK' || !state.interaction.targetIds.includes(null)) return;
+      state.hoverAttackTargetId = '__DIRECT_REP__';
+      scheduleAttackConnectorDraw();
+    });
+    el.addEventListener('mouseleave', () => {
+      if (state.hoverAttackTargetId === '__DIRECT_REP__') state.hoverAttackTargetId = null;
+      scheduleAttackConnectorDraw();
+    });
+    el.onclick = (event) => {
+      const interaction = state.interaction;
+      if (state.intentBusy || interaction?.type !== 'ATTACK' || !interaction.targetIds.includes(null)) return;
+      if (event.target.closest('.card,button,a,input,select,textarea,summary,details,.player-head,.board-resource-row,.pending-lane,.opponent-hand')) return;
+      event.stopPropagation();
+      const attackerId = interaction.attackerId;
+      state.hoverAttackTargetId = null;
+      state.interaction = null;
+      sendIntent({ type:'DECLARE_ATTACK', attackerId, targetId:null });
     };
   });
   document.querySelectorAll('[data-direct-attack-target]').forEach((el) => {

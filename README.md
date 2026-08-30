@@ -2,6 +2,13 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.10 — Direct Attack Target + Phase Alignment
+
+- Centers the five phase labels optically inside the center divider.
+- When a direct attack is server-legal, the opponent halfboard itself becomes the large click/tap target while the existing REP connector remains the visual destination.
+- Keeps interactive opponent UI/cards from accidentally committing a direct attack.
+- Updates the historical v6.0 presentation assertion to the current public-identity rule: curated title slot instead of free deck-name display.
+
 ## v7.69.9 — Responsive Board + Interaction Follow-up
 
 - Recovers the match board on mobile portrait/landscape, keeps both 5+4 halfboards full-width, and makes the phase seam five exact full-height segments below modal/inspector layers.
