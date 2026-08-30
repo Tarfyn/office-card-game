@@ -2,6 +2,14 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.7 — Card Consistency + Artwork Completion
+
+- Restores compact Rules Text and printed Tags to live hand and field cards while retaining the existing Cost / printed Power / modified Power language.
+- Makes face-down Support cards render as full portrait card backs and balances the mirrored Own/Opponent battlefield geometry around the reserved hand HUD.
+- Gives the existing base card and Deckbuilder surfaces a restrained paper/plastic material pass without changing their information architecture.
+- Completes the Alpha artwork rollout: all 107 card definitions now resolve to canonical local artwork assets.
+- Tightens only the 4K starter dossier proportions so the five folders remain side-by-side but use the deskmat depth more effectively.
+
 ## v7.69.6 — Lobby Balance + Card Presentation Polish
 
 - Keeps the material Executive Desk lobby intact while tightening 4K middle-zone balance, mobile secondary contrast and the physical full-width drawer front.

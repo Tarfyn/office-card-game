@@ -2725,7 +2725,15 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const combinedFieldBadges = `${fieldStateBadges}${attackCompareBadge}`;
   const supportBack = hidden && faceDownSupport ? hiddenSupportBack() : '';
   const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
-  return `<div class="card ${hidden ? 'hidden-card' : ''} ${faceDownSupport ? 'face-down-support' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}" data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0">
+  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${faceDownSupport ? 'face-down-support' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
+  const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
+  if (faceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
+    ${cardBackMarkup()}
+    <button class="card-info" type="button" data-card-info-button="${esc(card.instanceId)}" aria-label="Inspect card" title="Inspect card">i</button>
+    ${ability ? `<button class="card-ability" type="button" data-card-ability="${esc(card.instanceId)}" aria-label="Activate ability">ACT</button>` : ''}
+    ${combinedFieldBadges ? `<div class="card-runtime-row field-state-row face-down-card-state">${combinedFieldBadges}</div>` : ''}
+  </div>`;
+  return `<div class="${cardClassName}" ${cardAttributes}>
     ${prototype}
     ${mulliganReplaceMarker}
     ${def ? `<div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b></div>` : faceDownSupport ? '<div class="card-type-strip hidden-support-strip"><span>INCIDENT</span><b>SET</b></div>' : ''}
@@ -6190,10 +6198,12 @@ function render() {
   const liveMatch = Boolean(state.session && state.view?.match && state.view.status !== 'WAITING');
   const endedMatch = Boolean(liveMatch && state.view?.match?.status === 'ENDED');
   const lobbyMode = Boolean(!state.session && state.mode === 'PLAY');
+  const collectionMode = Boolean(!state.session && state.mode === 'COLLECTION');
   document.body.classList.toggle('match-mode', liveMatch);
   document.body.classList.toggle('match-ended', endedMatch);
   document.body.classList.toggle('match-viewport-locked', liveMatch && !endedMatch);
   document.body.classList.toggle('lobby-mode', lobbyMode);
+  document.body.classList.toggle('collection-mode', collectionMode);
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
