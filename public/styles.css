@@ -9388,3 +9388,216 @@ body.lobby-mode .app {
   .desk-tools-hardware { width:132px; bottom:7px; }
   .desk-tools-tray { margin:0; }
 }
+
+
+/* v7.69.6 — lobby balance + card presentation polish */
+/* Field cards keep their paper body beneath the 16:9 artwork instead of stretching the art stage into a dark void. */
+body.match-mode .board-lane .card:not(.hidden-card) {
+  background:linear-gradient(180deg,#f3f0e8 0%,#eee9df 58%,#e6dfd3 100%) !important;
+}
+body.match-mode .board-lane .card .card-art-stage {
+  flex:0 0 auto;
+  background:#e5ded1;
+}
+body.match-mode .board-lane .card .card-info {
+  top:2px;
+  right:2px;
+  width:14px;
+  min-width:14px;
+  height:14px;
+  min-height:14px;
+  padding:0;
+  font-size:6px;
+  line-height:1;
+  box-shadow:0 1px 3px rgba(0,0,0,.14);
+}
+body.match-mode .board-lane .card.hidden-card .card-info { display:none; }
+
+/* Hover is the same card language at a readable scale: printed Power remains blue at bottom right;
+   Current Power appears next to it only when modified. */
+.hover-card-face { position:relative; padding-bottom:42px; }
+.hover-card-face .power-cluster {
+  right:10px;
+  bottom:9px;
+  gap:5px;
+  transform:none;
+}
+.hover-card-face .power-cluster .power-badge {
+  position:relative;
+  right:auto;
+  bottom:auto;
+  width:42px;
+  min-width:42px;
+  height:42px;
+  border-width:2px;
+  background:#287ba5;
+}
+.hover-card-face .power-cluster .power-badge span { font-size:6px; }
+.hover-card-face .power-cluster .power-badge b { font-size:21px; }
+.hover-card-face .current-power-badge {
+  width:34px;
+  min-width:34px;
+  height:34px;
+  border-width:2px;
+  font-size:17px;
+}
+.hover-card-face.has-power .hover-inspect-hint { padding-right:52px; }
+.hover-card-face.has-power.power-changed .hover-inspect-hint { padding-right:92px; }
+
+/* One branded back for every hidden card surface. */
+.ocg-card-back {
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border-radius:inherit;
+  background:
+    radial-gradient(circle at 50% 42%,rgba(215,179,103,.10),transparent 30%),
+    repeating-linear-gradient(135deg,rgba(255,255,255,.018) 0 5px,transparent 5px 11px),
+    linear-gradient(145deg,#172328,#0a1217 68%,#111c20);
+  box-shadow:inset 0 0 0 2px #c8ad72,inset 0 0 0 5px #192226,inset 0 0 0 6px rgba(225,197,132,.38);
+  color:#e7d6ad;
+}
+.ocg-card-back::before,
+.ocg-card-back::after {
+  content:'';
+  position:absolute;
+  inset:10%;
+  border:1px solid rgba(217,184,113,.28);
+  transform:rotate(45deg);
+}
+.ocg-card-back::after { inset:20%; transform:rotate(45deg); border-color:rgba(217,184,113,.16); }
+.ocg-card-back-frame {
+  position:relative;
+  z-index:2;
+  display:grid;
+  place-items:center;
+  min-width:42%;
+  padding:8% 9%;
+  border:1px solid rgba(229,204,149,.48);
+  background:rgba(8,14,17,.72);
+  box-shadow:0 4px 12px rgba(0,0,0,.30),inset 0 0 0 2px rgba(255,255,255,.025);
+  text-align:center;
+}
+.ocg-card-back-frame span,.ocg-card-back-frame small { font-size:6px; font-weight:900; letter-spacing:.16em; }
+.ocg-card-back-frame b { margin:2px 0; font-family:Georgia,"Times New Roman",serif; font-size:18px; letter-spacing:.06em; }
+.ocg-card-back.compact .ocg-card-back-frame { min-width:54%; padding:8%; }
+.ocg-card-back.compact .ocg-card-back-frame span,
+.ocg-card-back.compact .ocg-card-back-frame small { display:none; }
+.ocg-card-back.compact .ocg-card-back-frame b { font-size:9px; }
+.opponent-hand-card { position:relative; overflow:hidden; background:#0b1418; }
+.hidden-support-back {
+  position:relative;
+  width:100%;
+  height:100%;
+  min-height:0;
+  border:0;
+  background:none;
+  box-shadow:none;
+}
+body.match-mode .card.face-down-support.hidden-card .card-art-stage { flex:1 1 auto; min-height:0; }
+body.match-mode .card.face-down-support.hidden-card .hidden-support-back { flex:1 1 auto; }
+
+/* A modest hand-size lift makes the new artwork readable without taking the board over. */
+body.match-mode .own-board { padding-bottom:154px; }
+body.match-mode .own-hand { width:min(72%,940px); height:118px; }
+body.match-mode .own-hand .hand-fan-card {
+  width:88px; min-width:88px; max-width:88px;
+  height:123px; min-height:123px; max-height:123px;
+  margin-left:-15px;
+}
+@media (min-width:761px) and (max-height:1000px) {
+  body.match-mode .own-board { padding-bottom:162px; }
+  body.match-mode .own-hand { width:min(78%,1040px); height:128px; }
+  body.match-mode .own-hand .hand-fan-card {
+    width:96px; min-width:96px; max-width:96px;
+    height:134px; min-height:134px; max-height:134px;
+    margin-left:-16px;
+  }
+}
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .own-board { padding-bottom:216px; }
+  body.match-mode .own-hand { width:min(78%,1500px); height:174px; }
+  body.match-mode .own-hand .hand-fan-card {
+    width:124px; min-width:124px; max-width:124px;
+    height:174px; min-height:174px; max-height:174px;
+    margin-left:-20px;
+  }
+}
+@media (min-width:3200px) and (min-height:1500px) {
+  body.match-mode .own-hand { width:min(78%,1620px); height:185px; }
+  body.match-mode .own-hand .hand-fan-card {
+    width:132px; min-width:132px; max-width:132px;
+    height:185px; min-height:185px; max-height:185px;
+    margin-left:-22px;
+  }
+}
+
+/* 4K keeps the current composition but groups the useful middle-zone content instead of pinning it
+   to opposite ends of a giant green void. */
+@media (min-width:2200px) and (min-height:1100px) {
+  .executive-desk-center {
+    grid-template-rows:auto auto auto;
+    align-content:center;
+    gap:clamp(24px,2vh,54px);
+    padding:clamp(34px,2.2vw,68px);
+  }
+  .desk-deck-showcase {
+    min-height:clamp(500px,34vh,680px);
+    grid-template-columns:minmax(400px,.78fr) minmax(760px,1.45fr);
+    align-items:center;
+  }
+  .desk-deck-sheet { max-width:680px; justify-self:center; padding:clamp(28px,1.6vw,48px); }
+  .desk-deck-sheet-head strong { font-size:clamp(28px,1.3vw,42px); }
+  .desk-card-fan { min-height:clamp(430px,29vh,590px); }
+  .desk-card-fan-item { width:clamp(290px,8.5vw,350px); }
+  .desk-starter-tray .starter-identity { min-height:clamp(155px,9vh,190px); }
+}
+
+/* The open drawer gains a real wooden front fascia, with the existing brass pull mounted on it. */
+.executive-desk-tools { isolation:isolate; }
+.executive-desk-tools::after {
+  content:'';
+  position:absolute;
+  z-index:3;
+  left:0;
+  right:0;
+  bottom:0;
+  height:31px;
+  border-top:1px solid rgba(8,3,2,.78);
+  background-image:linear-gradient(180deg,rgba(255,255,255,.035),rgba(12,5,2,.25)),var(--desk-wood-texture);
+  background-size:auto,720px 720px;
+  box-shadow:inset 0 5px 8px rgba(0,0,0,.28),inset 0 -1px rgba(255,225,180,.045),0 -1px rgba(113,70,42,.25);
+  pointer-events:none;
+}
+.desk-tools-hardware { z-index:5; }
+
+/* Secondary mobile drawer copy should look available, not disabled. */
+@media (max-width:760px) {
+  body.match-mode .own-board { padding-bottom:168px; }
+  body.match-mode .own-hand { width:min(88%,560px); height:95px; bottom:50px; }
+  body.match-mode .own-hand .hand-fan-card,
+  body.match-mode .own-hand .hand-fan-card:first-child {
+    width:62px; min-width:62px; max-width:62px;
+    height:87px; min-height:87px; max-height:87px;
+    margin-left:-10px !important;
+  }
+  body.match-mode .own-hand .hand-fan-card:first-child { margin-left:0 !important; }
+  .desk-tools-tray .private-room-drawer > summary strong,
+  .desk-tools-tray .lobby-playtest-drawer > summary strong,
+  .desk-tools-tray .rules-primer > summary strong,
+  .desk-tools-tray .alpha-session-strip strong { color:#2e2117; opacity:1; }
+  .desk-tools-tray .private-room-drawer > summary span,
+  .desk-tools-tray .private-room-drawer > summary small,
+  .desk-tools-tray .lobby-playtest-drawer > summary span,
+  .desk-tools-tray .lobby-playtest-drawer > summary small,
+  .desk-tools-tray .rules-primer > summary span,
+  .desk-tools-tray .rules-primer > summary small,
+  .desk-tools-tray .alpha-session-strip span,
+  .desk-tools-tray .alpha-session-strip small { color:#66523e; opacity:1; }
+  .desk-tools-tray .private-room-drawer,
+  .desk-tools-tray .alpha-session-strip,
+  .desk-tools-tray .rules-primer,
+  .desk-tools-tray .lobby-playtest-drawer { color:#2f241a; }
+}

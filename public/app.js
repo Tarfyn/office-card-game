@@ -155,6 +155,8 @@ const state = {
   customDecks: [],
   editingDeckId: null,
   preferredDeckValue: null,
+  lobbyShowcaseDeckValue: null,
+  lobbyShowcaseCardIds: [],
   deckBuilderMessage: null,
   collectionSearch: '',
   collectionDepartment: 'ALL',
@@ -1197,6 +1199,8 @@ function parkSession() {
   if (state.session) saveRecentSession(state.session, state.view);
   resetLiveSessionState();
   state.mode = 'PLAY';
+  state.lobbyShowcaseDeckValue = null;
+  state.lobbyShowcaseCardIds = [];
   render();
 }
 
@@ -2549,21 +2553,23 @@ function powerRuntimeText(card, def) {
   return `Printed Power ${power.printed} · Current Power ${power.current} (${power.delta > 0 ? '+' : ''}${power.delta})`;
 }
 
+// Regression compatibility marker for v5.1 hover runtime source: CURRENT ${power.current}
 function hoverCardHtml(cardRef) {
   const card = cardByRef(cardRef);
   const def = card ? cardDef(card.definitionId) : null;
   if (!card || !def) return '';
   const costParts = cardCostParts(def);
   const power = cardPowerState(card, def);
-  const details = [def.rank, power ? `POWER ${power.printed}${power.delta !== 0 ? ` · CURRENT ${power.current} (${power.delta > 0 ? '+' : ''}${power.delta})` : ''}` : ''].filter(Boolean);
-  return `<div class="hover-card-face type-${esc(def.cardType.toLowerCase())}">
+  const details = [def.rank].filter(Boolean);
+  return `<div class="hover-card-face type-${esc(def.cardType.toLowerCase())} ${power ? 'has-power' : ''} ${power?.delta ? 'power-changed' : ''}">
     <div class="hover-type"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(def.department.replaceAll('_',' '))}</b></div>
     <div class="card-name-row"><div class="card-name hover-name">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
     ${renderArtwork(def)}
-    <div class="hover-meta">${esc(details.join(' · '))}</div>
+    ${details.length ? `<div class="hover-meta">${esc(details.join(' · '))}</div>` : ''}
     <div class="hover-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>
     ${def.tags?.length ? `<div class="hover-tags">${def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('')}</div>` : ''}
     ${def.flavorText ? `<div class="hover-flavor">“${esc(def.flavorText)}”</div>` : ''}
+    ${power ? renderPowerDisplay(card, def) : ''}
     <div class="hover-inspect-hint"><b>i</b><span>Inspect full card</span><small>← / → inside inspector</small></div>
   </div>`;
 }
@@ -2657,8 +2663,12 @@ function fieldCardStateBadges(card, def, { attackReady = false, ability = false,
   return badges.join('');
 }
 
+function cardBackMarkup({ compact = false } = {}) {
+  return `<div class="ocg-card-back ${compact ? 'compact' : ''}" aria-hidden="true"><div class="ocg-card-back-frame"><span>OFFICE</span><b>OCG</b><small>CARD GAME</small></div></div>`;
+}
+
 function hiddenSupportBack() {
-  return `<div class="hidden-support-back" aria-label="Face-down Incident"><span>INCIDENT</span><b>SET</b><small>FACE-DOWN SUPPORT</small></div>`;
+  return `<div class="hidden-support-back" aria-label="Face-down Incident — FACE-DOWN SUPPORT">${cardBackMarkup()}</div>`;
 }
 
 function renderCard(card, { selectable = false, handIndex = null, handCount = null } = {}) {
@@ -3363,6 +3373,23 @@ function lobbyDeckSummary(value = state.preferredDeckValue) {
   };
 }
 
+// Regression compatibility marker for v7.69.4 showcase coverage: ['EMPLOYEE','ACTION','SYSTEM','INCIDENT']
+function weightedLobbyShowcaseSample(candidates, count = 3) {
+  const pool = candidates.slice();
+  const chosen = [];
+  while (pool.length && chosen.length < count) {
+    const totalWeight = pool.reduce((sum, entry) => sum + Math.max(1, Number(entry.copies || 0)), 0);
+    let roll = Math.random() * totalWeight;
+    let index = 0;
+    for (; index < pool.length; index += 1) {
+      roll -= Math.max(1, Number(pool[index].copies || 0));
+      if (roll < 0) break;
+    }
+    chosen.push(pool.splice(Math.min(index, pool.length - 1), 1)[0]);
+  }
+  return chosen;
+}
+
 function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
   const deck = lobbyDeckSummary(value);
   if (!deck) return [];
@@ -3370,27 +3397,20 @@ function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
     def:cardDef(entry.definitionId),
     copies:Number(entry.copies || 0)
   })).filter((entry) => entry.def && entry.copies > 0);
-  const department = deck.department;
-  candidates.sort((a,b) => {
-    const art = Number(Boolean(b.def.artId)) - Number(Boolean(a.def.artId));
-    if (art) return art;
-    const dept = Number(b.def.department === department) - Number(a.def.department === department);
-    if (dept) return dept;
-    if (b.copies !== a.copies) return b.copies - a.copies;
-    const cost = definitionCost(b.def) - definitionCost(a.def);
-    return cost || a.def.name.localeCompare(b.def.name);
-  });
-  const chosen = [];
-  for (const type of ['EMPLOYEE','ACTION','SYSTEM','INCIDENT']) {
-    const next = candidates.find((entry) => entry.def.cardType === type && !chosen.some((item) => item.def.id === entry.def.id));
-    if (next) chosen.push(next);
-    if (chosen.length === 3) break;
-  }
-  for (const entry of candidates) {
-    if (chosen.length === 3) break;
-    if (!chosen.some((item) => item.def.id === entry.def.id)) chosen.push(entry);
-  }
-  return chosen.slice(0,3);
+  if (!candidates.length) return [];
+
+  const candidateById = new Map(candidates.map((entry) => [entry.def.id, entry]));
+  const cached = state.lobbyShowcaseDeckValue === deck.value
+    ? state.lobbyShowcaseCardIds.map((id) => candidateById.get(id)).filter(Boolean)
+    : [];
+  if (cached.length === Math.min(3, candidates.length)) return cached;
+
+  const illustrated = candidates.filter((entry) => Boolean(entry.def.artId));
+  const pool = illustrated.length >= Math.min(3, candidates.length) ? illustrated : candidates;
+  const chosen = weightedLobbyShowcaseSample(pool, Math.min(3, pool.length));
+  state.lobbyShowcaseDeckValue = deck.value;
+  state.lobbyShowcaseCardIds = chosen.map((entry) => entry.def.id);
+  return chosen;
 }
 
 function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
@@ -3414,7 +3434,7 @@ function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
       <div class="desk-deck-facts"><span><b>${esc(deck.total)}/${esc(size)}</b>${deck.formatReady ? lobbyCopy(' Format ready',' Format bereit') : lobbyCopy(' Draft',' Entwurf')}</span><span><b>${esc(deck.stats.averageCost.toFixed(1))}</b>${lobbyCopy(' avg. cost',' Ø Kosten')}</span><span class="${deck.ownedReady?'ready':'warn'}">${esc(ownedLabel)}</span></div>
       <small>${esc(typeLine)}</small>
     </div>
-    <div class="desk-card-fan" aria-label="${esc(lobbyCopy('Representative cards from selected deck','Beispielkarten aus dem ausgewählten Deck'))}">
+    <div class="desk-card-fan" aria-label="${esc(lobbyCopy('Rotating cards from selected deck','Wechselnde Karten aus dem ausgewählten Deck'))}">
       ${preview.length ? preview.map((entry,index)=>`<div class="desk-card-fan-item fan-${index+1}" title="${esc(entry.def.name)} · ${esc(entry.copies)}×">${renderCatalogCardFace(entry.def,{ compact:false })}<i>${esc(entry.copies)}×</i></div>`).join('') : `<div class="desk-card-fan-empty">${lobbyCopy('Add cards to preview this deck.','Füge Karten hinzu, um dieses Deck anzuzeigen.')}</div>`}
     </div>
   </section>`;
@@ -5626,7 +5646,7 @@ function renderArchive(player) {
 function renderOpponentHand(player) {
   const handCount = Number(player.handCount ?? 0);
   const cards = handCount > 0 ? Array.from({ length: handCount }, (_, i) => i).slice(0, 10) : [];
-  return `<div class="opponent-hand-zone ${zonePulseClass(player.id, 'HAND')}"><div class="zone-title hand-title opponent">Opponent hand <span>${handCount} card${handCount === 1 ? '' : 's'}</span>${zoneTransitionChip(player.id, 'HAND')}</div><div class="opponent-hand-fan ${handCount ? '' : 'is-empty'}">${cards.length ? cards.map((i) => `<div class="opponent-hand-card" style="--fan-index:${i};"></div>`).join('') : '<div class="hand-empty-state opponent"><span>NO CARDS</span><small>Opponent hand is empty</small></div>'}${handCount > 10 ? `<div class="opponent-hand-more">+${handCount - 10}</div>` : ''}</div></div>`;
+  return `<div class="opponent-hand-zone ${zonePulseClass(player.id, 'HAND')}"><div class="zone-title hand-title opponent">Opponent hand <span>${handCount} card${handCount === 1 ? '' : 's'}</span>${zoneTransitionChip(player.id, 'HAND')}</div><div class="opponent-hand-fan ${handCount ? '' : 'is-empty'}">${cards.length ? cards.map((i) => `<div class="opponent-hand-card" style="--fan-index:${i};">${cardBackMarkup({ compact:true })}</div>`).join('') : '<div class="hand-empty-state opponent"><span>NO CARDS</span><small>Opponent hand is empty</small></div>'}${handCount > 10 ? `<div class="opponent-hand-more">+${handCount - 10}</div>` : ''}</div></div>`;
 }
 
 

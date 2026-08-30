@@ -23,10 +23,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.5");
-  assert.match(server,/version: "7\.69\.5"/);
-  assert.match(server,/Office Card Game v7\.69\.5 server/);
-  assert.match(html,/v7\.69\.5 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.6");
+  assert.match(server,/version: "7\.69\.6"/);
+  assert.match(server,/Office Card Game v7\.69\.6 server/);
+  assert.match(html,/v7\.69\.6 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.6 — Lobby Balance \+ Card Presentation Polish/);
   assert.match(readme,/## v7\.69\.5 — Full-Desk Lobby Geometry, Artwork Rollout \+ Match HUD Fixes/);
   assert.match(readme,/## v7\.69\.3 — Executive Desk Lobby \+ Rematch Gate/);
 });
@@ -386,6 +387,58 @@ test("v7.69.5 integrates the supplied card artwork batch with canonical web slug
     assert.ok(readFileSync(asset).length>1000,`missing artwork asset for ${card.id}`);
   }
   assert.match(root("scripts/artwork-audit.mjs"),/ratioTolerance=0\.015/);
+});
+
+
+test("v7.69.6 keeps lobby showcase random per visit or deck change but stable across rerenders",()=>{
+  assert.match(app,/lobbyShowcaseDeckValue: null/);
+  assert.match(app,/lobbyShowcaseCardIds: \[\]/);
+  const preview=sliceBetween(app,"function weightedLobbyShowcaseSample", "function renderLobbyDeckShowcase");
+  assert.match(preview,/Math\.random\(\)/);
+  assert.match(preview,/state\.lobbyShowcaseDeckValue === deck\.value/);
+  assert.match(preview,/state\.lobbyShowcaseCardIds/);
+  assert.match(preview,/illustrated\.length >= Math\.min\(3, candidates\.length\)/);
+  const park=sliceBetween(app,"function parkSession", "async function refreshRecentSession");
+  assert.match(park,/state\.lobbyShowcaseDeckValue = null/);
+  assert.match(park,/state\.lobbyShowcaseCardIds = \[\]/);
+});
+
+test("v7.69.6 reuses printed and modified Power badges in the hover card",()=>{
+  const hover=sliceBetween(app,"function hoverCardHtml", "function hideHoverPreview");
+  assert.match(hover,/renderPowerDisplay\(card, def\)/);
+  assert.match(hover,/power-changed/);
+  assert.doesNotMatch(hover,/POWER \${power\.printed}/);
+  const polish=css.slice(css.lastIndexOf("/* v7.69.6 — lobby balance + card presentation polish */"));
+  assert.match(polish,/\.hover-card-face \.power-cluster/);
+  assert.match(polish,/background:#287ba5/);
+  assert.match(polish,/\.hover-card-face \.current-power-badge/);
+});
+
+test("v7.69.6 gives hidden cards one branded card back",()=>{
+  assert.match(app,/function cardBackMarkup/);
+  assert.match(app,/hiddenSupportBack\(\)[\s\S]*?cardBackMarkup\(\)/);
+  const opponent=sliceBetween(app,"function renderOpponentHand", "function legalEmployeeOptionsForSlot");
+  assert.match(opponent,/cardBackMarkup\(\{ compact:true \}\)/);
+  const polish=css.slice(css.lastIndexOf("/* v7.69.6 — lobby balance + card presentation polish */"));
+  assert.match(polish,/\.ocg-card-back \{/);
+  assert.match(polish,/\.ocg-card-back-frame/);
+});
+
+test("v7.69.6 improves field card paper, hand scale and compact info affordance",()=>{
+  const polish=css.slice(css.lastIndexOf("/* v7.69.6 — lobby balance + card presentation polish */"));
+  assert.match(polish,/body\.match-mode \.board-lane \.card:not\(\.hidden-card\)[\s\S]*?#f3f0e8/);
+  assert.match(polish,/body\.match-mode \.board-lane \.card \.card-art-stage \{[\s\S]*?flex:0 0 auto/);
+  assert.match(polish,/body\.match-mode \.board-lane \.card \.card-info \{[\s\S]*?width:14px/);
+  assert.match(polish,/@media \(min-width:761px\) and \(max-height:1000px\)[\s\S]*?width:96px; min-width:96px/);
+  assert.match(polish,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?width:124px; min-width:124px/);
+  assert.match(polish,/@media \(max-width:760px\)[\s\S]*?width:62px; min-width:62px/);
+});
+
+test("v7.69.6 tightens 4K lobby balance, mobile contrast and drawer fascia without redesigning the desk",()=>{
+  const polish=css.slice(css.lastIndexOf("/* v7.69.6 — lobby balance + card presentation polish */"));
+  assert.match(polish,/@media \(min-width:2200px\) and \(min-height:1100px\)[\s\S]*?\.executive-desk-center \{[\s\S]*?grid-template-rows:auto auto auto;[\s\S]*?align-content:center/);
+  assert.match(polish,/\.executive-desk-tools::after \{[\s\S]*?bottom:0;[\s\S]*?var\(--desk-wood-texture\)/);
+  assert.match(polish,/@media \(max-width:760px\)[\s\S]*?\.desk-tools-tray \.private-room-drawer > summary strong[\s\S]*?color:#2e2117/);
 });
 
 console.log(`\n${passed}/${passed} v7.69 tests passed.`);

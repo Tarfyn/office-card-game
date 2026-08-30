@@ -2,6 +2,15 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.6 — Lobby Balance + Card Presentation Polish
+
+- Keeps the material Executive Desk lobby intact while tightening 4K middle-zone balance, mobile secondary contrast and the physical full-width drawer front.
+- Rotates three artwork-ready cards from the selected deck once per lobby visit or deck change, while keeping the selection stable through unrelated lobby rerenders.
+- Enlarges the live hand modestly, restores a light paper body beneath battlefield artwork, and reduces the field-card info control footprint.
+- Reuses the existing blue printed-Power badge and modified-Power companion badge in the large hover preview instead of duplicating Power as text.
+- Adds one code-native Office Card Game card back used for hidden opponent hand cards and face-down support presentation.
+
+
 v7.38 is the first focused **Alpha card-pool expansion** after the v7.31–v7.37 validation block. It adds 10 engine-backed cards selected from the v7.37 content-gap audit, growing the pool from 97 to 107 while leaving the five tuned starter lists, rules framework, format and economy values unchanged.
 
 ## Quick start: play in two browser windows
