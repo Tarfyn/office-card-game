@@ -2,6 +2,14 @@
 
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
+## v7.69.11 — Render Stability + Pile Polish
+
+- Direct attacks use the free opponent halfboard as the large click/tap hitbox whenever the server projects `null` as a legal attack target; REP remains the visual connector destination.
+- Hand hover previews clamp against their measured height so tags, footer and Power stay visible above the hand.
+- Attack-ready hover no longer leaks Attack selection/dimming before an explicit click/tap.
+- Card/zone movement animations are one-shot per authoritative event instead of restarting on SSE/polling rerenders.
+- Deck and Archive piles are larger on desktop; an empty Deck renders an empty tray instead of a Card Back.
+
 ## v7.69.10 — Direct Attack Target + Phase Alignment
 
 - Centers the five phase labels optically inside the center divider.

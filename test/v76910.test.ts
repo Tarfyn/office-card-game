@@ -20,11 +20,11 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69.10 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.10");
-  assert.match(server,/version: "7\.69\.10"/);
-  assert.match(server,/version:"7\.69\.10"/);
-  assert.match(server,/Office Card Game v7\.69\.10 server/);
-  assert.match(html,/v7\.69\.10 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.11");
+  assert.match(server,/version: "7\.69\.11"/);
+  assert.match(server,/version:"7\.69\.11"/);
+  assert.match(server,/Office Card Game v7\.69\.11 server/);
+  assert.match(html,/v7\.69\.11 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.10 — Direct Attack Target \+ Phase Alignment/);
   assert.match(pkg.scripts.test,/dist\/test\/v76910\.test\.js/);
 });
@@ -38,11 +38,12 @@ test("server-legal direct attack exposes the opponent halfboard as a large targe
   const player=sliceBetween(app,"function renderPlayer(player, own, match)","function actionButton");
   assert.match(player,/const directBoardTarget = !own && state\.interaction\?\.type === 'ATTACK' && state\.interaction\.targetIds\.includes\(null\)/);
   assert.match(player,/data-direct-attack-board/);
+  const direct=sliceBetween(app,"function commitDirectAttackFromBoard", "function bindInteractionHandlers");
   const handlers=sliceBetween(app,"function bindInteractionHandlers", "function bindCardInfoHandlers");
   assert.match(handlers,/\[data-direct-attack-board\]/);
   assert.match(handlers,/state\.hoverAttackTargetId = '__DIRECT_REP__'/);
-  assert.match(handlers,/sendIntent\(\{ type:'DECLARE_ATTACK', attackerId, targetId:null \}\)/);
-  assert.match(handlers,/event\.target\.closest\('\.card,button,a,input,select,textarea,summary,details,\.player-head,\.board-resource-row,\.pending-lane,\.opponent-hand'\)/);
+  assert.match(direct,/sendIntent\(\{ type:'DECLARE_ATTACK', attackerId, targetId:null \}\)/);
+  assert.ok(direct.includes("event?.target?.closest?.('.card,button,a,input,select,textarea,summary,details,.player-head,.board-resource-row,.pending-lane,.opponent-hand')"));
 });
 
 test("direct board targeting keeps the existing REP destination and clear touch state",()=>{
