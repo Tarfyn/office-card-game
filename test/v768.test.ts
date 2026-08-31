@@ -18,10 +18,10 @@ const css=root("public/styles.css");
 const readme=root("README.md");
 
 test("current version markers keep the v7.68 safety line and advance to v7.69",()=>{
-  assert.equal(pkg.version,"7.69.16");
-  assert.match(server,/version: "7\.69\.16"/);
-  assert.match(server,/Office Card Game v7\.69\.16 server/);
-  assert.match(html,/v7\.69\.16 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.17");
+  assert.match(server,/version: "7\.69\.17"/);
+  assert.match(server,/Office Card Game v7\.69\.17 server/);
+  assert.match(html,/v7\.69\.17 Alpha Playtest/);
   assert.match(readme,/## v7\.68 — Hosted Live-Sync Safety Hotfix/);
 });
 

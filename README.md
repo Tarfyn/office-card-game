@@ -1771,3 +1771,7 @@ v7.69.2 hardens the board-first layout after hosted 1K, 4K and mobile QA. Player
 - Keeps the shared Deckbuilder card renderer in the Lobby while scaling rules/tags for large showcase cards and removing the legacy art sweep.
 
 
+
+## v7.69.17 — Cosmetic Loadout Foundation + Visual Root Fixes
+
+Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults, keeps board skins independently selectable per player, removes the catalog artwork side-strip source, restores complete mobile field-card anatomy, isolates hand-card paint, and lets Deck/Archive read as tabletop piles instead of translucent panels.

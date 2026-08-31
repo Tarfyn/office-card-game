@@ -2,6 +2,7 @@ import { alphaDefinitions } from "./cards.js";
 import { alphaDeckPresets, type DeckPreset } from "./decks.js";
 import { createMatch, resign, validateDeck } from "./engine.js";
 import { ALPHA_FORMAT } from "./formats.js";
+import { defaultCosmeticLoadout, normalizeCosmeticLoadout, type CosmeticLoadout } from "./cosmetics.js";
 import { executeHostedMatchIntent, executeMatchIntent } from "./intents.js";
 import { projectEventsSince, projectStateForViewer } from "./projection.js";
 import {
@@ -39,7 +40,7 @@ export type RoomStatus = "WAITING" | "ACTIVE" | "ENDED";
 export type RoomSeatConnectionStatus = "CONNECTED" | "DISCONNECTED";
 export type RoomMatchMode = "FRIENDLY" | "RANKED";
 
-const DEFAULT_BOARD_SKIN_ID = "classic-office";
+const DEFAULT_BOARD_SKIN_ID = "classic-office"; // legacy persistence fallback only
 
 export interface RoomMatchSettings {
   mode: RoomMatchMode;
@@ -127,7 +128,8 @@ export interface PersistedRoomSeat {
   deckId: string;
   deckName: string;
   department: string;
-  boardSkinId: string;
+  boardSkinId?: string;
+  cosmeticLoadout: CosmeticLoadout;
   cards: DeckEntry[];
 }
 
@@ -204,6 +206,8 @@ export interface RoomClientView {
   guestDisplayName: string | null;
   hostBoardSkinId: string;
   guestBoardSkinId: string | null;
+  hostCosmeticLoadout: CosmeticLoadout;
+  guestCosmeticLoadout: CosmeticLoadout | null;
   settings: RoomMatchSettings;
   lifecycle: RoomLifecycleView;
   timer: RoomTimerView;
@@ -442,7 +446,7 @@ export class RoomService {
     const room: RoomRecord = {
       id: roomId,
       roomVersion: 1,
-      host: { playerId: "P1", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cards: deck.cards },
+      host: { playerId: "P1", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: defaultCosmeticLoadout("P1"), cards: deck.cards },
       guest: null,
       state: null,
       processedIntents: new Map(),
@@ -468,7 +472,7 @@ export class RoomService {
     const room = this.getRoom(roomId);
     if (room.guest) throw new RoomError("ROOM_FULL", "Room already has two players.");
     const token = this.tokenFactory();
-    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cards: deck.cards };
+    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: defaultCosmeticLoadout("P2"), cards: deck.cards };
     room.state = createMatch({
       matchId: `match-${room.id}`,
       seed: this.seedFactory(),
@@ -820,8 +824,8 @@ export class RoomService {
       const room: RoomRecord = {
         id: String(saved.id).toUpperCase(),
         roomVersion: Math.max(1, Number(saved.roomVersion ?? 1)),
-        host: { ...structuredClone(saved.host), boardSkinId: saved.host.boardSkinId || DEFAULT_BOARD_SKIN_ID },
-        guest: saved.guest ? { ...structuredClone(saved.guest), boardSkinId: saved.guest.boardSkinId || DEFAULT_BOARD_SKIN_ID } : null,
+        host: { ...structuredClone(saved.host), boardSkinId: saved.host.boardSkinId || DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(saved.host.cosmeticLoadout, "P1", saved.host.boardSkinId) },
+        guest: saved.guest ? { ...structuredClone(saved.guest), boardSkinId: saved.guest.boardSkinId || DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(saved.guest.cosmeticLoadout, "P2", saved.guest.boardSkinId) } : null,
         state: saved.state ? structuredClone(saved.state) : null,
         processedIntents: new Map((saved.processedIntents ?? []).filter((entry) => entry?.key && entry.cached?.response).map((entry) => [entry.key, structuredClone(entry.cached)])),
         listeners: new Set(),
@@ -935,6 +939,8 @@ export class RoomService {
       guestDisplayName: room.guest?.displayName ?? null,
       hostBoardSkinId: room.host.boardSkinId || DEFAULT_BOARD_SKIN_ID,
       guestBoardSkinId: room.guest?.boardSkinId || (room.guest ? DEFAULT_BOARD_SKIN_ID : null),
+      hostCosmeticLoadout: structuredClone(room.host.cosmeticLoadout),
+      guestCosmeticLoadout: room.guest ? structuredClone(room.guest.cosmeticLoadout) : null,
       settings: structuredClone(room.settings),
       lifecycle: {
         serverNow: this.nowFactory(),
