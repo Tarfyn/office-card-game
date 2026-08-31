@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { deCards } from '../public/locales/de-cards.js';
-import { deLegacyPhrases } from '../public/locales/de.js';
+import { de, deLegacyPhrases } from '../public/locales/de.js';
 
 const cards = JSON.parse(await readFile(new URL('../data/cards.json', import.meta.url), 'utf8'));
 const ids = new Set(cards.map((card) => card.id));
@@ -29,8 +29,44 @@ const requiredMatchPhrases = [
   'ARCHIVED'
 ];
 const missingMatchPhrases = requiredMatchPhrases.filter((phrase) => !String(deLegacyPhrases[phrase] ?? '').trim());
-if (missing.length || extra.length || incomplete.length || missingMatchPhrases.length) {
-  console.error(JSON.stringify({ missing, extra, incomplete, missingMatchPhrases }, null, 2));
+const requiredResultKeys = [
+  'matchComplete',
+  'victory',
+  'defeat',
+  'viewResults',
+  'reportIssue',
+  'reviewMatch',
+  'changeDeck',
+  'backToLobby',
+  'turns',
+  'duration',
+  'seat',
+  'finalRep',
+  'claimReward'
+  ,'humanPlaytestLabel'
+  ,'humanPlaytestQuestion'
+  ,'humanPlaytestDescription'
+  ,'pace'
+  ,'tooFast'
+  ,'good'
+  ,'tooLong'
+  ,'oneSided'
+  ,'yes'
+  ,'no'
+  ,'decisions'
+  ,'tooFew'
+  ,'tooMany'
+  ,'note'
+  ,'notePlaceholder'
+  ,'cardIdsOptional'
+  ,'savePlaytestNote'
+  ,'saving'
+  ,'feedbackSaved'
+  ,'feedbackSaveFailed'
+];
+const missingResultKeys = requiredResultKeys.filter((key) => !String(de.result?.[key] ?? '').trim());
+if (missing.length || extra.length || incomplete.length || missingMatchPhrases.length || missingResultKeys.length) {
+  console.error(JSON.stringify({ missing, extra, incomplete, missingMatchPhrases, missingResultKeys }, null, 2));
   process.exit(1);
 }
-console.log(`I18N_AUDIT_OK · de ${translatedIds.size}/${cards.length} cards · names/rules/flavor covered · ${requiredMatchPhrases.length}/${requiredMatchPhrases.length} match UI anchors covered`);
+console.log(`I18N_AUDIT_OK · de ${translatedIds.size}/${cards.length} cards · names/rules/flavor covered · ${requiredMatchPhrases.length}/${requiredMatchPhrases.length} match UI anchors covered · ${requiredResultKeys.length}/${requiredResultKeys.length} result keys covered`);

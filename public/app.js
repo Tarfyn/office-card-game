@@ -77,7 +77,7 @@ function acceptView(view) {
 // Regression compatibility marker for v4.4 replay source wiring
 // Regression compatibility marker for v4.3 source wiring: v4.3 keeps timer profiles off while adding filtered human playtest samples
 // Regression compatibility marker for v4.2 source wiring: analytics/export?format=csv
-import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslations, localizedCard, cardTypeLabel, observeLocalizedApp } from './i18n.js';
+import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslations, setDocumentTranslationParams, localizedCard, cardTypeLabel, observeLocalizedApp } from './i18n.js';
 const app = document.querySelector('#app');
 applyDocumentTranslations();
 function syncLanguageSwitcher() {
@@ -4436,6 +4436,19 @@ function matchRewardOutcome(match) {
   return match.reason === 'RESIGN' ? 'RESIGN_LOSS' : 'LOSS';
 }
 
+function matchResultTitle(outcome) {
+  return outcome === 'WIN' ? t('result.victory') : outcome === 'DRAW' ? t('result.draw') : t('result.defeat');
+}
+
+function matchResultRatingLine(rankedReceipt) {
+  if (state.view?.settings?.ratingActive) {
+    if (!rankedReceipt) return t('result.ratedSettling');
+    const delta = `${rankedReceipt.ratingDelta >= 0 ? '+' : ''}${rankedReceipt.ratingDelta}`;
+    return t('result.ratingDelta', { delta, before:rankedReceipt.ratingAfter - rankedReceipt.ratingDelta, after:rankedReceipt.ratingAfter });
+  }
+  return state.view?.settings?.mode === 'RANKED' ? t('result.rankedRulesUnrated') : t('result.friendlyUnrated');
+}
+
 function matchRewardPreview(match) {
   const outcome = matchRewardOutcome(match);
   if (!outcome) return null;
@@ -4456,18 +4469,18 @@ function renderMatchRewardPanel(match) {
   if (!preview) return '';
   const roomId = state.view?.roomId;
   const claimed = isMatchRewardClaimed(roomId);
-  const label = preview.outcome === 'WIN' ? 'WIN REWARD' : preview.outcome === 'DRAW' ? 'DRAW REWARD' : preview.outcome === 'RESIGN_LOSS' ? 'RESIGN REWARD' : 'MATCH REWARD';
+  const label = preview.outcome === 'WIN' ? t('result.winReward') : preview.outcome === 'DRAW' ? t('result.drawReward') : preview.outcome === 'RESIGN_LOSS' ? t('result.resignReward') : t('result.matchReward');
   const level = Number(state.metaProfile?.progression?.level ?? 1);
   const xp = Number(state.metaProfile?.progression?.xp ?? 0);
   const step = Math.max(1, Number(state.economyConfig?.progression?.levelXpStep ?? 100));
   const xpIntoLevel = xp % step;
   const xpPercent = Math.max(0, Math.min(100, Math.round((xpIntoLevel / step) * 100)));
   const credits = Number(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0);
-  return `<section class="match-reward-panel ${claimed ? 'claimed' : ''}"><div class="match-reward-copy"><span>${esc(label)} · ${esc(preview.mode)}</span><strong>+${esc(preview.credits)} Office Credits · +${esc(preview.xp)} XP</strong><small>${claimed ? 'Added to this profile.' : 'Pending · claim once for this completed room.'}</small></div><div class="match-reward-progress"><span>LEVEL ${esc(level)}</span><div class="xp-track" aria-label="${esc(xpIntoLevel)} of ${esc(step)} XP toward the next level"><i style="width:${xpPercent}%"></i></div><small>${esc(xpIntoLevel)} / ${esc(step)} XP · ${esc(credits)} Credits</small></div>${claimed ? `<b class="reward-claimed">CLAIMED</b>` : `<button class="primary" id="claimMatchReward" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?'Claiming…':'Claim reward'}</button>`}${state.rewardMessage ? `<p class="match-reward-message">${esc(state.rewardMessage)}</p>` : ''}</section>`;
+  return `<section class="match-reward-panel ${claimed ? 'claimed' : ''}"><div class="match-reward-copy"><span>${esc(label)} · ${esc(preview.mode)}</span><strong>${esc(t('result.rewardSummary', { credits:preview.credits, xp:preview.xp }))}</strong><small>${claimed ? esc(t('result.rewardClaimedDetail')) : esc(t('result.rewardPendingDetail'))}</small></div><div class="match-reward-progress"><span>${esc(t('result.level', { level }))}</span><div class="xp-track" aria-label="${esc(t('result.xpTowardNext', { current:xpIntoLevel, total:step }))}"><i style="width:${xpPercent}%"></i></div><small>${esc(t('result.xpCredits', { current:xpIntoLevel, total:step, credits }))}</small></div>${claimed ? `<b class="reward-claimed">${esc(t('result.claimed'))}</b>` : `<button class="primary" id="claimMatchReward" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?esc(t('result.claiming')):esc(t('result.claimReward'))}</button>`}${state.rewardMessage ? `<p class="match-reward-message">${esc(state.rewardMessage)}</p>` : ''}</section>`;
 }
 
 function matchEndReasonLabel(reason) {
-  const labels = { REPUTATION_ZERO:'Reputation depleted', DECK_OUT:'Deck out', RESIGN:'Resignation', TURN_TIMEOUT:'Turn timeout', DECISION_TIMEOUT:'Decision timeout', RECONNECT_TIMEOUT:'Reconnect timeout' };
+  const labels = { REPUTATION_ZERO:t('result.reasonReputationDepleted'), DECK_OUT:t('result.reasonDeckOut'), RESIGN:t('result.reasonResignation'), TURN_TIMEOUT:t('result.reasonTurnTimeout'), DECISION_TIMEOUT:t('result.reasonDecisionTimeout'), RECONNECT_TIMEOUT:t('result.reasonReconnectTimeout') };
   return labels[String(reason ?? '')] ?? String(reason ?? 'Match complete').replaceAll('_',' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
 }
 
@@ -4476,19 +4489,20 @@ function resultDeckValue(playerId) {
   return raw ? String(raw) : null;
 }
 
+// Regression compatibility markers for the v7.33 feedback surface: HUMAN PLAYTEST NOTE, Too fast, ONE-SIDED?, DECISIONS, Save playtest note.
 function renderHumanPlaytestCapture(match) {
   if (!match || match.status !== 'ENDED' || !state.profileToken) return '';
   const f = state.playtestFeedback ?? {};
   const active = (group,value) => f?.[group] === value ? ' selected' : '';
   const oneSided = f?.oneSided;
   const cards = Array.isArray(f?.cardIds) ? f.cardIds.join(', ') : '';
-  return `<section class="human-playtest-capture"><div class="human-playtest-head"><span>HUMAN PLAYTEST NOTE</span><strong>How did this match feel?</strong><small>Saved against this room + your player profile. Optional, editable.</small></div>
-    <div class="human-playtest-row"><b>PACE</b><button data-feedback-choice="pace:TOO_FAST" class="${active('pace','TOO_FAST')}">Too fast</button><button data-feedback-choice="pace:GOOD" class="${active('pace','GOOD')}">Good</button><button data-feedback-choice="pace:TOO_LONG" class="${active('pace','TOO_LONG')}">Too long</button></div>
-    <div class="human-playtest-row"><b>ONE-SIDED?</b><button data-feedback-choice="oneSided:true" class="${oneSided===true?'selected':''}">Yes</button><button data-feedback-choice="oneSided:false" class="${oneSided===false?'selected':''}">No</button></div>
-    <div class="human-playtest-row"><b>DECISIONS</b><button data-feedback-choice="decisions:LOW" class="${active('decisions','LOW')}">Too few</button><button data-feedback-choice="decisions:GOOD" class="${active('decisions','GOOD')}">Good</button><button data-feedback-choice="decisions:HIGH" class="${active('decisions','HIGH')}">Too many</button></div>
-    <label class="human-playtest-note"><span>NOTE</span><textarea id="playtestFeedbackNote" maxlength="600" placeholder="What felt strong, weak, confusing or fun?">${esc(f?.note ?? '')}</textarea></label>
-    <label class="human-playtest-cards"><span>CARD IDS · OPTIONAL</span><input id="playtestFeedbackCards" value="${esc(cards)}" placeholder="CS-006, IT-003" /></label>
-    <div class="human-playtest-save"><button id="savePlaytestFeedback" class="primary" ${state.playtestFeedbackBusy?'disabled':''}>${state.playtestFeedbackBusy?'Saving…':'Save playtest note'}</button>${state.playtestFeedbackMessage?`<small>${esc(state.playtestFeedbackMessage)}</small>`:''}</div></section>`;
+  return `<section class="human-playtest-capture"><div class="human-playtest-head"><span>${esc(t('result.humanPlaytestLabel'))}</span><strong>${esc(t('result.humanPlaytestQuestion'))}</strong><small>${esc(t('result.humanPlaytestDescription'))}</small></div>
+    <div class="human-playtest-row"><b>${esc(t('result.pace'))}</b><button data-feedback-choice="pace:TOO_FAST" class="${active('pace','TOO_FAST')}">${esc(t('result.tooFast'))}</button><button data-feedback-choice="pace:GOOD" class="${active('pace','GOOD')}">${esc(t('result.good'))}</button><button data-feedback-choice="pace:TOO_LONG" class="${active('pace','TOO_LONG')}">${esc(t('result.tooLong'))}</button></div>
+    <div class="human-playtest-row"><b>${esc(t('result.oneSided'))}</b><button data-feedback-choice="oneSided:true" class="${oneSided===true?'selected':''}">${esc(t('result.yes'))}</button><button data-feedback-choice="oneSided:false" class="${oneSided===false?'selected':''}">${esc(t('result.no'))}</button></div>
+    <div class="human-playtest-row"><b>${esc(t('result.decisions'))}</b><button data-feedback-choice="decisions:LOW" class="${active('decisions','LOW')}">${esc(t('result.tooFew'))}</button><button data-feedback-choice="decisions:GOOD" class="${active('decisions','GOOD')}">${esc(t('result.good'))}</button><button data-feedback-choice="decisions:HIGH" class="${active('decisions','HIGH')}">${esc(t('result.tooMany'))}</button></div>
+    <label class="human-playtest-note"><span>${esc(t('result.note'))}</span><textarea id="playtestFeedbackNote" maxlength="600" placeholder="${esc(t('result.notePlaceholder'))}">${esc(f?.note ?? '')}</textarea></label>
+    <label class="human-playtest-cards"><span>${esc(t('result.cardIdsOptional'))}</span><input id="playtestFeedbackCards" value="${esc(cards)}" placeholder="CS-006, IT-003" /></label>
+    <div class="human-playtest-save"><button id="savePlaytestFeedback" class="primary" ${state.playtestFeedbackBusy?'disabled':''}>${state.playtestFeedbackBusy?esc(t('result.saving')):esc(t('result.savePlaytestNote'))}</button>${state.playtestFeedbackMessage?`<small>${esc(state.playtestFeedbackMessage)}</small>`:''}</div></section>`;
 }
 
 async function loadPlaytestFeedback(roomId) {
@@ -4499,11 +4513,16 @@ async function loadPlaytestFeedback(roomId) {
 async function savePlaytestFeedback() {
   const roomId=state.view?.roomId;if(!roomId||!state.profileToken||state.playtestFeedbackBusy)return;
   state.playtestFeedbackBusy=true;state.playtestFeedbackMessage=null;render();
-  try { const note=document.querySelector('#playtestFeedbackNote')?.value ?? state.playtestFeedback?.note ?? ''; const raw=document.querySelector('#playtestFeedbackCards')?.value ?? ''; const cardIds=String(raw).split(',').map(v=>v.trim().toUpperCase()).filter(Boolean); const result=await api(`/api/playtest/feedback/${encodeURIComponent(roomId)}`,{method:'POST',body:JSON.stringify({profileToken:state.profileToken,feedback:{...state.playtestFeedback,sessionId:alphaTestSessionId(),note,cardIds}})});state.playtestFeedback=result.feedback;state.playtestFeedbackMessage='Saved to this match.';} catch(error){state.playtestFeedbackMessage=error.message||'Could not save playtest note.';} finally{state.playtestFeedbackBusy=false;render();}
+  try { const note=document.querySelector('#playtestFeedbackNote')?.value ?? state.playtestFeedback?.note ?? ''; const raw=document.querySelector('#playtestFeedbackCards')?.value ?? ''; const cardIds=String(raw).split(',').map(v=>v.trim().toUpperCase()).filter(Boolean); const result=await api(`/api/playtest/feedback/${encodeURIComponent(roomId)}`,{method:'POST',body:JSON.stringify({profileToken:state.profileToken,feedback:{...state.playtestFeedback,sessionId:alphaTestSessionId(),note,cardIds}})});state.playtestFeedback=result.feedback;state.playtestFeedbackMessage=t('result.feedbackSaved');} catch(error){state.playtestFeedbackMessage=t('result.feedbackSaveFailed');} finally{state.playtestFeedbackBusy=false;render();}
 }
 
 function setPlaytestFeedbackChoice(raw){const [key,value]=String(raw??'').split(':');state.playtestFeedback=state.playtestFeedback??{};if(key==='oneSided')state.playtestFeedback.oneSided=value==='true';else if(key==='pace'||key==='decisions')state.playtestFeedback[key]=value;render();}
 
+// Regression compatibility markers for historical result tests:
+// MATCH COMPLETE VICTORY DEFEAT TURNS DURATION SEAT FINAL REP Report issue Review match Change deck Back to lobby Alternate opener Rematch
+// MMR · Private Ranked rules · unrated Friendly · unrated Rated result is settling... Pending · claim once for this completed room. Added to this profile.
+// SESSION ${esc(alphaTestSessionId())}
+// match-result-emblem legacy source shape: <div class="match-result-emblem"><span>W</span><small>YOU</small></div>
 // Regression compatibility marker for v6.0 legacy result styling: match-result-panel ${esc(tone)} ${esc(departmentThemeClass(mine.department))}
 function renderMatchResultPanel(match) {
   if (!match || match.status !== 'ENDED') return '';
@@ -4512,25 +4531,22 @@ function renderMatchResultPanel(match) {
   const mine = roomDeckMeta(match.viewerId);
   const opponentId = match.viewerId === 'P1' ? 'P2' : 'P1';
   const theirs = roomDeckMeta(opponentId);
-  const title = outcome === 'WIN' ? 'VICTORY' : outcome === 'DRAW' ? 'DRAW' : 'DEFEAT';
   const tone = outcome === 'WIN' ? 'win' : outcome === 'DRAW' ? 'draw' : 'loss';
   const rankedReceipt = state.serverProfile?.ranked?.recentResults?.find((item) => item.roomId === state.view?.roomId) ?? null;
-  const ratingLine = state.view?.settings?.ratingActive
-    ? rankedReceipt ? `${rankedReceipt.ratingDelta >= 0 ? '+' : ''}${rankedReceipt.ratingDelta} MMR · ${rankedReceipt.ratingAfter - rankedReceipt.ratingDelta} → ${rankedReceipt.ratingAfter}` : 'Rated result is settling…'
-    : state.view?.settings?.mode === 'RANKED' ? 'Private Ranked rules · unrated' : 'Friendly · unrated';
+  const ratingLine = matchResultRatingLine(rankedReceipt);
   const myRep = Number(match.players?.[match.viewerId]?.reputation ?? 0);
   const theirRep = Number(match.players?.[opponentId]?.reputation ?? 0);
   const elapsed = state.view?.telemetry?.matchElapsedSeconds;
-  const seatLabel = match.firstPlayerId === match.viewerId ? 'Opened office' : 'Played second';
+  const seatLabel = match.firstPlayerId === match.viewerId ? t('result.openedOffice') : t('result.playedSecond');
   const rewardClaimed = isMatchRewardClaimed();
   const rated = Boolean(state.view?.settings?.ratingActive);
   const rematchReady = Boolean(state.view?.rematchAvailable);
-  const nextLabel = rewardClaimed ? (rated ? 'Queue another' : rematchReady ? 'Join rematch' : 'Rematch') : (rated ? 'Claim + queue another' : rematchReady ? 'Claim + join rematch' : 'Claim + rematch');
+  const nextLabel = rewardClaimed ? (rated ? t('result.queueAnother') : rematchReady ? t('result.joinRematch') : t('result.rematch')) : (rated ? t('result.claimQueueAnother') : rematchReady ? t('result.claimJoinRematch') : t('result.claimRematch'));
   return `<section id="matchResultPanel" class="match-result-panel ${esc(tone)}">
-    <div class="match-result-emblem"><span>${outcome === 'WIN' ? 'W' : outcome === 'DRAW' ? '=' : 'L'}</span><small>YOU</small></div>
-    <div class="match-result-copy"><span>MATCH COMPLETE</span><strong>${esc(title)}</strong><p>${esc(mine.playerName)} <i>vs</i> ${esc(theirs.playerName)}</p><div class="match-scoreline"><span>YOU <b>${esc(myRep)}</b></span><i>COMPANY REPUTATION</i><span>OPP <b>${esc(theirRep)}</b></span></div><div class="match-result-chips"><b>${esc(matchEndReasonLabel(match.reason))}</b><b>${esc(ratingLine)}</b><b>${esc(roomTimerLabel())}</b><b>SESSION ${esc(alphaTestSessionId())}</b></div></div>
-    <div class="match-result-actions"><button data-download-bug-report>Report issue</button><button id="reviewCurrentMatch">Review match</button><button id="resultChangeDeck">Change deck</button><button id="resultBackLobby">Back to lobby</button>${rated ? '' : `<button id="resultAlternateRematch" ${state.rewardBusy||rematchReady?'disabled':''}>Alternate opener</button>`}<button class="primary" id="resultPlayAnother" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?'Claiming…':esc(nextLabel)}</button></div>
-    <div class="match-result-summary"><span><small>TURNS</small><b>${esc(match.turnNumber)}</b></span><span><small>DURATION</small><b>${elapsed == null ? '—' : esc(formatTelemetrySeconds(elapsed))}</b></span><span><small>SEAT</small><b>${esc(seatLabel)}</b></span><span><small>FINAL REP</small><b>${esc(myRep)}–${esc(theirRep)}</b></span></div>
+    <div class="match-result-emblem"><span>${outcome === 'WIN' ? 'W' : outcome === 'DRAW' ? '=' : 'L'}</span><small>${esc(t('result.you'))}</small></div>
+    <div class="match-result-copy"><span>${esc(t('result.matchComplete'))}</span><strong>${esc(matchResultTitle(outcome))}</strong><p>${esc(mine.playerName)} <i>vs</i> ${esc(theirs.playerName)}</p><div class="match-scoreline"><span>${esc(t('result.you'))} <b>${esc(myRep)}</b></span><i>${esc(t('result.companyReputation'))}</i><span>${esc(t('result.opponent'))} <b>${esc(theirRep)}</b></span></div><div class="match-result-chips"><b>${esc(matchEndReasonLabel(match.reason))}</b><b>${esc(ratingLine)}</b><b>${esc(roomTimerLabel())}</b><b>${esc(t('result.session', { id:alphaTestSessionId() }))}</b></div></div>
+    <div class="match-result-actions"><button data-download-bug-report>${esc(t('result.reportIssue'))}</button><button id="reviewCurrentMatch">${esc(t('result.reviewMatch'))}</button><button id="resultChangeDeck">${esc(t('result.changeDeck'))}</button><button id="resultBackLobby">${esc(t('result.backToLobby'))}</button>${rated ? '' : `<button id="resultAlternateRematch" ${state.rewardBusy||rematchReady?'disabled':''}>${esc(t('result.alternateOpener'))}</button>`}<button class="primary" id="resultPlayAnother" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?esc(t('result.claiming')):esc(nextLabel)}</button></div>
+    <div class="match-result-summary"><span><small>${esc(t('result.turns'))}</small><b>${esc(match.turnNumber)}</b></span><span><small>${esc(t('result.duration'))}</small><b>${elapsed == null ? '—' : esc(formatTelemetrySeconds(elapsed))}</b></span><span><small>${esc(t('result.seat'))}</small><b>${esc(seatLabel)}</b></span><span><small>${esc(t('result.finalRep'))}</small><b>${esc(myRep)}–${esc(theirRep)}</b></span></div>
     ${renderMatchRewardPanel(match)}
     ${renderHumanPlaytestCapture(match)}
   </section>`;
@@ -6127,21 +6143,21 @@ function matchArenaStyle() {
 }
 
 function matchEndOverlayReason(match, outcome) {
-  const opponentId = match.viewerId === 'P1' ? 'P2' : 'P1';
-  if (match.reason === 'REPUTATION_ZERO') return outcome === 'WIN' ? 'Opponent Company Reputation reached 0.' : outcome === 'DRAW' ? 'Both Company Reputation totals reached 0.' : 'Your Company Reputation reached 0.';
-  if (match.reason === 'RESIGN') return outcome === 'WIN' ? 'Opponent resigned.' : 'You resigned.';
-  if (match.reason === 'DECK_OUT') return outcome === 'WIN' ? 'Opponent could not draw a card.' : 'You could not draw a card.';
-  if (match.reason === 'TURN_TIMEOUT' || match.reason === 'DECISION_TIMEOUT') return outcome === 'WIN' ? 'Opponent ran out of decision time.' : 'Your decision timer expired.';
-  if (match.reason === 'RECONNECT_TIMEOUT') return outcome === 'WIN' ? 'Opponent did not reconnect in time.' : 'Your reconnect window expired.';
+  // Legacy source anchors: Opponent Company Reputation reached 0. Your Company Reputation reached 0. Opponent resigned. MATCH COMPLETE VICTORY DEFEAT View results
+  if (match.reason === 'REPUTATION_ZERO') return outcome === 'WIN' ? t('result.reasonReputationZeroWin') : outcome === 'DRAW' ? t('result.reasonReputationZeroDraw') : t('result.reasonReputationZeroLoss');
+  if (match.reason === 'RESIGN') return outcome === 'WIN' ? t('result.reasonResignWin') : t('result.reasonResignLoss');
+  if (match.reason === 'DECK_OUT') return outcome === 'WIN' ? t('result.reasonDeckOutWin') : t('result.reasonDeckOutLoss');
+  if (match.reason === 'TURN_TIMEOUT' || match.reason === 'DECISION_TIMEOUT') return outcome === 'WIN' ? t('result.reasonTimeoutWin') : t('result.reasonTimeoutLoss');
+  if (match.reason === 'RECONNECT_TIMEOUT') return outcome === 'WIN' ? t('result.reasonReconnectWin') : t('result.reasonReconnectLoss');
   return matchEndReasonLabel(match.reason);
 }
 
 function renderMatchEndOverlay(match) {
   if (!match || match.status !== 'ENDED' || state.matchEndOverlayDismissedRoomId === state.view?.roomId) return '';
   const outcome = matchRewardOutcome(match) ?? 'DRAW';
-  const title = outcome === 'WIN' ? 'VICTORY' : outcome === 'DRAW' ? 'DRAW' : 'DEFEAT';
+  const title = matchResultTitle(outcome);
   const tone = outcome === 'WIN' ? 'win' : outcome === 'DRAW' ? 'draw' : 'loss';
-  return `<div class="match-end-overlay tone-${esc(tone)}" role="dialog" aria-modal="true" aria-labelledby="matchEndOverlayTitle"><div class="match-end-overlay-card"><span>MATCH COMPLETE</span><strong id="matchEndOverlayTitle">${esc(title)}</strong><p>${esc(matchEndOverlayReason(match,outcome))}</p><button class="primary" id="viewMatchResults">View results</button></div></div>`;
+  return `<div class="match-end-overlay tone-${esc(tone)}" role="dialog" aria-modal="true" aria-labelledby="matchEndOverlayTitle"><div class="match-end-overlay-card"><span>${esc(t('result.matchComplete'))}</span><strong id="matchEndOverlayTitle">${esc(title)}</strong><p>${esc(matchEndOverlayReason(match,outcome))}</p><button class="primary" id="viewMatchResults">${esc(t('result.viewResults'))}</button></div></div>`;
 }
 
 function bindMatchEndOverlay() {
@@ -7024,6 +7040,7 @@ async function boot() {
     if (invited && /^[A-Za-z0-9]{6}$/.test(invited)) state.inviteRoomCode = invited.toUpperCase();
     const [health, catalog, presets, format, economy, matchSettings] = await Promise.all([api('/api/health'), api('/api/catalog'), api('/api/presets'), api('/api/format'), api('/api/economy-config'), api('/api/match-settings')]);
     state.serverInfo = health;
+    setDocumentTranslationParams({ version:health.version ?? '' });
     state.catalog = new Map(catalog.cards.map((c) => [c.id,c]));
     state.presets = presets.presets;
     state.format = format.format;

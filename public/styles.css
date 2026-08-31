@@ -10939,7 +10939,14 @@ body.match-mode .archive-compact[open] .archive-grid > .card {
   body.match-mode .employee-row > .card,
   body.match-mode .support-row > .card,
   body.match-mode .employee-row > .empty-slot,
-  body.match-mode .support-row > .empty-slot { width:min(100%,74px); max-width:74px; height:auto; max-height:100%; aspect-ratio:5/7; }
+  body.match-mode .support-row > .empty-slot {
+    width:auto !important;
+    max-width:74px;
+    height:100% !important;
+    max-height:100%;
+    aspect-ratio:5/7;
+    justify-self:center;
+  }
   body.match-mode .office-divider.board-phase-divider { width:100%; height:var(--field-seam); min-height:var(--field-seam); margin:0; }
   body.match-mode .board-phase-divider .phase-track { padding:0; gap:0; }
   body.match-mode .player-head {
@@ -11784,7 +11791,7 @@ body.match-mode .archive-compact.is-empty .archive-summary-copy span { opacity:.
 /* 4K keeps the successful larger 5:7 stack, now free on the desk instead of squeezed into chrome. */
 @media (min-width:2200px) and (min-height:1100px) {
   body.match-mode .board-resource-row { width:176px; gap:12px; right:12px; }
-  body.match-mode .deck-stack-visual { width:156px; height:210px; }
+  body.match-mode .deck-stack-visual { width:156px; height:218.4px; }
   body.match-mode .deck-stack-visual > i,
   body.match-mode .deck-stack-visual > span { width:140px; height:196px; }
   body.match-mode .archive-stack-visual { width:118px; height:165px; }
@@ -11907,10 +11914,10 @@ body.match-mode .archive-compact { position:relative; }
   }
 }
 
-/* Board cards, opened Archive cards and opponent-play notifications use one explicit mini live-card
-   anatomy on touch screens. Only size changes between surfaces; title/art/rules/tags stay in the same
+/* Board cards, opened Archive cards and opponent-play notifications use one explicit compact live-card
+   anatomy on phone portrait and short landscape. Only size changes between surfaces; title/art/rules/tags stay in the same
    proportions instead of inheriting three generations of field-only compression rules. */
-@media (max-width:760px) {
+@media (max-width:760px), (min-width:761px) and (max-width:1180px) and (max-height:600px) {
   body.match-mode .card.card-surface-board:not(.face-down-support),
   body.match-mode .card.card-surface-archive:not(.face-down-support),
   body.match-mode .card.card-surface-notification:not(.face-down-support) {

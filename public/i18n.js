@@ -5,6 +5,9 @@ import { deCards } from './locales/de-cards.js';
 const STORAGE_KEY = 'office-card-game-locale-v1';
 const dictionaries = Object.freeze({ en, de });
 let locale = 'en';
+let documentTranslationParams = {
+  version: document.title.match(/\bv([0-9]+(?:\.[0-9]+)+)\b/)?.[1] ?? ''
+};
 
 function lookup(dictionary, key) {
   return String(key ?? '').split('.').reduce((value, part) => value && Object.prototype.hasOwnProperty.call(value, part) ? value[part] : undefined, dictionary);
@@ -20,6 +23,10 @@ export function t(key, params = {}, fallback = null) {
   const localized = lookup(dictionaries[locale], key);
   const canonical = lookup(en, key);
   return interpolate(localized ?? canonical ?? fallback ?? key, params);
+}
+export function setDocumentTranslationParams(params = {}) {
+  documentTranslationParams = { ...documentTranslationParams, ...params };
+  applyDocumentTranslations();
 }
 export function setLocale(nextLocale, { persist = true, notify = true } = {}) {
   const resolved = dictionaries[nextLocale] ? nextLocale : 'en';
@@ -38,7 +45,7 @@ export function applyDocumentTranslations() {
   document.documentElement.lang = locale;
   document.querySelectorAll('[data-i18n]').forEach((node) => { const key=node.getAttribute('data-i18n'); if (key) node.textContent=t(key); });
   const titleNode=document.querySelector('[data-i18n-title]');
-  if (titleNode) document.title=t(titleNode.getAttribute('data-i18n-title'), {}, document.title);
+  if (titleNode) document.title=t(titleNode.getAttribute('data-i18n-title'), documentTranslationParams, document.title);
   applyLegacyAppTranslations();
 }
 export function localizedCard(definition) {

@@ -1781,3 +1781,9 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Own Archive expands inward/up on desktop while the opponent Archive expands inward/down; the existing mobile fixed Archive sheet stays viewport-safe.
 - Board cards, Archive cards and opponent-play notifications share one explicit mobile mini live-card anatomy instead of diverging field/overlay compression rules.
 - Deck/Archive rail chrome is fully transparent so the physical piles sit directly on the selected board skin.
+
+## v7.69.19 — Responsive Card Ratio, Version Title and German Results
+
+- Sizes short-landscape field cards from the available lane height so live cards retain canonical 5:7 anatomy.
+- Keeps the 4K Deck pile at a true 5:7 ratio and derives the browser title version from server health.
+- Completes German localization for the Match Complete result and optional playtest feedback surface.
