@@ -5980,12 +5980,12 @@ function actionButton(label, handlerName, data = '') {
   return `<button class="small" data-action="${handlerName}" ${data}>${esc(label)}</button>`;
 }
 
-function renderActions(match) {
+function renderActions(match, { includeResign = true } = {}) {
   const legal = match.legalActions;
   const groups = [];
   if (legal.activatableAbilities.length) groups.push(`<div class="group"><div class="group-title">Activated abilities</div>${legal.activatableAbilities.map((o,i) => actionButton(`${cardLabel(o.sourceId)} · ${o.abilityId}`,'ability',`data-index="${i}"`)).join('')}</div>`);
   if (legal.canAdvancePhase) groups.push(`<div class="group"><div class="group-title">Turn</div>${actionButton(phaseAdvanceLabel(match.phase),'advance')}</div>`);
-  groups.push(`<div class="group"><div class="group-title">Match</div>${actionButton('Resign','resign')}</div>`);
+  if (includeResign) groups.push(`<div class="group"><div class="group-title">Match</div>${actionButton('Resign','resign')}</div>`);
   return groups.join('');
 }
 
@@ -6304,9 +6304,39 @@ function renderPlaytestTools(match) {
       <details class="telemetry-details"><summary>Match telemetry</summary>${renderMatchTelemetry()}</details>
       <details class="diagnostic-details"><summary>Connection diagnostics</summary>${renderConnectionDiagnosticsPanel()}</details>
       <details class="diagnostic-details"><summary>Server diagnostics</summary>${renderServerDiagnostics()}</details>
-      <details class="advanced-actions"><summary>Advanced controls</summary><div class="actions">${renderActions(match)}</div></details>
+      <details class="advanced-actions"><summary>Advanced controls</summary><div class="actions">${renderActions(match,{includeResign:false})}</div></details>
       <details class="event-details"><summary>Raw engine event log</summary><div class="event-log">${state.eventLog.slice().reverse().map((e) => `<div class="event">${esc(formatEvent(e))}</div>`).join('') || '<span class="muted">No events yet.</span>'}</div></details>
     </div></details>
+  </div>`;
+}
+
+function renderDesktopMatchUtilities(match, guidanceTip) {
+  const status = turnStatus(match);
+  const context = renderMatchContextStack(match);
+  const guidance = renderGuidanceCoach(match, guidanceTip);
+  const superseded = Boolean(state.view?.viewerSession?.activeElsewhere);
+  const connectionAction = navigator.onLine === false || ['OFFLINE','POLLING','RECONNECTING'].includes(state.connectionStatus)
+    ? `<button type="button" data-retry-live-connection>${state.connectionStatus === 'POLLING' ? 'Retry live stream' : 'Reconnect'}</button>`
+    : '';
+  const takeControl = superseded ? '<button type="button" class="primary" data-take-session-control>Take control here</button>' : '';
+  return `<div class="desktop-match-utilities" aria-label="Match utilities">
+    <details class="desktop-match-utility match-utility-menu">
+      <summary aria-label="Match menu"><span>Match</span><b>Menu</b><i aria-hidden="true">•••</i></summary>
+      <div class="desktop-match-utility-panel match-utility-panel">
+        <header><span>MATCH STATUS</span><strong>${esc(status.label)}</strong><small>${esc(status.detail)}</small></header>
+        ${context}${guidance}
+        <div class="match-menu-actions">${takeControl}${connectionAction}<button type="button" data-action="resign" ${superseded ? 'disabled title="Take control before resigning this match"' : ''}>Resign match</button></div>
+        <small class="match-menu-connection">${superseded ? 'Read-only until this tab takes control.' : `Connection: ${esc(connectionLabel())}`}</small>
+      </div>
+    </details>
+    <details class="desktop-match-utility match-utility-log">
+      <summary aria-label="Match log"><span>Log</span><b>History</b><i aria-hidden="true">↗</i></summary>
+      <div class="desktop-match-utility-panel match-utility-panel">${renderMatchFeed(match)}</div>
+    </details>
+    <details class="desktop-match-utility match-utility-developer">
+      <summary aria-label="Playtest tools"><span>Dev</span><b>Playtest</b><i aria-hidden="true">⌘</i></summary>
+      <div class="desktop-match-utility-panel match-utility-panel">${renderPlaytestTools(match)}</div>
+    </details>
   </div>`;
 }
 
@@ -6361,7 +6391,7 @@ function renderGame() {
           ${renderCommandDock(match)}
           ${state.lastError ? `<div class="error arena-error">${esc(state.lastError)}</div>` : ''}
         </div>
-        ${renderArenaSidePanel(match, guidanceTip)}
+        ${renderDesktopMatchUtilities(match, guidanceTip)}
       </div>
       ${match.status === 'ENDED' ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>

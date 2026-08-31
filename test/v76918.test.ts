@@ -15,10 +15,10 @@ const en=root("public/locales/en.js");
 const de=root("public/locales/de.js");
 const polish=css.slice(css.lastIndexOf("/* v7.69.18 — archive direction + unified mobile mini live cards */"));
 
-test("v7.69.19 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.19");
+test("v7.69.20 version markers are current",()=>{
+  assert.equal(pkg.version,"7.69.20");
   assert.match(pkg.scripts.test,/dist\/test\/v76918\.test\.js/);
-  assert.match(server,/version: "7\.69\.19"/);
+  assert.match(server,/version: "7\.69\.20"/);
   assert.doesNotMatch(en,/v7\.69\.15/);
   assert.doesNotMatch(de,/v7\.69\.15/);
   assert.match(en,/meta: \{ title: "Office Card Game — v\{version\} Alpha Playtest" \}/);
@@ -65,6 +65,16 @@ test("resource rail no longer paints a transparent tray behind physical piles",(
   assert.match(polish,/battlefield-surface \.board-resource-row \{[\s\S]*padding:0 !important;[\s\S]*border:0 !important;[\s\S]*background:transparent !important;[\s\S]*box-shadow:none !important/);
 });
 
+test("desktop match shell uses overlay utilities instead of a permanent side rail",()=>{
+  assert.match(app,/function renderDesktopMatchUtilities\(match, guidanceTip\)/);
+  assert.match(app,/renderDesktopMatchUtilities\(match, guidanceTip\)/);
+  assert.match(app,/data-action="resign"[\s\S]*Resign match/);
+  assert.match(app,/renderActions\(match,\{includeResign:false\}\)/);
+  assert.match(css,/@media \(min-width:761px\)[\s\S]*arena-layout \{[\s\S]*grid-template-columns:minmax\(0,1fr\) !important/);
+  assert.match(css,/desktop-match-utility-panel \{[\s\S]*position:absolute/);
+  assert.match(css,/@media \(max-width:760px\)[\s\S]*desktop-match-utilities \{ display:none !important; \}/);
+});
+
 test("German result screen copy is routed through the i18n layer",()=>{
   for (const key of ['matchComplete','victory','defeat','viewResults','reportIssue','turns','duration','finalRep','claimReward']) {
     assert.match(en,new RegExp(`${key}:`));
@@ -76,4 +86,4 @@ test("German result screen copy is routed through the i18n layer",()=>{
   assert.match(app,/t\('result\.claimReward'\)/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.19 tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.20 tests passed.`);

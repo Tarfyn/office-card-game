@@ -12094,3 +12094,137 @@ body.match-mode .archive-compact { position:relative; }
     overscroll-behavior:contain;
   }
 }
+
+/* Isolated desktop full-width board prototype: utilities float above the arena instead of reserving a side rail. */
+@media (min-width:761px) {
+  body.match-mode .game-main { padding-inline:clamp(8px,1vw,24px); }
+  body.match-mode .arena-layout {
+    position:relative;
+    grid-template-columns:minmax(0,1fr) !important;
+    gap:0;
+  }
+  body.match-mode .arena-sidepanel { display:none !important; }
+  body.match-mode .arena-board-column { width:100%; max-width:none; }
+  .desktop-match-utilities {
+    position:absolute;
+    z-index:44;
+    top:8px;
+    right:8px;
+    display:flex;
+    align-items:flex-start;
+    gap:5px;
+    pointer-events:none;
+  }
+  .desktop-match-utility { position:relative; min-width:0; color:#dce8fa; pointer-events:auto; }
+  .desktop-match-utility > summary {
+    min-height:30px;
+    padding:5px 7px;
+    display:flex;
+    align-items:center;
+    gap:5px;
+    list-style:none;
+    border:1px solid rgba(142,213,255,.24);
+    border-radius:5px;
+    background:rgba(10,22,38,.96);
+    color:#dce8fa;
+    box-shadow:0 8px 22px rgba(0,0,0,.28);
+    font-size:8px;
+    font-weight:900;
+    cursor:pointer;
+  }
+  .desktop-match-utility > summary::-webkit-details-marker { display:none; }
+  .desktop-match-utility > summary span { color:#8ed5ff; letter-spacing:.08em; }
+  .desktop-match-utility > summary b { color:#c9d5e4; font-size:7px; }
+  .desktop-match-utility > summary i { color:#7f91a5; font-style:normal; letter-spacing:.06em; }
+  .desktop-match-utility[open] > summary { border-color:rgba(142,213,255,.52); box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 -2px #4ae176; }
+  .desktop-match-utility-panel {
+    position:absolute;
+    top:calc(100% + 6px);
+    right:0;
+    width:min(430px,38vw);
+    max-height:calc(100dvh - 112px);
+    overflow:auto;
+    padding:8px;
+    border:1px solid rgba(142,213,255,.24);
+    border-radius:5px;
+    background:rgba(8,18,33,.98);
+    color:#d5e0f1;
+    box-shadow:0 20px 55px rgba(0,0,0,.48);
+    backdrop-filter:blur(14px);
+  }
+  .desktop-match-utility-panel,
+  .desktop-match-utility-panel * { min-width:0; box-sizing:border-box; }
+  .desktop-match-utility-panel { overflow-x:hidden; overflow-wrap:anywhere; }
+  .match-utility-menu .desktop-match-utility-panel { width:min(390px,34vw); }
+  .match-utility-log .desktop-match-utility-panel { width:min(560px,52vw); }
+  .match-utility-developer .desktop-match-utility-panel { width:min(820px,72vw); }
+  .desktop-match-utility-panel > header {
+    display:grid;
+    gap:2px;
+    margin:-1px -1px 7px;
+    padding:2px 2px 7px;
+    border-bottom:1px solid rgba(142,213,255,.14);
+  }
+  .desktop-match-utility-panel > header span { color:#7f91a4; font:700 6px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.14em; }
+  .desktop-match-utility-panel > header strong { color:#edf5ff; font-size:11px; }
+  .desktop-match-utility-panel > header small { color:#8f9eaf; font-size:7px; line-height:1.3; }
+  .match-menu-actions {
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    margin-top:7px;
+    padding-top:7px;
+    border-top:1px solid rgba(142,213,255,.12);
+  }
+  .match-menu-actions button {
+    min-height:30px;
+    padding:5px 8px;
+    border:1px solid rgba(142,213,255,.22);
+    border-radius:4px;
+    background:rgba(17,31,52,.82);
+    color:#dce8fa;
+    font-size:8px;
+    font-weight:900;
+    cursor:pointer;
+  }
+  .match-menu-actions button[data-action="resign"] { border-color:rgba(255,146,154,.38); color:#ffb7bb; }
+  .match-menu-actions button:disabled { cursor:not-allowed; opacity:.58; }
+  .match-menu-connection { display:block; margin-top:6px; color:#8292a5; font-size:7px; line-height:1.35; }
+  .desktop-match-utility-panel .match-context-stack,
+  .desktop-match-utility-panel .guidance-coach,
+  .desktop-match-utility-panel .match-feed,
+  .desktop-match-utility-panel .utility-strip { margin:0; min-width:0; }
+  .desktop-match-utility-panel .match-feed { border-color:rgba(142,213,255,.14); background:rgba(8,18,33,.72); }
+  .desktop-match-utility-panel .playtest-tools { border-color:rgba(142,213,255,.14); border-radius:4px; background:rgba(8,18,33,.72); }
+  .desktop-match-utility-panel .playtest-tools-grid { padding:4px 0 0; }
+  .desktop-match-utility-panel .opening-readiness,
+  .desktop-match-utility-panel .main-phase-context,
+  .desktop-match-utility-panel .battle-phase-context,
+  .desktop-match-utility-panel .end-phase-context,
+  .desktop-match-utility-panel .response-desk,
+  .desktop-match-utility-panel .decision-desk,
+  .desktop-match-utility-panel .guidance-coach { grid-template-columns:minmax(0,1fr); }
+  .desktop-match-utility-panel .opening-readiness-head,
+  .desktop-match-utility-panel .main-phase-context-head,
+  .desktop-match-utility-panel .battle-phase-context-head,
+  .desktop-match-utility-panel .end-phase-context-head,
+  .desktop-match-utility-panel .response-desk-head,
+  .desktop-match-utility-panel .decision-desk-head { padding:0 0 6px; border-right:0; border-bottom:1px solid rgba(142,213,255,.10); }
+  .desktop-match-utility-panel .opening-readiness-stats,
+  .desktop-match-utility-panel .main-phase-context-stats,
+  .desktop-match-utility-panel .battle-phase-context-stats,
+  .desktop-match-utility-panel .end-phase-context-stats,
+  .desktop-match-utility-panel .response-desk-stats,
+  .desktop-match-utility-panel .decision-desk-stats { grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; overflow:visible; }
+  .desktop-match-utility-panel .opening-readiness-stats > span,
+  .desktop-match-utility-panel .main-phase-context-stats > span,
+  .desktop-match-utility-panel .battle-phase-context-stats > span,
+  .desktop-match-utility-panel .end-phase-context-stats > span,
+  .desktop-match-utility-panel .response-desk-stats > span,
+  .desktop-match-utility-panel .decision-desk-stats > span { width:auto; max-width:100%; overflow:hidden; }
+  .desktop-match-utility-panel .guidance-actions { grid-column:auto; grid-row:auto; flex-wrap:wrap; }
+}
+
+@media (max-width:760px) {
+  .desktop-match-utilities { display:none !important; }
+}

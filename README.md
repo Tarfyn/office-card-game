@@ -1787,3 +1787,9 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Sizes short-landscape field cards from the available lane height so live cards retain canonical 5:7 anatomy.
 - Keeps the 4K Deck pile at a true 5:7 ratio and derives the browser title version from server health.
 - Completes German localization for the Match Complete result and optional playtest feedback surface.
+
+## v7.69.20 — Full-Width Desktop Match Prototype
+
+- Reclaims the permanent desktop Match Hub rail for the board while preserving the existing 5+4 topology, hand alignment, Deck/Archive behavior and canonical card ratios.
+- Moves Match actions, Log/History and developer diagnostics into compact overlays without resizing the board when opened.
+- Keeps mobile match controls and the current board skin unchanged.
