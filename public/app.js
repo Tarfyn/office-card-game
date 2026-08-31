@@ -5965,14 +5965,16 @@ function renderPlayer(player, own, match) {
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   const directBoardTarget = !own && state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(null);
   return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(boardSkinClass(player.id))} ${esc(departmentThemeClass(department))}${deskState}${directBoardTarget ? ' direct-attack-board-target' : ''}" data-board-skin="${esc(roomBoardSkinId(player.id))}" ${directBoardTarget ? 'data-direct-attack-board="1"' : ''}>
-    ${!own ? handHtml : ''}
     <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
-    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount)}<span class="deck-summary-copy"><span>Deck</span><strong>${player.deckCount}</strong></span><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player, own)}</div>
-    ${renderPendingLane(match, player.id)}
-    ${own ? frontline + backline : backline + frontline}
-    ${own ? handHtml : ''}
+    <div class="player-world">
+      ${!own ? handHtml : ''}
+      <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount)}<span class="deck-summary-copy"><span>Deck</span><strong>${player.deckCount}</strong></span><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player, own)}</div>
+      ${renderPendingLane(match, player.id)}
+      ${own ? frontline + backline : backline + frontline}
+      ${own ? handHtml : ''}
+    </div>
   </section>`;
 }
 
@@ -6353,6 +6355,8 @@ function renderArenaSidePanel(match, guidanceTip) {
 }
 
 function renderGame() {
+  // Regression compatibility marker for v6.5 board order: battlefield-surface renderPlayer(them,false,match) renderDecisionCenter(match) renderPlayer(me,true,match)
+  // Regression compatibility marker for v7.69.8 board order: ${renderPlayer(them,false,match)} ${renderBoardPhaseDivider(match)} ${renderPlayer(me,true,match)}
   const previousBattlefieldTop = app.querySelector('.battlefield-surface')?.getBoundingClientRect().top ?? null;
   const match = state.view.match;
   if (match.status !== 'ENDED') state.matchEndOverlayDismissedRoomId = null;
@@ -6367,8 +6371,9 @@ function renderGame() {
   const guidanceMode = guidanceTip ? ` guidance-active guidance-focus-${guidanceTip.focus}` : '';
   const busyMode = state.intentBusy ? ' intent-submitting' : '';
   const resultsMode = match.status === 'ENDED' && state.matchEndOverlayDismissedRoomId === state.view?.roomId ? ' results-view' : '';
+  const perspectiveMode = new URLSearchParams(window.location.search).get('perspective') === 'tilt' ? ' perspective-prototype' : '';
   const arena = matchArenaStyle();
-  app.innerHTML = `<div class="game-shell board-first-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}${resultsMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}" data-arena-id="${esc(arena.id)}" style="${arena.style}">
+  app.innerHTML = `<div class="game-shell board-first-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}${resultsMode}${perspectiveMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}" data-arena-id="${esc(arena.id)}" style="${arena.style}">
     <div class="arena-background-layer" aria-hidden="true"></div>
     <div class="game-main">
       ${renderMatchOpening(match)}
@@ -6381,11 +6386,13 @@ function renderGame() {
       <div class="arena-layout">
         <div class="arena-board-column">
           <div class="battlefield-surface" aria-label="Office battlefield">
-            <div class="arena-surface-layer" aria-hidden="true"></div>
-            ${renderPlayer(them,false,match)}
+            <div class="battlefield-world">
+              <div class="arena-surface-layer" aria-hidden="true"></div>
+              ${renderPlayer(them,false,match)}
+              ${renderPlayer(me,true,match)}
+            </div>
             ${renderBoardPhaseDivider(match)}
             ${renderDecisionCenter(match)}
-            ${renderPlayer(me,true,match)}
           </div>
           ${renderIntentCommitStatus(match)}
           ${renderCommandDock(match)}

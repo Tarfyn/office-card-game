@@ -12228,3 +12228,180 @@ body.match-mode .archive-compact { position:relative; }
 @media (max-width:760px) {
   .desktop-match-utilities { display:none !important; }
 }
+
+/* Isolated desktop gameplay-scale prototype: use the reclaimed board width for the live cluster. */
+@media (min-width:1181px) and (min-height:601px) {
+  body.match-mode {
+    --desktop-field-card-width:clamp(132px,6.25vw,240px);
+    --desktop-hand-card-width:clamp(104px,3.65vw,140px);
+    --desktop-hand-rail-width:clamp(1000px,42.2vw,1620px);
+    --desktop-pile-rail-width:clamp(118px,4.6vw,176px);
+    --desktop-pile-visual-width:clamp(96px,4.06vw,156px);
+    --desktop-phase-bar-height:clamp(34px,1.05vw,40px);
+  }
+
+  body.match-mode .battlefield-surface {
+    --field-seam:var(--desktop-phase-bar-height);
+    --player-outer-reserve:clamp(98px,4.95vw,190px);
+  }
+
+  /* Two equal rows retain the canonical 5:7 card footprint while using more of each halfboard. */
+  body.match-mode .slots.employee-row,
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support {
+    gap:clamp(6px,.21vw,8px);
+  }
+  body.match-mode .slots.employee-row {
+    grid-template-columns:repeat(5,minmax(0,var(--desktop-field-card-width))) !important;
+  }
+  body.match-mode .slots.support-row,
+  body.match-mode .slots.support {
+    grid-template-columns:repeat(4,minmax(0,var(--desktop-field-card-width))) !important;
+  }
+  body.match-mode .employee-row > .card,
+  body.match-mode .support-row > .card,
+  body.match-mode .employee-row > .empty-slot,
+  body.match-mode .support-row > .empty-slot {
+    width:var(--desktop-field-card-width) !important;
+    max-width:var(--desktop-field-card-width) !important;
+    height:auto !important;
+    max-height:none !important;
+    aspect-ratio:5 / 7 !important;
+  }
+
+  /* The hand grows with the field, but keeps its existing centered fan and overlap behavior. */
+  body.match-mode .own-hand {
+    width:min(82%,var(--desktop-hand-rail-width));
+    height:clamp(215px,5.6vw,240px);
+  }
+  body.match-mode .own-hand .hand-fan-card {
+    width:var(--desktop-hand-card-width);
+    min-width:var(--desktop-hand-card-width);
+    max-width:var(--desktop-hand-card-width);
+    height:auto;
+    min-height:0;
+    max-height:none;
+    aspect-ratio:5 / 7;
+    margin-left:clamp(-20px,-.7vw,-14px);
+  }
+  body.match-mode .own-hand .hand-fan-card:first-child { margin-left:0; }
+  body.match-mode .own-hand .hand-fan-card .card-name { font-size:clamp(7px,.42vw,10px); }
+  body.match-mode .own-hand .hand-fan-card .card-type-strip { font-size:clamp(4.5px,.26vw,7px); }
+
+  /* Keep the physical pile's layout box as wide as the visible 5:7 stack. */
+  body.match-mode .board-resource-row {
+    width:var(--desktop-pile-rail-width);
+    gap:clamp(7px,.24vw,10px);
+  }
+  body.match-mode .deck-pile {
+    width:var(--desktop-pile-rail-width);
+    min-width:var(--desktop-pile-rail-width);
+    min-height:calc(var(--desktop-pile-visual-width) * 1.4);
+    padding:0;
+    display:grid;
+    grid-template-columns:1fr;
+    place-items:center;
+    overflow:visible;
+  }
+  body.match-mode .deck-stack-visual {
+    width:var(--desktop-pile-visual-width);
+    height:auto;
+    aspect-ratio:5 / 7;
+  }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .deck-stack-visual > span {
+    width:calc(var(--desktop-pile-visual-width) - 16px);
+    height:auto;
+    aspect-ratio:5 / 7;
+  }
+  body.match-mode .deck-stack-visual > i:first-child { left:0; top:clamp(8px,.31vw,12px); }
+  body.match-mode .deck-stack-visual > i:nth-child(2) { left:clamp(4px,.16vw,6px); top:clamp(4px,.16vw,6px); }
+  body.match-mode .deck-stack-visual > span { left:clamp(8px,.31vw,12px); top:0; }
+  body.match-mode .deck-summary-copy strong,
+  body.match-mode .archive-summary-copy strong { font-size:clamp(14px,.55vw,21px); }
+
+  /* Scale the gameplay hierarchy together without enlarging secondary/debug chrome. */
+  body.match-mode .turn-banner {
+    min-height:clamp(32px,1.05vw,40px);
+    padding:clamp(5px,.25vw,9px) clamp(9px,.45vw,16px);
+  }
+  body.match-mode .turn-label { font-size:clamp(9px,.31vw,12px); }
+  body.match-mode .turn-detail { font-size:clamp(7px,.23vw,9px); }
+  body.match-mode .board-phase-divider .phase-track span b { font-size:clamp(7.5px,.23vw,9px); }
+  body.match-mode .board-phase-divider .phase-track { padding-block:clamp(3px,.16vw,6px); }
+
+  body.match-mode .player-head {
+    width:clamp(640px,19.8vw,800px);
+    min-height:clamp(54px,1.65vw,64px);
+    padding:clamp(6px,.28vw,10px) clamp(8px,.42vw,12px);
+    gap:clamp(7px,.35vw,12px);
+  }
+  body.match-mode .player-identity { gap:clamp(7px,.35vw,12px); }
+  body.match-mode .player-identity > div > strong { font-size:clamp(10px,.36vw,14px); }
+  body.match-mode .player-identity > div > small { font-size:clamp(7px,.24vw,9px); }
+  body.match-mode .player-vitals { gap:clamp(2px,.12vw,4px); }
+  body.match-mode .player-vitals .vital {
+    min-width:clamp(44px,1.35vw,54px);
+    padding:clamp(3px,.16vw,6px) clamp(4px,.21vw,8px);
+  }
+  body.match-mode .player-vitals .vital small { font-size:clamp(5px,.18vw,7px); }
+  body.match-mode .player-vitals .vital b { font-size:clamp(8px,.29vw,11px); }
+
+  body.match-mode .command-dock {
+    width:clamp(360px,10vw,460px);
+    min-height:clamp(48px,1.5vw,58px);
+    padding:clamp(7px,.36vw,11px) clamp(9px,.47vw,18px);
+  }
+  body.match-mode .command-dock .command-hint > strong { font-size:clamp(8px,.26vw,10px); }
+  body.match-mode .command-dock .phase-button,
+  body.match-mode .command-dock button {
+    min-height:clamp(36px,1.2vw,46px);
+    padding-inline:clamp(9px,.42vw,16px);
+    font-size:clamp(8px,.29vw,11px);
+  }
+
+  .desktop-match-utility > summary {
+    min-height:clamp(34px,.95vw,40px);
+    padding:clamp(5px,.26vw,8px) clamp(7px,.36vw,12px);
+    gap:clamp(5px,.26vw,8px);
+    font-size:clamp(9px,.29vw,11px);
+  }
+  .desktop-match-utility > summary b { font-size:clamp(7px,.23vw,9px); }
+}
+
+/* Isolated subtle-perspective prototype. The default match remains the accepted flat layout. */
+.battlefield-world,
+.player-world { display:contents; }
+
+/* The grouping wrapper is layout-transparent, but selectors with a direct-child boundary still need
+   to keep the existing hidden zone headings out of the board grid. */
+.player-board > .player-world > .zone-title { display:none !important; }
+
+@media (min-width:1181px) and (min-height:601px) {
+  body.match-mode .game-shell.perspective-prototype .battlefield-surface {
+    grid-template-columns:minmax(0,1fr);
+  }
+  body.match-mode .game-shell.perspective-prototype .battlefield-world {
+    position:relative;
+    z-index:1;
+    grid-row:1 / -1;
+    grid-column:1;
+    min-width:0;
+    min-height:0;
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr) var(--field-seam) minmax(0,1fr);
+    gap:0;
+    overflow:visible;
+    transform:perspective(2400px) rotateX(.82deg) scaleY(.994);
+    transform-origin:50% 50%;
+    transform-style:preserve-3d;
+  }
+  body.match-mode .game-shell.perspective-prototype .board-phase-divider,
+  body.match-mode .game-shell.perspective-prototype .decision-center {
+    grid-column:1;
+  }
+  body.match-mode .game-shell.perspective-prototype .battlefield-world > .opponent-board { grid-row:1; grid-column:1; }
+  body.match-mode .game-shell.perspective-prototype .battlefield-world > .own-board { grid-row:3; grid-column:1; }
+  body.match-mode .game-shell.perspective-prototype .player-world { display:contents; }
+}

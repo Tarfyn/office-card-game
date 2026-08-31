@@ -23,9 +23,9 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.20");
-  assert.match(server,/version: "7\.69\.20"/);
-  assert.match(server,/Office Card Game v7\.69\.20 server/);
+  assert.equal(pkg.version,"7.69.21");
+  assert.match(server,/version: "7\.69\.21"/);
+  assert.match(server,/Office Card Game v7\.69\.21 server/);
   assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);

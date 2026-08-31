@@ -1793,3 +1793,9 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Reclaims the permanent desktop Match Hub rail for the board while preserving the existing 5+4 topology, hand alignment, Deck/Archive behavior and canonical card ratios.
 - Moves Match actions, Log/History and developer diagnostics into compact overlays without resizing the board when opened.
 - Keeps mobile match controls and the current board skin unchanged.
+
+## v7.69.21 — Isolated Subtle-Perspective Board Prototype
+
+- Adds an opt-in desktop-only tabletop camera treatment to the board/world layer.
+- Keeps HUD, phase controls, menus, overlays, Inspector and notifications flat in screen space.
+- Preserves mobile rendering, board topology, interaction coordinates and canonical 5:7 card anatomy.
