@@ -11880,3 +11880,210 @@ body.match-mode .archive-compact.is-empty .archive-summary-copy span { opacity:.
     transform-origin:bottom right !important;
   }
 }
+
+/* v7.69.18 — archive direction + unified mobile mini live cards */
+/* Deck and Archive are physical tabletop objects. The rail itself must never draw another panel behind them. */
+body.match-mode .battlefield-surface .board-resource-row {
+  padding:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.match-mode .archive-compact { position:relative; }
+
+/* Desktop Archives open inward toward the center of the battlefield. The mobile Archive already uses
+   a fixed viewport-safe sheet and intentionally keeps that behaviour. */
+@media (min-width:761px) {
+  body.match-mode .archive-compact.archive-opponent[open] .archive-grid {
+    top:calc(100% + 8px) !important;
+    bottom:auto !important;
+    right:0;
+  }
+  body.match-mode .archive-compact.archive-own[open] .archive-grid {
+    top:auto !important;
+    bottom:calc(100% + 8px) !important;
+    right:0;
+  }
+}
+
+/* Board cards, opened Archive cards and opponent-play notifications use one explicit mini live-card
+   anatomy on touch screens. Only size changes between surfaces; title/art/rules/tags stay in the same
+   proportions instead of inheriting three generations of field-only compression rules. */
+@media (max-width:760px) {
+  body.match-mode .card.card-surface-board:not(.face-down-support),
+  body.match-mode .card.card-surface-archive:not(.face-down-support),
+  body.match-mode .card.card-surface-notification:not(.face-down-support) {
+    box-sizing:border-box !important;
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) !important;
+    grid-template-rows:8% 18% 38% minmax(0,1fr) 8% !important;
+    align-content:stretch !important;
+    padding:3px !important;
+    overflow:hidden !important;
+    aspect-ratio:5 / 7 !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-type-strip,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-type-strip,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-type-strip {
+    grid-row:1 !important;
+    min-height:0 !important;
+    height:auto !important;
+    margin:0 11px 1px 0 !important;
+    gap:1px !important;
+    overflow:hidden !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-type-strip span,
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-type-strip b,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-type-strip span,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-type-strip b,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-type-strip span,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-type-strip b {
+    font-size:2.55px !important;
+    line-height:1 !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-type-strip span,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-type-strip span,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-type-strip span {
+    padding:1px 2px !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-name-row,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-name-row,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-name-row {
+    grid-row:2 !important;
+    min-height:0 !important;
+    height:auto !important;
+    margin:0 !important;
+    align-items:start !important;
+    overflow:hidden !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-name,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-name,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-name {
+    min-height:0 !important;
+    padding:1px 10px 0 0 !important;
+    font-size:3.6px !important;
+    line-height:1.02 !important;
+    -webkit-line-clamp:2 !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-cost-badge,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-cost-badge,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-cost-badge {
+    transform:scale(.34) !important;
+    transform-origin:top right !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-art-stage,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-art-stage,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-art-stage {
+    grid-row:3 !important;
+    display:block !important;
+    width:100% !important;
+    height:100% !important;
+    min-height:0 !important;
+    aspect-ratio:auto !important;
+    margin:0 !important;
+    overflow:hidden !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-art-window,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-art-window,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-art-window {
+    width:100% !important;
+    height:100% !important;
+    min-height:0 !important;
+    aspect-ratio:auto !important;
+    margin:0 !important;
+    border-radius:2px !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-art-window img,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-art-window img,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-art-window img {
+    width:100% !important;
+    height:100% !important;
+    object-fit:cover !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-detail-row,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-detail-row,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-detail-row {
+    display:none !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-rules-mini,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-rules-mini,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-rules-mini {
+    grid-row:4 !important;
+    display:-webkit-box !important;
+    min-height:0 !important;
+    max-height:none !important;
+    height:auto !important;
+    margin:1px 0 0 !important;
+    padding:1.5px 2px 1px !important;
+    overflow:hidden !important;
+    -webkit-box-orient:vertical !important;
+    -webkit-line-clamp:2 !important;
+    font-size:2.3px !important;
+    line-height:1.06 !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-rules-mini.rules-dense,
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-rules-mini.rules-ultra,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-rules-mini.rules-dense,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-rules-mini.rules-ultra,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-rules-mini.rules-dense,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-rules-mini.rules-ultra {
+    font-size:2.05px !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-tags,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-tags,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-tags {
+    grid-row:5 !important;
+    display:flex !important;
+    min-height:0 !important;
+    height:auto !important;
+    margin:1px 0 0 !important;
+    gap:1px !important;
+    padding-right:14px !important;
+    overflow:hidden !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-tags span,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-tags span,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-tags span {
+    padding:.5px 1px !important;
+    font-size:1.9px !important;
+    line-height:1 !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-info,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-info,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-info {
+    width:9px !important;
+    min-width:9px !important;
+    height:9px !important;
+    min-height:9px !important;
+    font-size:3px !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .card-runtime-row,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .card-runtime-row,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .card-runtime-row {
+    left:1px !important;
+    right:1px !important;
+    bottom:1px !important;
+    gap:1px !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .runtime-badge,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .runtime-badge,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .runtime-badge {
+    min-height:4px !important;
+    padding:1px 2px !important;
+    font-size:2.15px !important;
+    line-height:1 !important;
+  }
+  body.match-mode .card.card-surface-board:not(.face-down-support) .power-cluster,
+  body.match-mode .card.card-surface-archive:not(.face-down-support) .power-cluster,
+  body.match-mode .card.card-surface-notification:not(.face-down-support) .power-cluster {
+    transform:scale(.40) !important;
+    transform-origin:bottom right !important;
+  }
+
+  /* The mobile Archive remains a fixed, viewport-safe sheet; only its cards now use the shared mini anatomy. */
+  body.match-mode .archive-compact[open] .archive-grid {
+    overflow:auto !important;
+    overscroll-behavior:contain;
+  }
+}

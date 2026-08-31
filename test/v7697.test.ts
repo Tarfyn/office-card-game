@@ -28,11 +28,11 @@ const polishEnd=css.indexOf("/* v7.69.8 — board geometry, inspect affordance +
 const polish=css.slice(polishStart,polishEnd>polishStart?polishEnd:undefined);
 
 test("v7.69.7 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.17");
-  assert.match(server,/version: "7\.69\.17"/);
-  assert.match(server,/version:"7\.69\.17"/);
-  assert.match(server,/Office Card Game v7\.69\.17 server/);
-  assert.match(html,/v7\.69\.17 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.18");
+  assert.match(server,/version: "7\.69\.18"/);
+  assert.match(server,/version:"7\.69\.18"/);
+  assert.match(server,/Office Card Game v7\.69\.18 server/);
+  assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.7 — Card Consistency \+ Artwork Completion/);
 });
 

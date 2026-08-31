@@ -1775,3 +1775,9 @@ v7.69.2 hardens the board-first layout after hosted 1K, 4K and mobile QA. Player
 ## v7.69.17 — Cosmetic Loadout Foundation + Visual Root Fixes
 
 Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults, keeps board skins independently selectable per player, removes the catalog artwork side-strip source, restores complete mobile field-card anatomy, isolates hand-card paint, and lets Deck/Archive read as tabletop piles instead of translucent panels.
+
+## v7.69.18 — Archive Direction + Unified Mobile Mini Cards
+
+- Own Archive expands inward/up on desktop while the opponent Archive expands inward/down; the existing mobile fixed Archive sheet stays viewport-safe.
+- Board cards, Archive cards and opponent-play notifications share one explicit mobile mini live-card anatomy instead of diverging field/overlay compression rules.
+- Deck/Archive rail chrome is fully transparent so the physical piles sit directly on the selected board skin.
