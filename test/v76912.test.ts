@@ -16,11 +16,11 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.12 — centered hover preview, 
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.12 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.15");
-  assert.match(server,/version: "7\.69\.15"/);
-  assert.match(server,/version:"7\.69\.15"/);
-  assert.match(server,/Office Card Game v7\.69\.15 server/);
-  assert.match(html,/v7\.69\.15 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.16");
+  assert.match(server,/version: "7\.69\.16"/);
+  assert.match(server,/version:"7\.69\.16"/);
+  assert.match(server,/Office Card Game v7\.69\.16 server/);
+  assert.match(html,/v7\.69\.16 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.12 — Preview \+ Board Interaction Polish/);
   assert.match(pkg.scripts.test,/dist\/test\/v76912\.test\.js/);
 });
