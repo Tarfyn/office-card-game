@@ -3607,7 +3607,7 @@ function syncLobbyDeckChoice(value) {
 
 function catalogArt(def) {
   const url = artworkUrl(def);
-  return url ? `<img src="${esc(url)}" alt="" style="${artworkFocusStyle(def)}" />` : artworkFallback(def, 'catalog-fallback-art');
+  return url ? `<div class="catalog-art-window has-art" style="${artworkFocusStyle(def)}"><img src="${esc(url)}" alt="" /></div>` : artworkFallback(def, 'catalog-fallback-art');
 }
 
 function deckCopies(deck, definitionId) {

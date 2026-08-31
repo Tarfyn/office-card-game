@@ -1,5 +1,14 @@
 # Office Card Game — Engine + Network Demo v7.50
 
+## v7.69.16 — Small Visual Regression Fixes
+
+- Removes catalog artwork edge artifacts in Lobby/Deckbuilder by routing catalog art through a clipped artwork wrapper.
+- Isolates hand-card paint/compositing so hover/foil effects do not bleed onto neighboring cards.
+- Restores full 5:7 mobile field-card anatomy instead of the compressed mini-card override.
+- Rebuilds the 4K Deck pile from the actual 5:7 card-back geometry with visible physical offsets and strengthens Archive presence.
+- Keeps the existing Lobby large-card typography/footer-tag treatment.
+
+
 A deterministic, server-authoritative TypeScript prototype for the Office Card Game.
 
 ## v7.69.15 — Provisional Classic Office Board + Responsive Card Polish

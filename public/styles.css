@@ -11578,3 +11578,144 @@ body.match-mode .player-board[class*="board-skin-"] .board-lane::before { displa
   }
   .desk-card-fan-item > .catalog-card-face .catalog-tags span { font-size:7px; padding:3px 5px; }
 }
+
+/* v7.69.16 — small visual regression fixes: catalog art, mobile field cards, hand isolation + 4K piles */
+/* Deckbuilder/Lobby catalog artwork now uses the same clipped wrapper pattern as live cards.
+   This removes compositor edge bands without touching the in-match card renderer or foil masks. */
+.catalog-art-stage {
+  isolation:isolate;
+  overflow:hidden;
+  contain:paint;
+}
+.catalog-art-stage > .catalog-art-window {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  overflow:hidden;
+  border:0;
+  border-radius:inherit;
+  background:#252924;
+}
+.catalog-art-stage > .catalog-art-window > img {
+  width:100%;
+  height:100%;
+  min-width:100%;
+  min-height:100%;
+  display:block;
+  object-fit:cover;
+  object-position:var(--art-focus-x,50%) var(--art-focus-y,50%);
+  filter:saturate(1.04) contrast(1.025);
+  backface-visibility:hidden;
+  transform:translateZ(0);
+}
+
+/* Hover/foil work on one hand card must never paint into neighbouring fan cards. */
+body.match-mode .own-hand { isolation:isolate; }
+body.match-mode .own-hand .hand-fan-card {
+  isolation:isolate;
+  transform-style:flat;
+  backface-visibility:hidden;
+}
+body.match-mode .own-hand .hand-fan-card .card-art-stage {
+  overflow:hidden;
+  contain:paint;
+  isolation:isolate;
+}
+
+/* Restore the complete card anatomy on mobile field cards. v7.69.14's compressed field-only
+   variant made artwork collapse into a strip; field cards now scale the same 5:7 language as hand cards. */
+@media (max-width:760px) {
+  body.match-mode .board-lane .card:not(.face-down-support) {
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-start;
+    padding:3px !important;
+  }
+  body.match-mode .board-lane .card:not(.face-down-support) .card-art-stage {
+    flex:0 0 auto !important;
+    width:100%;
+    height:auto !important;
+    min-height:0;
+    aspect-ratio:16/9;
+    margin:0 0 1px;
+    overflow:hidden;
+  }
+  body.match-mode .board-lane .card:not(.face-down-support) .card-art-window {
+    width:100%;
+    height:auto !important;
+    min-height:0;
+    aspect-ratio:16/9;
+    margin:0;
+  }
+  body.match-mode .board-lane .card:not(.face-down-support) .card-rules-mini {
+    display:-webkit-box !important;
+    flex:1 1 auto !important;
+    min-height:0;
+    margin:1px 0 0;
+    padding:1.5px 2px 1px;
+    -webkit-box-orient:vertical;
+    -webkit-line-clamp:2;
+    overflow:hidden;
+    font-size:2.55px;
+    line-height:1.08;
+  }
+  body.match-mode .board-lane .card:not(.face-down-support) .card-tags {
+    display:flex !important;
+    flex:0 0 auto;
+    min-height:4px;
+    margin-top:1px;
+  }
+  body.match-mode .board-lane .card:not(.face-down-support) .card-detail-row { display:none !important; }
+  body.match-mode .board-lane .card:not(.face-down-support) .power-cluster {
+    transform:scale(.42);
+    transform-origin:bottom right;
+  }
+}
+
+/* Resource rail: keep 1K Archive readable and rebuild the 4K Deck from actual 5:7 card layers. */
+@media (min-width:761px) and (min-height:601px) {
+  body.match-mode .archive-compact.is-empty summary { min-height:70px; }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-size:18px; }
+}
+@media (min-width:2200px) and (min-height:1100px) {
+  body.match-mode .board-resource-row {
+    width:196px;
+    right:12px;
+    gap:9px;
+  }
+  body.match-mode .deck-pile {
+    min-height:226px;
+    padding:8px;
+    overflow:visible;
+  }
+  body.match-mode .deck-stack-visual {
+    width:156px;
+    height:210px;
+  }
+  body.match-mode .deck-stack-visual > i,
+  body.match-mode .deck-stack-visual > span {
+    width:140px;
+    height:196px;
+    border-radius:5px;
+  }
+  body.match-mode .deck-stack-visual > i:first-child { left:0; top:12px; }
+  body.match-mode .deck-stack-visual > i:nth-child(2) { left:6px; top:6px; }
+  body.match-mode .deck-stack-visual > span { left:12px; top:0; }
+  body.match-mode .deck-summary-copy { right:8px; top:8px; min-width:36px; }
+  body.match-mode .deck-summary-copy strong { font-size:18px; }
+
+  body.match-mode .archive-compact.is-empty summary {
+    min-height:88px;
+    padding:8px 10px;
+  }
+  body.match-mode .archive-compact.is-empty .archive-summary-copy strong { font-size:24px; }
+  body.match-mode .archive-compact:not(.is-empty) summary { min-height:174px; padding:7px; }
+  body.match-mode .archive-stack-visual { width:118px; height:162px; }
+  body.match-mode .archive-stack-visual > i,
+  body.match-mode .archive-stack-visual > span { width:108px; height:151px; }
+  body.match-mode .archive-stack-visual > i:first-child { left:0; top:9px; }
+  body.match-mode .archive-stack-visual > i:nth-child(2) { left:4px; top:4px; }
+  body.match-mode .archive-stack-visual > span { left:8px; top:0; }
+}
