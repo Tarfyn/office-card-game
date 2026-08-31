@@ -1888,7 +1888,7 @@ function renderGameplayPresentation() {
   const cue = state.gameplayPresentation;
   if (!cue) return '';
   const card = cue.cardRef ? cardByRef(cue.cardRef) : null;
-  const cardHtml = card ? `<div class="gameplay-presentation-card">${renderCard(card)}</div>` : '';
+  const cardHtml = card ? `<div class="gameplay-presentation-card">${renderCard(card, { surface:'notification' })}</div>` : '';
   return `<div class="gameplay-presentation ${cue.opponent ? 'opponent' : 'own'} ${esc(cue.event.type.toLowerCase().replaceAll('_','-'))}" role="status" aria-live="polite" aria-atomic="true">${cardHtml}<div class="gameplay-presentation-copy"><span>${esc(cue.kicker)}</span><strong>${esc(cue.title)}</strong>${cue.detail ? `<small>${esc(cue.detail)}</small>` : ''}</div></div>`;
 }
 
@@ -2776,7 +2776,7 @@ function hiddenSupportBack() {
   return `<div class="hidden-support-back" aria-label="Face-down Incident — FACE-DOWN SUPPORT">${cardBackMarkup()}</div>`;
 }
 
-function renderCard(card, { selectable = false, handIndex = null, handCount = null } = {}) {
+function renderCard(card, { selectable = false, handIndex = null, handCount = null, surface = '' } = {}) {
   if (!card) return `<div class="empty-slot">empty</div>`;
   const def = cardDef(card.definitionId);
   const hidden = !def;
@@ -2832,7 +2832,7 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   // Regression compatibility marker for v5.7 source: hidden && faceDownSupport ? hiddenSupportBack() : ''
   const supportBack = hidden && concealedFaceDownSupport ? hiddenSupportBack() : '';
   const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
-  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
+  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${surface ? `card-surface-${surface}` : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
   const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
   if (concealedFaceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
     ${cardBackMarkup()}
@@ -5761,12 +5761,12 @@ function renderArchiveStackVisual(last) {
   return `<span class="archive-stack-visual type-${esc(String(def?.cardType ?? 'card').toLowerCase())}" aria-hidden="true"><i></i><i></i><span>${def ? renderArtwork(def) : ''}</span></span>`;
 }
 
-function renderArchive(player) {
+function renderArchive(player, own = false) {
   const last = player.archive.at(-1);
   const impacted = archiveImpactForPlayer(player.id) || Boolean(zoneCueEventsForPlayer(player.id, 'ARCHIVE').length);
   const transitionChip = zoneTransitionChip(player.id, 'ARCHIVE');
-  return `<details class="archive-compact ${player.archive.length ? '' : 'is-empty'} ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
-    <div class="archive-grid">${player.archive.length ? player.archive.slice().reverse().map((c) => renderCard(c)).join('') : '<div class="zone-empty-state archive-empty"><span>ARCHIVE CLEAR</span><small>Destroyed, resolved and archived cards will collect here.</small></div>'}</div>
+  return `<details class="archive-compact ${own ? 'archive-own' : 'archive-opponent'} ${player.archive.length ? '' : 'is-empty'} ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
+    <div class="archive-grid">${player.archive.length ? player.archive.slice().reverse().map((c) => renderCard(c, { surface:'archive' })).join('') : '<div class="zone-empty-state archive-empty"><span>ARCHIVE CLEAR</span><small>Destroyed, resolved and archived cards will collect here.</small></div>'}</div>
   </details>`;
 }
 
@@ -5851,7 +5851,7 @@ function renderBattlefieldScan(player, own, match) {
 }
 
 function renderFieldSlot(card, zone, slot, own) {
-  if (card) return renderCard(card);
+  if (card) return renderCard(card, { surface:'board' });
   const employeeOptions = own && zone === 'EMPLOYEE' ? legalEmployeeOptionsForSlot(slot) : [];
   const supportLegal = own && zone === 'SUPPORT' && isLegalSupportSlot(slot);
   const legal = employeeOptions.length > 0 || supportLegal;
@@ -5953,7 +5953,7 @@ function renderPlayer(player, own, match) {
     <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
-    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount)}<span class="deck-summary-copy"><span>Deck</span><strong>${player.deckCount}</strong></span><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player)}</div>
+    <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount)}<span class="deck-summary-copy"><span>Deck</span><strong>${player.deckCount}</strong></span><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player, own)}</div>
     ${renderPendingLane(match, player.id)}
     ${own ? frontline + backline : backline + frontline}
     ${own ? handHtml : ''}

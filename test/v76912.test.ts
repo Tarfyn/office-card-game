@@ -16,11 +16,11 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.12 — centered hover preview, 
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.12 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.17");
-  assert.match(server,/version: "7\.69\.17"/);
-  assert.match(server,/version:"7\.69\.17"/);
-  assert.match(server,/Office Card Game v7\.69\.17 server/);
-  assert.match(html,/v7\.69\.17 Alpha Playtest/);
+  assert.equal(pkg.version,"7.69.18");
+  assert.match(server,/version: "7\.69\.18"/);
+  assert.match(server,/version:"7\.69\.18"/);
+  assert.match(server,/Office Card Game v7\.69\.18 server/);
+  assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.12 — Preview \+ Board Interaction Polish/);
   assert.match(pkg.scripts.test,/dist\/test\/v76912\.test\.js/);
 });
@@ -55,7 +55,7 @@ test("desktop piles emphasize the actual card stack and zero states show no fake
   assert.match(polish,/board-resource-row \{[\s\S]*?width:82px/);
   assert.match(polish,/deck-stack-visual,[\s\S]*?archive-stack-visual \{[\s\S]*?width:52px;[\s\S]*?height:73px/);
   assert.match(polish,/deck-stack-empty,[\s\S]*?archive-stack-empty \{ display:none !important; \}/);
-  assert.match(app,/archive-compact \$\{player\.archive\.length \? '' : 'is-empty'\}/);
+  assert.match(app,/archive-compact \$\{own \? 'archive-own' : 'archive-opponent'\} \$\{player\.archive\.length \? '' : 'is-empty'\}/);
   const deck=between(app,"function renderDeckStackVisual", "function renderPlayer(player, own, match)");
   assert.match(deck,/deckCount \?\? 0\) <= 0\) return '<span class="deck-stack-empty"/);
   assert.match(deck,/cardBackMarkup/);
