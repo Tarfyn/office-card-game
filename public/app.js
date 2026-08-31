@@ -1435,7 +1435,7 @@ function renderCatalogCardFace(def, { tier = null, compact = false, isNew = fals
   return `<div class="catalog-card-face type-${esc(def.cardType.toLowerCase())} tier-${esc(rarity.toLowerCase())} ${compact ? 'compact' : ''} ${power != null ? 'has-power' : ''}">
     <div class="catalog-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(departmentCode(def.department))}</b>${raritySignal(def, rarity, true)}</div>
     <div class="catalog-name-row"><strong class="${longName ? 'long-name' : ''}">${esc(def.name)}</strong>${costParts ? `<span class="card-cost-badge catalog-cost"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></span>` : ''}</div>
-    <div class="catalog-art-stage">${catalogArt(def)}${artReady ? '<i class="art-ready-badge">ART</i>' : ''}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}</div>
+    <div class="catalog-art-stage">${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}</div>
     <div class="catalog-detail-row">${detailBits.length ? detailBits.map((bit)=>`<span>${esc(bit)}</span>`).join('') : `<span>${esc(sandboxRarityLabel(def))}</span>`}${owned != null ? `<b>OWNED ${esc(owned)}</b>` : ''}</div>
     ${compact ? '' : `<div class="catalog-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>`}
     ${compact ? '' : `<div class="catalog-tags">${tags.length ? tags.map((tag)=>`<span>${esc(tag)}</span>`).join('') : '<span>OFFICE</span>'}</div>`}
@@ -5879,9 +5879,42 @@ function playerInitials(name = 'Player') {
   return String(name || 'Player').trim().split(/\s+/).slice(0,2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'P';
 }
 
+const COSMETIC_UI_CATALOG = Object.freeze({
+  boards: Object.freeze({
+    'COS-BOARD-001': Object.freeze({ slug:'classic-office' })
+  }),
+  avatars: Object.freeze({
+    'COS-AVA-001': Object.freeze({ asset:'/cosmetics/avatars/overworked-sysadmin.webp' }),
+    'COS-AVA-002': Object.freeze({ asset:'/cosmetics/avatars/hr-oracle.webp' })
+  })
+});
+
+function roomCosmeticLoadout(playerId) {
+  const fallback = {
+    boardSkinId:'COS-BOARD-001',
+    avatarId:playerId === 'P1' ? 'COS-AVA-001' : 'COS-AVA-002',
+    avatarFrameId:null,
+    avatarDecorationId:null,
+    cardBackId:'COS-BACK-001',
+    badgeId:null,
+    titleId:null
+  };
+  const projected = playerId === 'P1' ? state.view?.hostCosmeticLoadout : state.view?.guestCosmeticLoadout;
+  return projected ? { ...fallback, ...projected } : fallback;
+}
+
+function cosmeticAvatarAsset(avatarId) {
+  return COSMETIC_UI_CATALOG.avatars[String(avatarId || '')]?.asset ?? null;
+}
+
 function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}) {
   const meta = roomDeckMeta(playerId);
-  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame"><span>${esc(playerInitials(meta.playerName))}</span></div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
+  const loadout = roomCosmeticLoadout(playerId);
+  const avatarAsset = cosmeticAvatarAsset(loadout.avatarId);
+  const avatarFace = avatarAsset
+    ? `<img class="player-avatar-image" src="${esc(avatarAsset)}" alt="" />`
+    : `<span>${esc(playerInitials(meta.playerName))}</span>`;
+  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame">${avatarFace}</div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
 }
 
 function renderDeckStackVisual(deckCount) {
@@ -5890,14 +5923,13 @@ function renderDeckStackVisual(deckCount) {
 }
 
 function roomBoardSkinId(playerId) {
-  const fallback = 'classic-office';
-  if (playerId === 'P1') return state.view?.hostBoardSkinId ?? fallback;
-  return state.view?.guestBoardSkinId ?? fallback;
+  return roomCosmeticLoadout(playerId).boardSkinId;
 }
 
 function boardSkinClass(playerId) {
-  const id = String(roomBoardSkinId(playerId) || 'classic-office').toLowerCase().replace(/[^a-z0-9-]/g,'');
-  return `board-skin-${id || 'classic-office'}`;
+  const boardId = roomBoardSkinId(playerId);
+  const slug = COSMETIC_UI_CATALOG.boards[String(boardId || '')]?.slug ?? 'classic-office';
+  return `board-skin-${String(slug).toLowerCase().replace(/[^a-z0-9-]/g,'') || 'classic-office'}`;
 }
 
 function renderPlayer(player, own, match) {

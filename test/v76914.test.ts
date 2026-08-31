@@ -16,13 +16,13 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.14 — provisional Classic Offi
 
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
-test("v7.69.16 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.16");
-  assert.match(server,/version: "7\.69\.16"/);
-  assert.match(server,/version:"7\.69\.16"/);
-  assert.match(server,/Office Card Game v7\.69\.16 server/);
-  assert.match(html,/v7\.69\.16 Alpha Playtest/);
-  assert.match(readme,/## v7\.69\.16 — Small Visual Regression Fixes/);
+test("v7.69.17 version markers are current",()=>{
+  assert.equal(pkg.version,"7.69.17");
+  assert.match(server,/version: "7\.69\.17"/);
+  assert.match(server,/version:"7\.69\.17"/);
+  assert.match(server,/Office Card Game v7\.69\.17 server/);
+  assert.match(html,/v7\.69\.17 Alpha Playtest/);
+  assert.match(readme,/## v7\.69\.17 — Cosmetic Loadout Foundation \+ Visual Root Fixes/);
   assert.match(pkg.scripts.test,/dist\/test\/v76914\.test\.js/);
 });
 
@@ -32,8 +32,8 @@ test("each seat has an independent provisional board-skin slot and opponent rend
   assert.match(polish,/own-board::before \{ transform:none; \}/);
   assert.match(polish,/opponent-board::before \{ transform:rotate\(180deg\); \}/);
   assert.match(app,/function roomBoardSkinId\(playerId\)/);
-  assert.match(app,/hostBoardSkinId/);
-  assert.match(app,/guestBoardSkinId/);
+  assert.match(app,/hostCosmeticLoadout/);
+  assert.match(app,/guestCosmeticLoadout/);
   assert.match(app,/data-board-skin=/);
   assert.doesNotMatch(app,/board-skin-picker|selectedBoardSkin/);
   const room=root("src/room.ts");
