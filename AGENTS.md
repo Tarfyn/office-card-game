@@ -8,19 +8,20 @@ The Office Card Game is a browser-based digital trading card game with server-au
 
 Treat this file as the persistent working contract for Codex when changing this repository.
 
-# Current project baseline
+# Current project state
 
-The current baseline is v7.69.26 at commit c02478f. Keep the package and server version at
-7.69.26 unless a new release is explicitly requested. The desktop Match Board uses the accepted
-full-width layout and a permanent 3.25deg world-layer perspective. Mobile portrait and landscape
-remain Top View with no perspective transform. The old permanent right Match sidebar is replaced
-by compact Match, Log and Playtest overlays.
+Before starting work, determine the current repository baseline from `git status`, `git log` and
+the package/server version. Do not assume a version from this file. The desktop Match Board uses
+the accepted full-width layout and a permanent 3.25deg world-layer perspective. Mobile portrait
+and landscape remain Top View with no perspective transform. The old permanent right Match sidebar
+is replaced by compact Match, Log and Playtest overlays.
 
 Current meta systems include persistent cosmetic ownership and CosmeticLoadout, Personnel File,
-Company Store, explicit persistent card ownership, Office Credits for sandbox boosters, Shredder
-Scraps for recycling and crafting, and a generic RewardGrant foundation. TRAINING and TUTORIAL are
-explicit Match modes with rewardEligible:false. Bots use the authoritative Match engine and choose
-legal actions. Ranked timer enforcement remains disabled.
+Company Store, explicit persistent card ownership, server-persisted player Decks with browser
+migration, Office Credits for sandbox boosters, Shredder Scraps for recycling and crafting, and a
+generic RewardGrant foundation. TRAINING and TUTORIAL are explicit Match modes with
+rewardEligible:false. Bots use the authoritative Match engine and choose legal actions. Ranked
+timer enforcement remains disabled.
 
 # Board symmetry contract
 

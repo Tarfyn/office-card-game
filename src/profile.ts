@@ -2,6 +2,8 @@ import { applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, 
 import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, type CosmeticSlotKey } from "./cosmetics.js";
 import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedProfile, rankedK, ratingDelta, type PlayerRankedProfile, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
+import { assertDeckInput, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
+import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
 
 export type MatchHistoryOutcome = "WIN" | "LOSS" | "DRAW" | "RESIGN_LOSS";
 
@@ -38,14 +40,20 @@ export interface ServerPlayerProfile {
   stats: PlayerProfileStats;
   ranked: PlayerRankedProfile;
   matchHistory: PlayerMatchHistoryEntry[];
+  /** Player-owned saved decks. Built-in presets remain global definitions. */
+  decks: PlayerDeck[];
+  /** Built-in preset id or player-owned deck id. */
+  selectedDeckId: string | null;
   createdAt: number;
   updatedAt: number;
 }
 
+type RawPersistedPlayerProfile = Partial<Omit<ServerPlayerProfile, "playerId" | "ranked">> & { playerId?: string; ranked?: Partial<PlayerRankedProfile> };
+
 /** v3.7-v4.5 combined token+profile record, retained only for migration/back-compat. */
 export interface PersistedPlayerProfileRecord {
   profileToken: string;
-  profile: Omit<ServerPlayerProfile, "playerId" | "ranked"> & { playerId?: string; ranked?: Partial<PlayerRankedProfile> };
+  profile: RawPersistedPlayerProfile;
 }
 
 /** v3.7-v4.5 combined store snapshot. */
@@ -55,7 +63,7 @@ export interface PlayerProfileStoreSnapshot {
 }
 
 export interface PlayerDataStoreSnapshot {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   players: ServerPlayerProfile[];
 }
 
@@ -96,6 +104,10 @@ export interface PlayerProfileServiceOptions {
   rankedConfig?: Partial<RankedSystemConfig>;
   starterCards?: OwnedDeckEntry[];
   startingOfficeCredits?: number;
+  deckDefinitions?: Record<string, CardDefinition>;
+  deckFormat?: DeckFormat;
+  deckIdFactory?: () => string;
+  builtInDeckIds?: Iterable<string>;
 }
 
 function defaultId(): string {
@@ -122,16 +134,21 @@ function normalizeStats(value: Partial<PlayerProfileStats> | undefined): PlayerP
   return next;
 }
 
-function normalizeProfile(profile: Omit<ServerPlayerProfile, "playerId" | "ranked"> & { playerId?: string; ranked?: Partial<PlayerRankedProfile> }, rankedConfig: RankedSystemConfig): ServerPlayerProfile {
+function normalizeProfile(profile: RawPersistedPlayerProfile, rankedConfig: RankedSystemConfig): ServerPlayerProfile {
   const playerId = String(profile.playerId ?? profile.profileId ?? "");
+  const now = Number(profile.updatedAt) || Date.now();
   return {
-    ...structuredClone(profile),
     playerId,
     profileId: playerId,
+    displayName: cleanName(profile.displayName, `Employee ${playerId.slice(-4).toUpperCase() || "0001"}`),
     meta: normalizePlayerMetaProfile(profile.meta),
     stats: normalizeStats(profile.stats),
     ranked: normalizeRankedProfile(profile.ranked, rankedConfig),
-    matchHistory: Array.isArray(profile.matchHistory) ? profile.matchHistory.map((entry) => structuredClone(entry)) : []
+    matchHistory: Array.isArray(profile.matchHistory) ? profile.matchHistory.map((entry) => structuredClone(entry)) : [],
+    decks: Array.isArray(profile.decks) ? profile.decks.map((deck, index) => normalizePlayerDeck(deck, `deck-restored-${index + 1}`, now)) : [],
+    selectedDeckId: profile.selectedDeckId == null ? null : String(profile.selectedDeckId),
+    createdAt: Number(profile.createdAt) || now,
+    updatedAt: now
   };
 }
 
@@ -168,6 +185,10 @@ export class PlayerProfileService {
   private readonly rankedConfig: RankedSystemConfig;
   private readonly starterCards: OwnedDeckEntry[];
   private readonly startingOfficeCredits: number;
+  private readonly deckDefinitions: Record<string, CardDefinition>;
+  private readonly deckFormat: DeckFormat;
+  private readonly deckIdFactory: () => string;
+  private readonly builtInDeckIds: Set<string>;
   private migratedLegacyStore = false;
 
   constructor(options: PlayerProfileServiceOptions = {}) {
@@ -181,6 +202,10 @@ export class PlayerProfileService {
     this.rankedConfig = normalizeRankedConfig(options.rankedConfig);
     this.starterCards = structuredClone(options.starterCards ?? []);
     this.startingOfficeCredits = Math.max(0, Math.floor(Number(options.startingOfficeCredits) || 0));
+    this.deckDefinitions = options.deckDefinitions ?? {};
+    this.deckFormat = options.deckFormat ?? { id:"default", deckSize:40, defaultCopyLimit:3 };
+    this.deckIdFactory = options.deckIdFactory ?? (() => `deck-${this.nowFactory().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+    this.builtInDeckIds = new Set(options.builtInDeckIds ?? []);
     this.restore();
   }
 
@@ -220,6 +245,8 @@ export class PlayerProfileService {
       stats: emptyStats(),
       ranked: createRankedProfile(this.rankedConfig),
       matchHistory: [],
+      decks: [],
+      selectedDeckId: null,
       createdAt: now,
       updatedAt: now
     };
@@ -277,6 +304,104 @@ export class PlayerProfileService {
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
+  }
+
+  listDecks(profileToken: string): { decks: PlayerDeckView[]; selectedDeckId: string | null } {
+    const profile = this.requireByToken(profileToken);
+    const owned = profile.meta.collectionMode === "OWNED_COPIES" ? profile.meta.ownedCards : undefined;
+    return {
+      decks: profile.decks.map((deck) => ({ ...structuredClone(deck), validation:validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned) })),
+      selectedDeckId: profile.selectedDeckId
+    };
+  }
+
+  createDeck(profileToken: string, draft: { id?: string; name?: string; cards?: DeckEntry[]; source?: PlayerDeck["source"] }): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const now = this.nowFactory();
+    const cards = Array.isArray(draft.cards) ? structuredClone(draft.cards) : [];
+    assertDeckInput({ cards }, this.deckDefinitions, this.deckFormat);
+    let id = String(draft.id ?? this.deckIdFactory());
+    while (profile.decks.some((deck) => deck.id === id)) id = `${id}-${Math.random().toString(36).slice(2, 6)}`;
+    profile.decks.push(normalizePlayerDeck({ ...draft, id, cards, source:draft.source ?? "player", revision:1 }, id, now));
+    profile.updatedAt = now;
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  updateDeck(profileToken: string, deckId: string, draft: { name?: string; cards?: DeckEntry[] }, expectedRevision?: number): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const deck = profile.decks.find((item) => item.id === deckId);
+    if (!deck) throw new Error("DECK_NOT_FOUND");
+    if (expectedRevision != null && Number(expectedRevision) !== deck.revision) throw new Error("DECK_CONFLICT");
+    const cards = Array.isArray(draft.cards) ? structuredClone(draft.cards) : deck.cards;
+    assertDeckInput({ cards }, this.deckDefinitions, this.deckFormat);
+    deck.name = String(draft.name ?? deck.name).trim().replace(/\s+/g, " ").slice(0, 48) || deck.name;
+    deck.cards = cards;
+    deck.updatedAt = this.nowFactory();
+    deck.revision += 1;
+    profile.updatedAt = deck.updatedAt;
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  deleteDeck(profileToken: string, deckId: string): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const before = profile.decks.length;
+    profile.decks = profile.decks.filter((deck) => deck.id !== deckId);
+    if (profile.decks.length === before) throw new Error("DECK_NOT_FOUND");
+    if (profile.selectedDeckId === deckId) profile.selectedDeckId = null;
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  selectDeck(profileToken: string, deckId: string): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const deck = profile.decks.find((item) => item.id === deckId);
+    if (!deck) throw new Error("DECK_NOT_FOUND");
+    const owned = profile.meta.collectionMode === "OWNED_COPIES" ? profile.meta.ownedCards : undefined;
+    const validation = validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned);
+    if (validation.state !== "VALID") throw new Error("DECK_NOT_VALID");
+    profile.selectedDeckId = deckId;
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  setSelectedDeck(profileToken: string, deckId: string | null): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    if (deckId && !profile.decks.some((deck) => deck.id === deckId) && !this.builtInDeckIds.has(deckId)) throw new Error("DECK_NOT_FOUND");
+    profile.selectedDeckId = deckId;
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  importDecks(profileToken: string, drafts: Array<Partial<PlayerDeck>>): { profile: ServerPlayerProfile; imported: string[]; skipped: string[] } {
+    const profile = this.requireByToken(profileToken);
+    const imported: string[] = [];
+    const skipped: string[] = [];
+    for (const draft of drafts) {
+      const name = String(draft.name ?? "Custom Deck");
+      const cards = Array.isArray(draft.cards) ? structuredClone(draft.cards) : [];
+      const sourceRef = `browser-local:v1:${deckFingerprint(name, cards)}`;
+      if (profile.decks.some((deck) => deck.sourceRef === sourceRef)) {
+        skipped.push(sourceRef);
+        continue;
+      }
+      const baseId = String(draft.id ?? `deck-${deckFingerprint(name, cards)}`);
+      let id = baseId;
+      if (profile.decks.some((deck) => deck.id === id)) id = `${baseId}-${deckFingerprint(name, cards)}`;
+      let suffix = 2;
+      while (profile.decks.some((deck) => deck.id === id)) id = `${baseId}-${deckFingerprint(name, cards)}-${suffix++}`;
+      profile.decks.push(normalizePlayerDeck({ ...draft, id, cards, source:"browser_migration", sourceRef, revision:1 }, id, this.nowFactory()));
+      imported.push(id);
+    }
+    if (imported.length) {
+      profile.updatedAt = this.nowFactory();
+      this.persist();
+    }
+    return { profile:structuredClone(profile), imported, skipped };
   }
 
   /** Replace only the local guest secret; the stable player identity and progression are unchanged. */
@@ -405,7 +530,7 @@ export class PlayerProfileService {
     const credentialSnapshot = this.credentialPersistence?.load();
     let restored = false;
     let migrated = false;
-    if ((playerSnapshot?.version === 1 || playerSnapshot?.version === 2) && Array.isArray(playerSnapshot.players)) {
+    if ((playerSnapshot?.version === 1 || playerSnapshot?.version === 2 || playerSnapshot?.version === 3) && Array.isArray(playerSnapshot.players)) {
       for (const raw of playerSnapshot.players) {
         if (!raw?.profileId && !raw?.playerId) continue;
         const normalized = normalizeProfile(raw, this.rankedConfig);

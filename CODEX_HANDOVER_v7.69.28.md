@@ -1,15 +1,14 @@
-# Office Card Game - Codex Handover v7.69.26
+# Office Card Game - Codex Handover v7.69.28
 
 ## Baseline
 
-- Version: `v7.69.26`
-- Commit: `c02478f`
-- Package and server version: `7.69.26`
+- Version: `v7.69.28`
+- Commit: `(release commit; see annotated tag)`
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.26 baseline is deployed and includes the full-width desktop board, desktop gameplay
+The v7.69.28 release includes the full-width desktop board, desktop gameplay
 scale, normalized field tracks, permanent 3.25deg desktop perspective, cosmetic collection/shop
 surfaces, explicit card ownership and the first Bot/Training/Tutorial foundation.
 
@@ -105,8 +104,24 @@ server price, shop listing, ownership and Office Credits before persisting the o
 
 Card catalog, player card ownership, decks and grant history are separate concepts. Current sandbox
 profiles use explicit `ownedCards` quantities and starter grants; ownership is not derived from the
-global catalog. The existing browser-local saved custom deck workflow remains intact, while
-server-side deck persistence is a future priority.
+global catalog. Custom player Decks are now persistent profile records with server-side validation,
+selected-Deck persistence, browser-local migration fingerprints and revision checks for stale edits.
+The server is authoritative after migration; browser localStorage remains only as a migration marker
+and recoverable draft/cache layer.
+
+### Server-persisted Decks
+
+Saved Decks retain stable IDs, names, ordered card entries, timestamps, source metadata, versions and
+revisions. The server validates card existence, collectibility, copy limits and owned quantities on
+create/update/select and match handoff. Decks that become short on owned copies remain visible and
+editable as invalid instead of being silently deleted; production Match and Training entry rejects
+invalid selections. Recycling detects affected saved Decks and requires explicit confirmation before
+allowing the server-authoritative mutation. Crafting a missing copy can restore validity.
+
+Legacy browser Decks are normalized and imported once using an idempotent fingerprint/sourceRef;
+failed imports preserve the local data, and same-name distinct Decks remain distinct. Legacy local
+Decks cannot overwrite newer server Decks. Built-in Starter Decks remain server-defined and the
+Tutorial continues to use its fixed Deck architecture.
 
 ### Booster
 
@@ -169,7 +184,7 @@ for desktop perspective and mobile Top View; perspective must not be baked into 
 
 ## QA evidence and known limitations
 
-The v7.69.26 baseline has been checked at 1920x1080, 3840x2160, 390x844 and 844x390. Desktop
+The current release has been checked at 1920x1080, 3840x2160, 390x844 and 844x390. Desktop
 symmetry and mobile no-overflow checks pass; mobile remains flat and keeps 5:7 field-card anatomy.
 The local smoke test verified:
 
@@ -184,13 +199,15 @@ The local smoke test verified:
 Known review items:
 
 1. Economy values remain provisional/test values.
-2. Saved custom decks are still browser-local; server-side deck persistence is a future priority.
-3. Tutorial guidance requires further live UX polish.
-4. Training/Bot quality needs continued real playtesting.
-5. Board perspective may still be adjusted after live testing; never bake it into cosmetic image assets.
-6. Current neutral Board assets remain reusable by Desktop perspective and Mobile Top View.
-7. The local smoke profile is intentionally disposable; do not treat its wallet or collection as production data.
+2. Player Decks are server-persistent, but true cross-device identity still depends on transferring
+   or reusing the current `GUEST_LOCAL` profile token.
+3. Unsaved local Deckbuilder drafts remain recoverable only on the originating browser.
+4. Tutorial guidance requires further live UX polish.
+5. Training/Bot quality needs continued real playtesting.
+6. Board perspective may still be adjusted after live testing; never bake it into cosmetic image assets.
+7. Current neutral Board assets remain reusable by Desktop perspective and Mobile Top View.
+8. The local smoke profile is intentionally disposable; do not treat its wallet or collection as production data.
 
-Do not implement server-side deck persistence, rebalance the economy, redesign the Match Board or
-change perspective strength without a new focused task. Do not commit, tag or deploy documentation
-or code changes until the current review explicitly requests it.
+Do not rebalance the economy, redesign the Match Board or change perspective strength without a new
+focused task. Do not commit, tag or deploy documentation or code changes until the current review
+explicitly requests it.

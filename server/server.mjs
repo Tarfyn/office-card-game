@@ -160,7 +160,10 @@ const profiles = new PlayerProfileService({
   maxHistoryEntries: 30,
   rankedConfig,
   starterCards: alphaDeckPresets[String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter")]?.cards ?? [],
-  startingOfficeCredits: Number(economyConfig.sandbox?.startingOfficeCredits ?? 0)
+  startingOfficeCredits: Number(economyConfig.sandbox?.startingOfficeCredits ?? 0),
+  deckDefinitions: alphaDefinitions,
+  deckFormat: ALPHA_FORMAT,
+  builtInDeckIds: Object.keys(alphaDeckPresets)
 });
 const matchmaking = new MatchmakingQueue({
   ticketIdFactory: () => `mm-${randomBytes(6).toString("hex")}`,
@@ -352,7 +355,7 @@ function adminOpsSnapshot() {
   };
   return {
     generatedAt: now,
-    version: "7.69.27",
+    version: "7.69.28",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
     counts,
@@ -398,7 +401,7 @@ function errorResponse(res, error) {
   }
   const code = error instanceof Error ? error.message : "";
   if (["INVALID_PROFILE_TOKEN", "PROFILE_REQUIRED"].includes(code)) return json(res, 401, { error:{ code, message: code === "PROFILE_REQUIRED" ? "A playtest profile is required." : "Profile token is invalid or expired." } });
-  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED"].includes(code)) return json(res, 400, { error:{ code, message: code } });
+  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","DECK_CONFLICT"].includes(code)) return json(res, code === "DECK_CONFLICT" ? 409 : 400, { error:{ code, message: code } });
   if (code === "PROFILE_MISMATCH") return json(res, 403, { error:{ code, message:"This room seat belongs to a different playtest profile." } });
   if (code === "MATCHMAKING_TICKET_NOT_FOUND") return json(res, 404, { error:{ code, message:"Matchmaking ticket not found." } });
   if (code === "MATCHMAKING_TICKET_FORBIDDEN") return json(res, 403, { error:{ code, message:"This matchmaking ticket belongs to another profile." } });
@@ -483,13 +486,21 @@ function deckSelectionFromBody(body) {
   return String(body?.deckId ?? "");
 }
 
+function deckSelectionForProfile(body, profile) {
+  if (!profile) return deckSelectionFromBody(body);
+  const requested = String(body?.deckId ?? body?.deck?.id ?? profile.selectedDeckId ?? "");
+  const saved = profile.decks?.find((deck) => deck.id === requested || `custom:${deck.id}` === requested);
+  if (saved) return { id:saved.id, name:saved.name, cards:structuredClone(saved.cards) };
+  return requested;
+}
+
 function validateQueuedDeck(selection) {
   if (typeof selection === "string") {
     if (!alphaDeckPresets[selection]) throw new RoomError("INVALID_DECK", `Unknown deck preset: ${selection}`);
     return selection;
   }
   const result = validateDeck(selection.cards, alphaDefinitions, ALPHA_FORMAT);
-  if (!result.ok) throw new RoomError("INVALID_DECK", result.errors.join(" "));
+  if (!result.valid) throw new RoomError("INVALID_DECK", result.errors.join(" "));
   return selection;
 }
 
@@ -544,8 +555,8 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.27", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.27", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.28", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.28", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
       return json(res, 200, { ops:adminOpsSnapshot() });
@@ -629,6 +640,75 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/profiles/me") {
       const profile = profiles.get(profileTokenFrom(req, url));
       return json(res, 200, { profile, storage:profiles.playerStorageLabel, account:{ playerId:profile.playerId, authMode:profiles.authMode } });
+    }
+
+    if (req.method === "GET" && path === "/api/profiles/me/decks") {
+      const profileToken = profileTokenFrom(req, url);
+      profiles.get(profileToken);
+      return json(res, 200, profiles.listDecks(profileToken));
+    }
+
+    if (req.method === "POST" && path === "/api/profiles/me/decks") {
+      const body = await readJson(req);
+      const profileToken = profileTokenFrom(req, url, body);
+      const profile = profiles.createDeck(profileToken, { id:body?.id, name:body?.name, cards:body?.cards, source:body?.source === "import" ? "import" : "player" });
+      return json(res, 201, { profile, decks:profiles.listDecks(profileToken) });
+    }
+
+    if (req.method === "POST" && path === "/api/profiles/me/decks/import") {
+      const body = await readJson(req);
+      const profileToken = profileTokenFrom(req, url, body);
+      const result = profiles.importDecks(profileToken, Array.isArray(body?.decks) ? body.decks : []);
+      return json(res, 200, { ...result, decks:profiles.listDecks(profileToken) });
+    }
+
+    const deckValidateMatch = /^\/api\/profiles\/me\/decks\/([^/]+)\/validate$/.exec(path);
+    if (req.method === "GET" && deckValidateMatch) {
+      const profileToken = profileTokenFrom(req, url);
+      const listed = profiles.listDecks(profileToken);
+      const deck = listed.decks.find((item) => item.id === decodeURIComponent(deckValidateMatch[1]));
+      if (!deck) return json(res, 404, { error:{ code:"DECK_NOT_FOUND", message:"Saved deck not found." } });
+      return json(res, 200, { deck });
+    }
+
+    const deckDuplicateMatch = /^\/api\/profiles\/me\/decks\/([^/]+)\/duplicate$/.exec(path);
+    if (req.method === "POST" && deckDuplicateMatch) {
+      const body = await readJson(req);
+      const profileToken = profileTokenFrom(req, url, body);
+      const source = profiles.get(profileToken).decks.find((item) => item.id === decodeURIComponent(deckDuplicateMatch[1]));
+      if (!source) return json(res, 404, { error:{ code:"DECK_NOT_FOUND", message:"Saved deck not found." } });
+      const profile = profiles.createDeck(profileToken, { name:body?.name ?? `${source.name} Copy`, cards:source.cards, source:"player" });
+      return json(res, 201, { profile, decks:profiles.listDecks(profileToken) });
+    }
+
+    const deckMatch = /^\/api\/profiles\/me\/decks\/([^/]+)$/.exec(path);
+    if (deckMatch && deckMatch[1] !== "select" && (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE")) {
+      const deckId = decodeURIComponent(deckMatch[1]);
+      const body = req.method === "DELETE" ? {} : await readJson(req);
+      const profileToken = profileTokenFrom(req, url, body);
+      if (req.method === "DELETE") {
+        const profile = profiles.deleteDeck(profileToken, deckId);
+        return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
+      }
+      const current = profiles.get(profileToken).decks.find((item) => item.id === deckId);
+      if (!current) return json(res, 404, { error:{ code:"DECK_NOT_FOUND", message:"Saved deck not found." } });
+      const profile = profiles.updateDeck(profileToken, deckId, { name:body?.name, cards:body?.cards }, body?.expectedRevision);
+      return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
+    }
+
+    if (req.method === "POST" && path === "/api/profiles/me/decks/select") {
+      const body = await readJson(req);
+      const profileToken = profileTokenFrom(req, url, body);
+      const deckId = String(body?.deckId ?? "");
+      const current = profiles.get(profileToken);
+      if (current.decks.some((deck) => deck.id === deckId)) {
+        const profile = profiles.selectDeck(profileToken, deckId);
+        return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
+      }
+      if (!alphaDeckPresets[deckId]) throw new RoomError("INVALID_DECK", "Unknown deck preset.");
+      validateOwnedDeck(current, deckId);
+      const profile = profiles.setSelectedDeck(profileToken, deckId);
+      return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
     }
 
     if (req.method === "GET" && path === "/api/cosmetics/personnel") {
@@ -747,9 +827,12 @@ const server = createServer(async (req, res) => {
       const copies = Number(body?.copies ?? 1);
       const eligibility = scrapEligibility(context.meta, card.id, copies, alphaScrapRules);
       if (!eligibility.allowed) return json(res, 400, { error:{ code:"COLLECTION_FLOOR", message:eligibility.reason }, eligibility });
+      const remainingOwned = Number(context.meta.ownedCards?.[card.id] ?? 0) - copies;
+      const affectedDecks = context.serverProfile?.decks?.filter((deck) => deck.cards.some((entry) => entry.definitionId === card.id && entry.copies > remainingOwned)).map((deck) => ({ id:deck.id, name:deck.name })) ?? [];
+      if (affectedDecks.length && body?.confirmDeckImpact !== true) return json(res, 409, { error:{ code:"DECKS_AFFECTED_BY_SCRAP", message:"Recycling this card will make saved decks invalid." }, affectedDecks, eligibility });
       const profile = applyScrap(context.meta, card.id, copies, Number(tierConfig.scrapValue), alphaScrapRules);
       const committed = commitMetaContext(context, profile);
-      return json(res, 200, { ...committed, definitionId:card.id, tier, scrapValueEach:tierConfig.scrapValue, eligibility });
+      return json(res, 200, { ...committed, definitionId:card.id, tier, scrapValueEach:tierConfig.scrapValue, eligibility, affectedDecks });
     }
 
     if (req.method === "POST" && path === "/api/economy/craft") {
@@ -799,7 +882,7 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const profile = profiles.get(String(body?.profileToken ?? ""));
       const mode = matchmakingMode(body?.mode);
-      const deckSelection = validateQueuedDeck(deckSelectionFromBody(body));
+      const deckSelection = validateQueuedDeck(deckSelectionForProfile(body, profile));
       validateOwnedDeck(profile, deckSelection);
       const enqueued = matchmaking.enqueue(profile.playerId, mode, matchmakingPayload(profile, deckSelection, mode));
       if (!enqueued.opponent) return json(res, 202, { ticket:enqueued.ticket, ranked:mode === "RANKED" ? profile.ranked : null });
@@ -831,7 +914,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/rooms") {
       const body = await readJson(req);
       const profile = body?.profileToken ? profiles.get(String(body.profileToken)) : null;
-      const deckSelection = deckSelectionFromBody(body);
+      const deckSelection = deckSelectionForProfile(body, profile);
       validateOwnedDeck(profile, deckSelection);
       const result = rooms.createRoom(deckSelection, { mode: body?.mode, timerProfileId: body?.timerProfileId }, profileIdentity(body));
       return json(res, 201, result);
@@ -840,7 +923,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/rooms/bot") {
       const body = await readJson(req);
       const profile = profiles.get(String(body?.profileToken ?? ""));
-      const deckSelection = deckSelectionFromBody(body);
+      const deckSelection = deckSelectionForProfile(body, profile);
       validateOwnedDeck(profile, deckSelection);
       const mode = body?.mode === "TUTORIAL" ? "TUTORIAL" : "TRAINING";
       const botDeck = alphaDeckPresets[String(body?.botDeckId ?? "it-starter")] ? String(body?.botDeckId ?? "it-starter") : "it-starter";
@@ -852,7 +935,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && joinMatch) {
       const body = await readJson(req);
       const profile = body?.profileToken ? profiles.get(String(body.profileToken)) : null;
-      const deckSelection = deckSelectionFromBody(body);
+      const deckSelection = deckSelectionForProfile(body, profile);
       validateOwnedDeck(profile, deckSelection);
       const result = rooms.joinRoom(joinMatch[1].toUpperCase(), deckSelection, profileIdentity(body));
       return json(res, 200, result);
@@ -981,7 +1064,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.27 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.28 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

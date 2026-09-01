@@ -191,6 +191,9 @@ const state = {
   botMessage: null,
   lobbyMatchMode: 'FRIENDLY',
   serverProfile: null,
+  serverDecksReady: false,
+  deckPersistenceError: null,
+  lastPersistedSelectedDeck: null,
   serverAccount: null,
   profileToken: null,
   profileStorage: null,
@@ -268,6 +271,8 @@ function hostedLiveStaleThreshold() {
 }
 const GUIDANCE_KEY = 'office-card-game-guidance-v1';
 const NEW_COLLECTION_KEY = 'office-card-game-new-collection-v1';
+const DECK_MIGRATION_KEY = 'office-card-game-decks-migrated-v1';
+const pendingDeckCreates = new Map();
 const ALPHA_ONBOARDING_KEY = 'office-card-game-alpha-onboarding-v1';
 const ALPHA_TEST_SESSION_KEY = 'office-card-game-alpha-test-session-v1';
 
@@ -370,6 +375,41 @@ function applyServerProfile(profile) {
   loadNewCollectionCards(profile);
   state.metaProfile = profile.meta;
   saveMetaProfile();
+  if (state.serverDecksReady && Array.isArray(profile.decks)) {
+    state.customDecks = profile.decks.map((deck) => ({ ...deck, createdAt:Number(deck.createdAt) || null, updatedAt:Number(deck.updatedAt) || null }));
+    const selected = profile.selectedDeckId;
+    if (selected && state.customDecks.some((deck) => deck.id === selected)) state.preferredDeckValue = `custom:${selected}`;
+    else if (selected) state.preferredDeckValue = selected;
+    else if (state.serverDecksReady) state.preferredDeckValue = state.presets?.[0]?.id ?? (state.customDecks[0] ? `custom:${state.customDecks[0].id}` : '');
+    if (selected) state.lastPersistedSelectedDeck = state.customDecks.some((deck) => deck.id === selected) ? `custom:${selected}` : selected;
+    else if (state.serverDecksReady) state.lastPersistedSelectedDeck = null;
+    initializeDeckEditBaselines();
+    if (!state.customDecks.some((deck) => deck.id === state.editingDeckId)) state.editingDeckId = state.customDecks[0]?.id ?? null;
+  }
+}
+
+function applyServerDeckProfile(profile) {
+  state.serverDecksReady = true;
+  applyServerProfile(profile);
+}
+
+async function syncServerDecks() {
+  if (!state.profileToken) return;
+  const localDecks = state.customDecks.map((deck) => ({ id:deck.id, name:deck.name, cards:deck.cards, createdAt:deck.createdAt, updatedAt:deck.updatedAt, sourcePresetId:deck.sourcePresetId, description:deck.description }));
+  const listed = await api('/api/profiles/me/decks', { headers:profileAuthHeaders() });
+  const marker = localStorage.getItem(`${DECK_MIGRATION_KEY}:${state.serverProfile?.playerId ?? 'local'}`);
+  if (localDecks.length && !marker) {
+    const imported = await api('/api/profiles/me/decks/import', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ decks:localDecks }) });
+    localStorage.setItem(`${DECK_MIGRATION_KEY}:${state.serverProfile?.playerId ?? 'local'}`, '1');
+    localStorage.removeItem(CUSTOM_DECKS_KEY);
+    state.deckPersistenceError = null;
+    applyServerDeckProfile(imported.profile);
+    state.deckBuilderMessage = imported.imported?.length ? t('decks.migrated') : null;
+    return imported;
+  }
+  state.deckPersistenceError = null;
+  applyServerDeckProfile(state.serverProfile ? { ...state.serverProfile, decks:listed.decks, selectedDeckId:listed.selectedDeckId } : null);
+  return listed;
 }
 
 async function refreshServerProfile() {
@@ -390,8 +430,14 @@ async function ensureServerProfile() {
       state.profileStorage = result.storage ?? null;
       state.serverAccount = result.account ?? null;
       applyServerProfile(result.profile);
+      try { await syncServerDecks(); } catch (error) { state.deckPersistenceError = error.message; }
       return;
-    } catch {
+    } catch (error) {
+      if (error?.code !== 'INVALID_PROFILE_TOKEN') {
+        state.profileToken = savedToken;
+        state.deckPersistenceError = error?.message ?? 'PROFILE_LOAD_FAILED';
+        return;
+      }
       localStorage.removeItem(SERVER_PROFILE_TOKEN_KEY);
     }
   }
@@ -401,6 +447,7 @@ async function ensureServerProfile() {
   state.serverAccount = created.account ?? null;
   localStorage.setItem(SERVER_PROFILE_TOKEN_KEY, created.profileToken);
   applyServerProfile(created.profile);
+  try { await syncServerDecks(); } catch (error) { state.deckPersistenceError = error.message; }
 }
 
 function metaRequest(extra = {}) {
@@ -599,14 +646,30 @@ function recordDeckEdit(deck, mutate) {
   mutate();
 }
 
-function saveDeckEdits(deck) {
+async function saveDeckEdits(deck) {
   if (!deck) return;
   const now = Date.now();
   deck.createdAt ||= now;
   deck.updatedAt = now;
   saveCustomDecks();
-  checkpointDeckEdits(deck);
-  state.deckBuilderMessage = 'Deck changes saved.';
+  if (!state.serverDecksReady || !state.profileToken) {
+    checkpointDeckEdits(deck);
+    state.deckBuilderMessage = t('decks.saved');
+    return;
+  }
+  state.deckBuilderMessage = t('decks.saving');
+  try {
+    const pendingCreate = pendingDeckCreates.get(deck.id);
+    if (pendingCreate && !(await pendingCreate)) return;
+    const result = await api(`/api/profiles/me/decks/${encodeURIComponent(deck.id)}`, { method:'PATCH', headers:profileAuthHeaders(), body:JSON.stringify({ name:deck.name, cards:deck.cards, expectedRevision:deck.revision }) });
+    applyServerDeckProfile(result.profile);
+    const saved = state.customDecks.find((item) => item.id === deck.id);
+    if (saved) checkpointDeckEdits(saved);
+    state.deckBuilderMessage = t('decks.saved');
+  } catch (error) {
+    state.deckPersistenceError = error.message;
+    state.deckBuilderMessage = deckPersistenceMessage(error);
+  }
 }
 
 function undoDeckEdit(deck) {
@@ -697,7 +760,39 @@ function selectedDeckPayload(selectValue) {
   const id = selectValue.slice('custom:'.length);
   const deck = state.customDecks.find((item) => item.id === id);
   if (!deck) throw new Error('Saved custom deck not found.');
-  return { deck: { id:`custom:${deck.id}`, name:deck.name, cards:deck.cards } };
+  return { deckId: deck.id };
+}
+
+async function persistNewDeck(deck) {
+  if (!deck || !state.serverDecksReady || !state.profileToken) return;
+  const existing = pendingDeckCreates.get(deck.id);
+  if (existing) return existing;
+  const operation = (async () => {
+    try {
+    const result = await api('/api/profiles/me/decks', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ id:deck.id, name:deck.name, cards:deck.cards, source:deck.source ?? 'player' }) });
+    applyServerDeckProfile(result.profile);
+    state.editingDeckId = deck.id;
+    state.deckBuilderMessage = t('decks.saved');
+      return true;
+    } catch (error) {
+      state.deckPersistenceError = error.message;
+      state.deckBuilderMessage = deckPersistenceMessage(error);
+      return false;
+    }
+  })();
+  pendingDeckCreates.set(deck.id, operation);
+  try { return await operation; } finally { pendingDeckCreates.delete(deck.id); }
+}
+
+async function persistDeletedDeck(deckId) {
+  if (!state.serverDecksReady || !state.profileToken) return;
+  try {
+    const result = await api(`/api/profiles/me/decks/${encodeURIComponent(deckId)}`, { method:'DELETE', headers:profileAuthHeaders() });
+    applyServerDeckProfile(result.profile);
+  } catch (error) {
+    state.deckPersistenceError = error.message;
+    state.deckBuilderMessage = deckPersistenceMessage(error);
+  }
 }
 
 function newCustomDeck() {
@@ -707,6 +802,7 @@ function newCustomDeck() {
   state.editingDeckId = deck.id;
   saveCustomDecks();
   checkpointDeckEdits(deck);
+  void persistNewDeck(deck);
   return deck;
 }
 
@@ -774,6 +870,7 @@ function duplicateCustomDeck(sourceId) {
   saveCustomDecks();
   checkpointDeckEdits(deck);
   state.deckBuilderMessage = `${source.name} duplicated as ${deck.name}.`;
+  void persistNewDeck(deck);
   return deck;
 }
 
@@ -791,6 +888,7 @@ function deleteCustomDeck(deckId) {
   if (state.editingDeckId === deckId) state.editingDeckId = state.customDecks[0]?.id ?? null;
   state.deckBuilderMessage = `${deck.name} deleted.`;
   saveCustomDecks();
+  void persistDeletedDeck(deckId);
   return true;
 }
 
@@ -833,6 +931,7 @@ function cloneStarterDeck(presetId) {
   state.deckBuilderMessage = `${preset.name} copied into the deckbuilder.`;
   saveCustomDecks();
   checkpointDeckEdits(deck);
+  void persistNewDeck(deck);
   return deck;
 }
 
@@ -958,6 +1057,21 @@ function renderIntentCommitStatus(match) {
   return `<div class="intent-commit-status tone-${esc(presentation.tone)}" role="status" aria-live="polite" aria-atomic="true">${spinner}${icon ? `<b class="commit-icon" aria-hidden="true">${icon}</b>` : ''}<div><span>${esc(presentation.eyebrow)}</span><strong>${esc(presentation.title)}</strong><small>${esc(presentation.detail)}</small></div></div>`;
 }
 
+function deckPersistenceMessage(error) {
+  if (error?.code === 'DECK_CONFLICT') return t('decks.conflict');
+  return t('decks.saveFailed');
+}
+async function retryServerDecks() {
+  if (!state.profileToken) return;
+  state.deckPersistenceError = null;
+  try {
+    await refreshServerProfile();
+    await syncServerDecks();
+  } catch (error) {
+    state.deckPersistenceError = error.message;
+  }
+  renderCollection();
+}
 function profileAuthHeaders(token = state.profileToken) {
   return token ? { authorization:`Bearer ${token}` } : {};
 }
@@ -3701,9 +3815,25 @@ function renderLobbyDeckPrep(value, context = 'QUICK') {
   </div>`;
 }
 
+async function persistSelectedDeck(value) {
+  if (!state.serverDecksReady || !state.profileToken || !value || state.lastPersistedSelectedDeck === value) return;
+  const deckId = value.startsWith('custom:') ? value.slice('custom:'.length) : value;
+  const pendingCreate = pendingDeckCreates.get(deckId);
+  if (pendingCreate && !(await pendingCreate)) return;
+  state.lastPersistedSelectedDeck = value;
+  try {
+    const result = await api('/api/profiles/me/decks/select', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ deckId }) });
+    applyServerDeckProfile(result.profile);
+  } catch (error) {
+    state.lastPersistedSelectedDeck = null;
+    state.deckPersistenceError = error.message;
+  }
+}
+
 function syncLobbyDeckChoice(value) {
   const resolved = effectiveLobbyDeckValue(value);
   state.preferredDeckValue = resolved;
+  void persistSelectedDeck(resolved);
   for (const id of ['quickDeck','createDeck','joinDeck']) {
     const select = document.querySelector(`#${id}`);
     if (!select) continue;
@@ -4510,12 +4640,12 @@ async function openEconomyBooster() {
   }
 }
 
-async function scrapEconomyCard(definitionId) {
+async function scrapEconomyCard(definitionId, confirmDeckImpact = false) {
   const def = cardDef(definitionId);
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
   state.pendingScrapConfirmation = null;
-  return applyEconomyResponse('/api/economy/scrap', metaRequest({ definitionId, copies:1 }), (data) => collectionCopy('cardShredded', { name:def?.name ?? definitionId, amount:data.scrapValueEach }));
+  return applyEconomyResponse('/api/economy/scrap', metaRequest({ definitionId, copies:1, confirmDeckImpact }), (data) => collectionCopy('cardShredded', { name:def?.name ?? definitionId, amount:data.scrapValueEach }));
 }
 
 function requestScrapEconomyCard(definitionId) {
@@ -4531,7 +4661,7 @@ function requestScrapEconomyCard(definitionId) {
     renderCollection();
     return;
   }
-  scrapEconomyCard(definitionId);
+    scrapEconomyCard(definitionId);
 }
 
 async function craftEconomyCard(definitionId) {
@@ -4791,7 +4921,7 @@ function renderDeckEditSafety(deck) {
   const dirty = deckHasUnsavedChanges(deck);
   const canUndo = deckUndoAvailable(deck);
   return `<section class="deck-edit-safety ${dirty?'dirty':'saved'}">
-    <div class="deck-edit-state"><span>${dirty?'UNSAVED CHANGES':'SAVED'}</span><strong>${dirty?'Working draft differs from saved deck':'Saved deck is up to date'}</strong><small>${dirty?'Save to keep these edits after a reload. Undo or reset stays local until then.':'Edits are stored locally on this device.'}</small></div>
+    <div class="deck-edit-state"><span>${dirty?'UNSAVED CHANGES':'SAVED'}</span><strong>${dirty?'Working draft differs from saved deck':'Saved deck is up to date'}</strong><small>${dirty ? (state.serverDecksReady ? 'Save to keep these edits in your account.' : 'Save to keep these edits after a reload.') : (state.serverDecksReady ? t('decks.serverSaved') : 'Edits are stored locally on this device.')}</small></div>
     <div class="deck-edit-actions"><button id="undoDeckEdit" ${canUndo?'':'disabled'}>Undo</button><button id="resetDeckEdits" ${dirty?'':'disabled'}>Reset to saved</button><button class="primary" id="saveDeckEdits" ${dirty?'':'disabled'}>Save changes</button></div>
   </section>`;
 }
@@ -4862,6 +4992,7 @@ function renderCollection() {
         <div class="deck-switcher"><select id="deckSwitcher">${state.customDecks.map((item) => `<option value="${esc(item.id)}" ${item.id===deck.id?'selected':''}>${esc(item.name)} (${deckCardCount(item)})${deckHasUnsavedChanges(item)?' · unsaved':''}</option>`).join('')}</select><button id="newDeck">New</button><button id="deleteDeck" class="danger" ${state.customDecks.length<=1?'disabled':''}>Delete</button></div>
         ${renderSavedDeckManager(deck)}
         ${renderDeckEditSafety(deck)}
+        ${state.deckPersistenceError ? `<div class="deck-persistence-warning" role="alert"><strong>${esc(t('decks.loadFailed'))}</strong><button id="retryDeckSync">${esc(t('decks.retry'))}</button></div>` : ''}
         ${renderDeckIdentity(deck)}
         <div class="deck-validation ${errors.length?'invalid':'valid'}">${errors.length ? errors.map((e) => `<span>${esc(e)}</span>`).join('') : '<strong>FORMAT LEGAL</strong><span>Ready for multiplayer.</span>'}</div>
         ${state.deckBuilderMessage ? `<div class="deck-builder-message">${esc(state.deckBuilderMessage)}</div>` : ''}
@@ -4893,7 +5024,7 @@ function renderCollection() {
   document.querySelectorAll('[data-card-deck-open]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); if (openCardInManagedDeck(button.dataset.cardDeckOpen, button.dataset.cardDeckCard)) { renderCollection(); requestAnimationFrame(() => document.querySelector('.deck-builder-panel')?.scrollIntoView({ behavior:'smooth', block:'start' })); } }));
   document.querySelectorAll('[data-card-deck-add]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); if (openCardInManagedDeck(button.dataset.cardDeckAdd, button.dataset.cardDeckCard, { add:true })) { renderCollection(); requestAnimationFrame(() => document.querySelector('.deck-builder-panel')?.scrollIntoView({ behavior:'smooth', block:'start' })); } }));
   document.querySelectorAll('[data-scrap-card]').forEach((button) => button.onclick = () => requestScrapEconomyCard(button.dataset.scrapCard));
-  document.querySelectorAll('[data-confirm-scrap-card]').forEach((button) => button.onclick = () => scrapEconomyCard(button.dataset.confirmScrapCard));
+  document.querySelectorAll('[data-confirm-scrap-card]').forEach((button) => button.onclick = () => scrapEconomyCard(button.dataset.confirmScrapCard, true));
   document.querySelectorAll('[data-cancel-scrap]').forEach((button) => button.onclick = () => { state.pendingScrapConfirmation=null; renderCollection(); });
   document.querySelectorAll('[data-craft-card]').forEach((button) => button.onclick = () => craftEconomyCard(button.dataset.craftCard));
   document.querySelectorAll('[data-deck-gap-craft]').forEach((button) => button.onclick = () => craftEconomyCard(button.dataset.deckGapCraft));
@@ -4926,13 +5057,16 @@ function renderCollection() {
   document.querySelectorAll('[data-deck-fit-add]').forEach((button) => button.addEventListener('click', () => { state.deckBuilderMessage=null; const id=button.dataset.deckFitAdd; setDeckCopies(deck,id,deckCopies(deck,id)+1); state.collectionPreviewId=id; renderCollection(); }));
   document.querySelectorAll('[data-deck-check-action]').forEach((button) => button.addEventListener('click', () => focusCollectionFromDeck('DECK', button.dataset.deckCheckAction === 'ADDABLE' ? 'BELOW_LIMIT' : 'IN_DECK')));
   document.querySelectorAll('[data-deck-gap-preview]').forEach((button) => button.addEventListener('click', () => { state.collectionPreviewId=button.dataset.deckGapPreview; markCollectionCardSeen(button.dataset.deckGapPreview); renderCollection(); requestAnimationFrame(() => document.querySelector('.collection-preview')?.scrollIntoView({ behavior:'smooth', block:'nearest' })); }));
-  document.querySelector('#deckName').onchange = (e) => {
+  const commitDeckName = (e) => {
     const nextName=e.target.value.trim() || 'Custom Deck';
     if (nextName !== deck.name) recordDeckEdit(deck, () => { deck.name=nextName; });
     state.deckBuilderMessage=null;
     renderCollection();
   };
-  document.querySelector('#saveDeckEdits')?.addEventListener('click', () => { cancelDeckSwap(); saveDeckEdits(deck); renderCollection(); });
+  document.querySelector('#retryDeckSync')?.addEventListener('click', retryServerDecks);
+  document.querySelector('#deckName').onchange = commitDeckName;
+  document.querySelector('#deckName').onblur = commitDeckName;
+  document.querySelector('#saveDeckEdits')?.addEventListener('click', async () => { cancelDeckSwap(); await saveDeckEdits(deck); renderCollection(); });
   document.querySelector('#undoDeckEdit')?.addEventListener('click', () => { if (undoDeckEdit(deck)) renderCollection(); });
   document.querySelector('#resetDeckEdits')?.addEventListener('click', () => { if (!deckHasUnsavedChanges(deck)) return; if (!confirm('Reset this deck to the last saved version?')) return; resetDeckToSaved(deck); renderCollection(); });
   document.querySelector('#deckSwitcher').onchange = (e) => {
@@ -4949,7 +5083,7 @@ function renderCollection() {
     renderCollection();
     requestAnimationFrame(() => { const input=document.querySelector('#deckName'); input?.focus(); input?.select(); });
   }));
-  document.querySelector('#playBuiltDeck')?.addEventListener('click', () => { if (deckHasUnsavedChanges(deck)) saveDeckEdits(deck); playDeckFromBuilder(deck); });
+  document.querySelector('#playBuiltDeck')?.addEventListener('click', async () => { if (deckHasUnsavedChanges(deck)) await saveDeckEdits(deck); const pendingCreate = pendingDeckCreates.get(deck.id); if (pendingCreate) await pendingCreate; if (!deckHasUnsavedChanges(deck) && !pendingDeckCreates.has(deck.id)) playDeckFromBuilder(deck); renderCollection(); });
   document.querySelector('#clearBuiltDeck')?.addEventListener('click', () => { if (!confirm('Clear all cards from this deck?')) return; cancelDeckSwap(); recordDeckEdit(deck, () => { deck.cards=[]; }); state.deckBuilderMessage='Deck cleared. Save to keep this change.'; renderCollection(); });
   document.querySelectorAll('[data-deck-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckPlus,deckCopies(deck,button.dataset.deckPlus)+1); renderCollection(); });
   document.querySelectorAll('[data-deck-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckMinus,deckCopies(deck,button.dataset.deckMinus)-1); renderCollection(); });
@@ -5012,7 +5146,7 @@ function renderStarterDeckGuide() {
 }
 
 function renderExecutiveAlphaMemo() {
-  const version = state.serverInfo?.version ?? '7.69.5';
+  const version = state.serverInfo?.version ?? 'unknown';
   return `<section class="desk-alpha-memo"><span>${lobbyCopy('ALPHA UPDATE','ALPHA-UPDATE')}</span><strong>v${esc(version)}</strong><p>${lobbyCopy('Executive Desk lobby, safer rematches and the board-first match interface are active on this server.','Executive-Desk-Lobby, sichere Rematches und das Board-First-Matchinterface sind auf diesem Server aktiv.')}</p><small>${lobbyCopy('Alpha systems and balance remain provisional.','Alpha-Systeme und Balance bleiben vorläufig.')}</small></section>`;
 }
 

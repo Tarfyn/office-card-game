@@ -12,6 +12,11 @@ function test(name: string, fn: () => void) { fn(); passed += 1; console.log(`âœ
 const root = (name: string) => readFileSync(fileURLToPath(new URL(`../../${name}`, import.meta.url)), "utf8");
 const styles = root("public/styles.css");
 const app = root("public/app.js");
+const packageJson = JSON.parse(root("package.json"));
+
+test("v7.69.28 release version is current", () => {
+  assert.equal(packageJson.version, "7.69.28");
+});
 
 function service(firstPlayerId: "P1" | "P2" = "P1"): RoomService {
   let roomNumber = 0;
