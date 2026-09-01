@@ -1,4 +1,5 @@
 import { createAlphaMetaProfile, type PlayerMetaProfile } from "./economy.js";
+import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, type CosmeticSlotKey } from "./cosmetics.js";
 import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedProfile, rankedK, ratingDelta, type PlayerRankedProfile, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
 
@@ -125,6 +126,7 @@ function normalizeProfile(profile: Omit<ServerPlayerProfile, "playerId" | "ranke
     ...structuredClone(profile),
     playerId,
     profileId: playerId,
+    meta: { ...structuredClone(profile.meta), cosmetics:normalizePlayerCosmetics(profile.meta?.cosmetics) },
     stats: normalizeStats(profile.stats),
     ranked: normalizeRankedProfile(profile.ranked, rankedConfig),
     matchHistory: Array.isArray(profile.matchHistory) ? profile.matchHistory.map((entry) => structuredClone(entry)) : []
@@ -188,7 +190,7 @@ export class PlayerProfileService {
       playerId,
       profileId: playerId,
       displayName: cleanName(requestedName, `Employee ${suffix}`),
-      meta: structuredClone(initialMeta ?? createAlphaMetaProfile()),
+      meta: { ...structuredClone(initialMeta ?? createAlphaMetaProfile()), cosmetics:normalizePlayerCosmetics(initialMeta?.cosmetics) },
       stats: emptyStats(),
       ranked: createRankedProfile(this.rankedConfig),
       matchHistory: [],
@@ -220,7 +222,7 @@ export class PlayerProfileService {
 
   updateMeta(profileToken: string, meta: PlayerMetaProfile): ServerPlayerProfile {
     const profile = this.requireByToken(profileToken);
-    profile.meta = structuredClone(meta);
+    profile.meta = { ...structuredClone(meta), cosmetics:normalizePlayerCosmetics(meta?.cosmetics) };
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
@@ -229,6 +231,22 @@ export class PlayerProfileService {
   updateName(profileToken: string, displayName: string): ServerPlayerProfile {
     const profile = this.requireByToken(profileToken);
     profile.displayName = cleanName(displayName, profile.displayName);
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  purchaseCosmetic(profileToken: string, cosmeticId: string): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    profile.meta = applyCosmeticPurchase(profile.meta, cosmeticId, this.nowFactory());
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  equipCosmetic(profileToken: string, slot: CosmeticSlotKey, cosmeticId: string | null): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    profile.meta = applyCosmeticEquip(profile.meta, slot, cosmeticId);
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);

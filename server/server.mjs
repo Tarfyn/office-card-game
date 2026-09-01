@@ -86,6 +86,7 @@ import { alphaDeckPresets } from "../dist/src/decks.js";
 import { ALPHA_FORMAT } from "../dist/src/formats.js";
 import { validateDeck } from "../dist/src/engine.js";
 import { applyCraft, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection } from "../dist/src/economy.js";
+import { COSMETIC_CATALOG, COSMETIC_SHOP_CATALOG } from "../dist/src/cosmetics.js";
 import { PlayerProfileService } from "../dist/src/profile.js";
 import { MatchmakingQueue } from "../dist/src/matchmaking.js";
 import { normalizeRankedConfig, ratingWindowForWait } from "../dist/src/ranked.js";
@@ -210,7 +211,11 @@ function profileFromToken(profileToken) {
 
 function profileIdentity(body) {
   const profile = profileFromToken(body?.profileToken);
-  return profile ? { profileId: profile.playerId, displayName: profile.displayName } : {};
+  return profile ? { profileId: profile.playerId, displayName: profile.displayName, cosmeticLoadout:profile.meta?.cosmetics?.loadout ?? null } : {};
+}
+
+function profileIdentityForProfile(profile) {
+  return profile ? { profileId:profile.playerId, displayName:profile.displayName, cosmeticLoadout:profile.meta?.cosmetics?.loadout ?? null } : {};
 }
 
 function metaContext(body) {
@@ -277,14 +282,15 @@ function matchmakingPayload(profile, deckSelection, mode) {
   return {
     deckSelection,
     displayName:profile.displayName,
+    cosmeticLoadout:structuredClone(profile.meta?.cosmetics?.loadout ?? null),
     rankedRating: mode === "RANKED" ? Number(profile.ranked?.rating ?? rankedConfig.initialRating) : null,
     rankedStatus: mode === "RANKED" ? String(profile.ranked?.status ?? "PLACEMENT") : null
   };
 }
 
 function pairQueuedTickets(opponent, currentTicket, currentProfile, currentDeckSelection, mode) {
-  const created = rooms.createRoom(opponent.payload.deckSelection, { mode, ratingActive:mode === "RANKED" && rankedConfig.enabled }, { profileId:opponent.profileId, displayName:opponent.payload.displayName });
-  const joined = rooms.joinRoom(created.roomId, currentDeckSelection, { profileId:currentProfile.playerId, displayName:currentProfile.displayName });
+  const created = rooms.createRoom(opponent.payload.deckSelection, { mode, ratingActive:mode === "RANKED" && rankedConfig.enabled }, { profileId:opponent.profileId, displayName:opponent.payload.displayName, cosmeticLoadout:opponent.payload.cosmeticLoadout });
+  const joined = rooms.joinRoom(created.roomId, currentDeckSelection, profileIdentityForProfile(currentProfile));
   const hostSession = { roomId:created.roomId, token:created.token, playerId:"P1", view:rooms.getView(created.roomId, created.token, 0) };
   const guestSession = { roomId:joined.roomId, token:joined.token, playerId:"P2", view:joined.view };
   return matchmaking.markPairMatched(opponent.ticketId, hostSession, currentTicket.ticketId, guestSession);
@@ -344,7 +350,7 @@ function adminOpsSnapshot() {
   };
   return {
     generatedAt: now,
-    version: "7.69.22",
+    version: "7.69.23",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
     counts,
@@ -390,6 +396,7 @@ function errorResponse(res, error) {
   }
   const code = error instanceof Error ? error.message : "";
   if (["INVALID_PROFILE_TOKEN", "PROFILE_REQUIRED"].includes(code)) return json(res, 401, { error:{ code, message: code === "PROFILE_REQUIRED" ? "A playtest profile is required." : "Profile token is invalid or expired." } });
+  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED"].includes(code)) return json(res, 400, { error:{ code, message: code } });
   if (code === "PROFILE_MISMATCH") return json(res, 403, { error:{ code, message:"This room seat belongs to a different playtest profile." } });
   if (code === "MATCHMAKING_TICKET_NOT_FOUND") return json(res, 404, { error:{ code, message:"Matchmaking ticket not found." } });
   if (code === "MATCHMAKING_TICKET_FORBIDDEN") return json(res, 403, { error:{ code, message:"This matchmaking ticket belongs to another profile." } });
@@ -525,8 +532,8 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.22", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.22", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.23", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.23", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
       return json(res, 200, { ops:adminOpsSnapshot() });
@@ -607,6 +614,33 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/profiles/me") {
       const profile = profiles.get(profileTokenFrom(req, url));
       return json(res, 200, { profile, storage:profiles.playerStorageLabel, account:{ playerId:profile.playerId, authMode:profiles.authMode } });
+    }
+
+    if (req.method === "GET" && path === "/api/cosmetics/personnel") {
+      const profile = profiles.get(profileTokenFrom(req, url));
+      const cosmetics = profile.meta.cosmetics;
+      const owned = cosmetics.owned.map((grant) => ({ ...grant, definition:COSMETIC_CATALOG[grant.cosmeticId] })).filter((item) => item.definition);
+      return json(res, 200, { owned, loadout:cosmetics.loadout, officeCredits:Number(profile.meta.balances.OFFICE_CREDITS ?? 0) });
+    }
+
+    if (req.method === "GET" && path === "/api/cosmetics/shop") {
+      const profile = profiles.get(profileTokenFrom(req, url));
+      const ownedIds = new Set(profile.meta.cosmetics.owned.map((grant) => grant.cosmeticId));
+      const items = COSMETIC_SHOP_CATALOG.map((entry) => ({ ...entry, owned:ownedIds.has(entry.cosmeticId), definition:COSMETIC_CATALOG[entry.cosmeticId] })).filter((item) => item.definition);
+      return json(res, 200, { items, loadout:profile.meta.cosmetics.loadout, officeCredits:Number(profile.meta.balances.OFFICE_CREDITS ?? 0) });
+    }
+
+    if (req.method === "POST" && path === "/api/cosmetics/shop/purchase") {
+      const body = await readJson(req);
+      const profile = profiles.purchaseCosmetic(String(body?.profileToken ?? profileTokenFrom(req, url)), String(body?.cosmeticId ?? ""));
+      const shop = COSMETIC_SHOP_CATALOG.find((entry) => entry.cosmeticId === String(body?.cosmeticId ?? ""));
+      return json(res, 200, { profile, cosmeticId:String(body?.cosmeticId ?? ""), price:shop?.price ?? null });
+    }
+
+    if (req.method === "POST" && path === "/api/cosmetics/equip") {
+      const body = await readJson(req);
+      const profile = profiles.equipCosmetic(String(body?.profileToken ?? profileTokenFrom(req, url)), String(body?.slot ?? "") , body?.cosmeticId == null ? null : String(body.cosmeticId));
+      return json(res, 200, { profile, loadout:profile.meta.cosmetics.loadout });
     }
 
     const replayMatch = /^\/api\/profiles\/me\/matches\/([^/]+)\/replay$/.exec(path);
@@ -913,7 +947,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.22 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.23 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

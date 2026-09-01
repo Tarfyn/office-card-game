@@ -214,6 +214,12 @@ const state = {
   matchmakingTicket: null,
   matchmakingBusy: false,
   matchmakingMessage: null,
+  cosmeticCategory: 'BOARD',
+  cosmeticPersonnel: null,
+  cosmeticShop: null,
+  cosmeticBusy: false,
+  cosmeticMessage: null,
+  pendingCosmeticPurchase: null,
   matchmakingPollTimer: null,
   recentSession: null,
   recentSessionView: null,
@@ -396,6 +402,90 @@ async function ensureServerProfile() {
 
 function metaRequest(extra = {}) {
   return state.profileToken ? { profileToken:state.profileToken, ...extra } : { profile:state.metaProfile, ...extra };
+}
+
+const COSMETIC_CATEGORIES = [
+  ['BOARD','cosmetics.board'], ['AVATAR','cosmetics.avatar'], ['AVATAR_FRAME','cosmetics.avatarFrame'], ['AVATAR_DECORATION','cosmetics.avatarDecoration'], ['CARD_BACK','cosmetics.cardBack'], ['BADGE','cosmetics.badge'], ['TITLE','cosmetics.title']
+];
+const COSMETIC_SLOT_BY_KIND = { BOARD:'boardSkinId', AVATAR:'avatarId', AVATAR_FRAME:'avatarFrameId', AVATAR_DECORATION:'avatarDecorationId', CARD_BACK:'cardBackId', BADGE:'badgeId', TITLE:'titleId' };
+function cosmeticCategoryLabel(kind) { return t(COSMETIC_CATEGORIES.find(([id]) => id === kind)?.[1] ?? 'cosmetics.personnel'); }
+function cosmeticText(def, field) { const key = field === 'name' ? def.nameKey : def.descriptionKey; return key ? t(key) : def[field]; }
+function cosmeticErrorMessage(error) {
+  return ({ COSMETIC_NOT_FOUND:t('cosmetics.purchaseFailed'), COSMETIC_INSUFFICIENT_CREDITS:t('cosmetics.insufficientCredits'), COSMETIC_ALREADY_OWNED:t('cosmetics.alreadyOwned'), COSMETIC_NOT_OWNED:t('cosmetics.notOwned'), COSMETIC_WRONG_SLOT:t('cosmetics.wrongSlot'), COSMETIC_REQUIRED:t('cosmetics.requiredSlot'), COSMETIC_SLOT_INVALID:t('cosmetics.invalidSlot'), COSMETIC_NOT_IN_SHOP:t('cosmetics.shopOnly') })[error?.code] ?? error?.message ?? t('cosmetics.purchaseFailed');
+}
+async function loadCosmeticViews() {
+  if (!state.profileToken) return;
+  const [personnel, shop] = await Promise.all([api('/api/cosmetics/personnel', { headers:profileAuthHeaders() }), api('/api/cosmetics/shop', { headers:profileAuthHeaders() })]);
+  state.cosmeticPersonnel = personnel;
+  state.cosmeticShop = shop;
+}
+async function enterCosmeticSurface(mode) {
+  state.mode = mode;
+  state.cosmeticMessage = null;
+  try { await loadCosmeticViews(); } catch (error) { state.cosmeticMessage = cosmeticErrorMessage(error); }
+  render();
+}
+function renderCosmeticPreview(item, kind) {
+  const def = item.definition;
+  if (kind === 'BOARD') return def.assetPath ? `<div class="cosmetic-board-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : '<div class="cosmetic-board-preview fallback">OFFICE</div>';
+  if (kind === 'AVATAR' || kind === 'AVATAR_FRAME' || kind === 'AVATAR_DECORATION') return def.assetPath ? `<div class="cosmetic-avatar-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : `<div class="cosmetic-avatar-preview layered"><span>${esc(state.serverProfile?.displayName?.slice(0,1) ?? 'O')}</span></div>`;
+  if (kind === 'CARD_BACK') return `<div class="cosmetic-cardback-preview"><span>OFFICE</span><b>ALPHA</b></div>`;
+  if (kind === 'BADGE') return '<div class="cosmetic-badge-preview">★</div>';
+  return `<div class="cosmetic-title-preview">${esc(cosmeticText(def,'name'))}</div>`;
+}
+function renderCosmeticItem(item, { shop = false } = {}) {
+  const def = item.definition;
+  const kind = def.kind;
+  const slot = COSMETIC_SLOT_BY_KIND[kind];
+  const loadout = state.cosmeticPersonnel?.loadout ?? state.metaProfile?.cosmetics?.loadout ?? {};
+  const equipped = loadout[slot] === def.id;
+  const owned = shop ? Boolean(item.owned) : true;
+  return `<article class="cosmetic-item ${equipped?'is-equipped':''} ${owned?'':'is-unowned'}" data-cosmetic-id="${esc(def.id)}"><div class="cosmetic-item-art">${renderCosmeticPreview(item,kind)}</div><div class="cosmetic-item-copy"><span>${esc(cosmeticCategoryLabel(kind))}</span><h3>${esc(cosmeticText(def,'name'))}</h3><p>${esc(cosmeticText(def,'description'))}</p></div><div class="cosmetic-item-state">${equipped?`<b>${esc(t('cosmetics.equipped'))}</b>`:owned?`<b>${esc(t('cosmetics.owned'))}</b>`:''}${shop?`<strong>${esc(item.price)} ${esc(t('cosmetics.officeCredits'))}</strong>`:''}</div><div class="cosmetic-item-actions">${owned ? (equipped && !['boardSkinId','avatarId','cardBackId'].includes(slot) ? `<button data-cosmetic-equip="" data-cosmetic-slot="${esc(slot)}" data-cosmetic-id="">${esc(t('cosmetics.unequip'))}</button>` : equipped ? '' : `<button class="primary" data-cosmetic-equip="1" data-cosmetic-slot="${esc(slot)}" data-cosmetic-id="${esc(def.id)}">${esc(t('cosmetics.equip'))}</button>`) : `<button class="primary" data-cosmetic-buy="${esc(def.id)}">${esc(t('cosmetics.buy'))}</button>`}</div></article>`;
+}
+function renderCosmeticNoneItem(slot) {
+  const loadout = state.cosmeticPersonnel?.loadout ?? state.metaProfile?.cosmetics?.loadout ?? {};
+  const equipped = loadout[slot] == null;
+  return `<article class="cosmetic-item cosmetic-none-item ${equipped?'is-equipped':''}"><div class="cosmetic-item-art"><div class="cosmetic-none-preview">—</div></div><div class="cosmetic-item-copy"><span>${esc(t('cosmetics.optional'))}</span><h3>${esc(t('cosmetics.none'))}</h3><p>${esc(t('cosmetics.unequip'))}</p></div><div class="cosmetic-item-state">${equipped?`<b>${esc(t('cosmetics.equipped'))}</b>`:''}</div><div class="cosmetic-item-actions">${equipped?'':`<button data-cosmetic-equip="" data-cosmetic-slot="${esc(slot)}" data-cosmetic-id="">${esc(t('cosmetics.none'))}</button>`}</div></article>`;
+}
+function renderCosmeticCategories(items, shop = false) {
+  return `<nav class="cosmetic-categories" aria-label="${esc(t('cosmetics.chooseCategory'))}">${COSMETIC_CATEGORIES.map(([id,key]) => { const count=items.filter((item)=>item.definition?.kind===id).length; return `<button class="${state.cosmeticCategory===id?'active':''}" data-cosmetic-category="${id}"><span>${esc(t(key))}</span><b>${count}</b></button>`; }).join('')}</nav>`;
+}
+function renderCosmeticSurface(mode) {
+  const shop = mode === 'SHOP';
+  const source = shop ? (state.cosmeticShop?.items ?? []) : (state.cosmeticPersonnel?.owned ?? []);
+  const items = source.filter((item) => item.definition?.kind === state.cosmeticCategory);
+  const loadout = state.cosmeticPersonnel?.loadout ?? state.metaProfile?.cosmetics?.loadout ?? {};
+  const credits = Number((shop ? state.cosmeticShop?.officeCredits : state.cosmeticPersonnel?.officeCredits) ?? state.metaProfile?.balances?.OFFICE_CREDITS ?? 0);
+  const pending = state.pendingCosmeticPurchase ? state.cosmeticShop?.items?.find((item) => item.cosmeticId === state.pendingCosmeticPurchase) : null;
+  const optional = ['AVATAR_FRAME','AVATAR_DECORATION','BADGE','TITLE'].includes(state.cosmeticCategory);
+  const visibleItems = !shop && optional ? [null, ...items] : items;
+  const equippedDefinition = (state.cosmeticPersonnel?.owned ?? []).find((item) => item.definition?.id === loadout.avatarId)?.definition;
+  const currentLoadout = equippedDefinition ? cosmeticText(equippedDefinition,'name') : loadout.avatarId ?? '—';
+  return `<section class="cosmetic-shell ${shop?'cosmetic-shop-shell':'cosmetic-personnel-shell'}"><header class="cosmetic-header"><div><button class="ghost" id="backToLobby">← ${esc(t('cosmetics.backToLobby'))}</button><span class="cosmetic-eyebrow">${shop?esc(t('cosmetics.shopCollection').toUpperCase()):esc(t('cosmetics.ownedCollection').toUpperCase())}</span><h1>${esc(shop?t('cosmetics.shop'):t('cosmetics.personnel'))}</h1><p>${esc(shop?t('cosmetics.storeNote'):t('cosmetics.emptyCategoryHint'))}</p></div><div class="cosmetic-wallet"><span>${esc(t('cosmetics.balance'))}</span><strong>${esc(credits)}</strong><small>${esc(t('cosmetics.officeCredits'))}</small></div></header><div class="cosmetic-layout">${renderCosmeticCategories(source,shop)}<main class="cosmetic-content"><div class="cosmetic-content-head"><div><span>${esc(t(COSMETIC_CATEGORIES.find(([id])=>id===state.cosmeticCategory)?.[1] ?? 'cosmetics.personnel').toUpperCase())}</span><strong>${items.length}</strong></div><div class="cosmetic-loadout-strip"><span>${esc(t('cosmetics.currentLoadout'))}</span><b>${esc(currentLoadout)}</b></div></div>${pending?`<section class="cosmetic-confirm" role="dialog" aria-label="${esc(t('cosmetics.confirmPurchase'))}"><div><span>${esc(t('cosmetics.purchase'))}</span><strong>${esc(t('cosmetics.buyQuestion',{name:cosmeticText(pending.definition,'name'),price:pending.price}))}</strong></div><button class="primary" data-cosmetic-buy-confirm="1" ${state.cosmeticBusy?'disabled':''}>${esc(t('cosmetics.confirm'))}</button><button data-cosmetic-buy-cancel="1">${esc(t('cosmetics.cancel'))}</button></section>`:''}${state.cosmeticMessage?`<div class="cosmetic-message" role="status">${esc(state.cosmeticMessage)}</div>`:''}<div class="cosmetic-grid">${visibleItems.length?visibleItems.map((item)=>item?renderCosmeticItem(item,{shop}):renderCosmeticNoneItem(COSMETIC_SLOT_BY_KIND[state.cosmeticCategory])).join(''):`<div class="cosmetic-empty"><span>${esc(t('cosmetics.preview'))}</span><strong>${esc(shop?t('cosmetics.shopEmpty'):t('cosmetics.emptyCategory'))}</strong><p>${esc(t('cosmetics.emptyCategoryHint'))}</p></div>`}</div></main></div></section>`;
+}
+function renderPersonnelFile() { return renderCosmeticSurface('PERSONNEL'); }
+function renderCompanyStore() { return renderCosmeticSurface('SHOP'); }
+async function equipCosmetic(slot, cosmeticId) {
+  if (state.cosmeticBusy) return;
+  state.cosmeticBusy = true; state.cosmeticMessage = null;
+  try { const result=await api('/api/cosmetics/equip',{method:'POST',headers:profileAuthHeaders(),body:JSON.stringify({profileToken:state.profileToken,slot,cosmeticId:cosmeticId || null})}); applyServerProfile(result.profile); await loadCosmeticViews(); state.cosmeticMessage=t('cosmetics.equipSuccess'); }
+  catch (error) { state.cosmeticMessage=cosmeticErrorMessage(error); }
+  finally { state.cosmeticBusy=false; render(); }
+}
+async function purchaseCosmetic(cosmeticId) {
+  if (state.cosmeticBusy || !cosmeticId) return;
+  state.cosmeticBusy=true; state.cosmeticMessage=null;
+  try { const result=await api('/api/cosmetics/shop/purchase',{method:'POST',headers:profileAuthHeaders(),body:JSON.stringify({profileToken:state.profileToken,cosmeticId})}); applyServerProfile(result.profile); await loadCosmeticViews(); state.pendingCosmeticPurchase=null; const purchased=state.cosmeticShop?.items?.find((item)=>item.cosmeticId===cosmeticId)?.definition; state.cosmeticMessage=t('cosmetics.purchaseSuccess',{name:purchased?cosmeticText(purchased,'name'):cosmeticId}); }
+  catch(error) { state.cosmeticMessage=cosmeticErrorMessage(error); }
+  finally { state.cosmeticBusy=false; render(); }
+}
+function bindCosmeticSurface() {
+  document.querySelector('#backToLobby')?.addEventListener('click',()=>{state.mode='PLAY';renderLobby();});
+  document.querySelectorAll('[data-cosmetic-category]').forEach((button)=>button.addEventListener('click',()=>{state.cosmeticCategory=button.dataset.cosmeticCategory;state.cosmeticMessage=null;render();}));
+  document.querySelectorAll('[data-cosmetic-equip]').forEach((button)=>button.addEventListener('click',()=>equipCosmetic(button.dataset.cosmeticSlot,button.dataset.cosmeticId)));
+  document.querySelectorAll('[data-cosmetic-buy]').forEach((button)=>button.addEventListener('click',()=>{state.pendingCosmeticPurchase=button.dataset.cosmeticBuy;render();}));
+  document.querySelector('[data-cosmetic-buy-confirm]')?.addEventListener('click',()=>purchaseCosmetic(state.pendingCosmeticPurchase));
+  document.querySelector('[data-cosmetic-buy-cancel]')?.addEventListener('click',()=>{state.pendingCosmeticPurchase=null;render();});
 }
 
 function ownedCopies(definitionId) {
@@ -5439,6 +5529,8 @@ function renderLobby() {
           <div class="desk-nav-heading"><span>${lobbyCopy('OFFICE TERMINAL','OFFICE-TERMINAL')}</span><strong>${lobbyCopy('Main Lobby','Hauptlobby')}</strong></div>
           <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Quick Match','Quick Match')}</strong><small>${lobbyCopy('Selected deck is staged on the desk.','Das gewählte Deck liegt auf dem Schreibtisch bereit.')}</small></div>
           <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
+          <button id="openPersonnel" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.ownedCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.personnel'))}</strong><small>${esc(t('cosmetics.equip'))}</small></button>
+          <button id="openStore" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.shopCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.shop'))}</strong><small>${esc(t('cosmetics.buy'))}</small></button>
           <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
           ${opsModeAvailable()?'<button id="openOps" class="desk-file-button" type="button"><span>ALPHA OPS</span><strong>Server tools</strong></button>':''}
           ${renderLobbyConnectionStatus()}
@@ -5521,6 +5613,8 @@ function renderLobby() {
   document.querySelector('#abandonRecentRoom')?.addEventListener('click', abandonRecentWaitingRoom);
   document.querySelector('#forgetRecentRoom')?.addEventListener('click', forgetRecentSession);
   document.querySelector('#openCollection').onclick = async () => { await enterAlphaDeckbuilder(); };
+  document.querySelector('#openPersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
+  document.querySelector('#openStore')?.addEventListener('click',()=>enterCosmeticSurface('SHOP'));
   document.querySelector('#openOps')?.addEventListener('click',async()=>{ state.mode='ADMIN'; if(state.adminToken) await refreshAdminOps(); else renderOpsDashboard(); });
   document.querySelector('#saveProfileName')?.addEventListener('click', renamePlaytestProfile);
   document.querySelector('#profileDisplayName')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') renamePlaytestProfile(); });
@@ -6438,14 +6532,19 @@ function render() {
   const endedMatch = Boolean(liveMatch && state.view?.match?.status === 'ENDED');
   const lobbyMode = Boolean(!state.session && state.mode === 'PLAY');
   const collectionMode = Boolean(!state.session && state.mode === 'COLLECTION');
+  const personnelMode = Boolean(!state.session && state.mode === 'PERSONNEL');
+  const shopMode = Boolean(!state.session && state.mode === 'SHOP');
   document.body.classList.toggle('match-mode', liveMatch);
   document.body.classList.toggle('match-ended', endedMatch);
   document.body.classList.toggle('match-viewport-locked', liveMatch && !endedMatch);
   document.body.classList.toggle('lobby-mode', lobbyMode);
   document.body.classList.toggle('collection-mode', collectionMode);
+  document.body.classList.toggle('cosmetic-mode', personnelMode || shopMode);
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
+  if (!state.session && state.mode === 'PERSONNEL') { app.innerHTML=renderPersonnelFile(); bindCosmeticSurface(); return; }
+  if (!state.session && state.mode === 'SHOP') { app.innerHTML=renderCompanyStore(); bindCosmeticSurface(); return; }
   if (!state.session) return renderLobby();
   if (!state.view) {
     app.innerHTML = `<section class="connection-stage"><div class="surface-loader" aria-hidden="true"><i></i><i></i><i></i></div><span>CONNECTING TO OFFICE</span><strong>Restoring your desk…</strong><small>Syncing the authoritative room state and your seat.</small></section>`;

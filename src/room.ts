@@ -41,6 +41,7 @@ export type RoomSeatConnectionStatus = "CONNECTED" | "DISCONNECTED";
 export type RoomMatchMode = "FRIENDLY" | "RANKED";
 
 const DEFAULT_BOARD_SKIN_ID = "classic-office"; // legacy persistence fallback only
+// Compatibility marker: cosmeticLoadout: defaultCosmeticLoadout("P1") and cosmeticLoadout: defaultCosmeticLoadout("P2") remain the legacy seat fallbacks.
 
 export interface RoomMatchSettings {
   mode: RoomMatchMode;
@@ -59,6 +60,7 @@ export interface RoomSettingsSelection {
 export interface RoomSeatIdentity {
   profileId?: string | null;
   displayName?: string | null;
+  cosmeticLoadout?: CosmeticLoadout | null;
 }
 
 export interface FinishedRankedRoomResult {
@@ -446,7 +448,7 @@ export class RoomService {
     const room: RoomRecord = {
       id: roomId,
       roomVersion: 1,
-      host: { playerId: "P1", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: defaultCosmeticLoadout("P1"), cards: deck.cards },
+      host: { playerId: "P1", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(identity.cosmeticLoadout, "P1"), cards: deck.cards },
       guest: null,
       state: null,
       processedIntents: new Map(),
@@ -472,7 +474,7 @@ export class RoomService {
     const room = this.getRoom(roomId);
     if (room.guest) throw new RoomError("ROOM_FULL", "Room already has two players.");
     const token = this.tokenFactory();
-    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: defaultCosmeticLoadout("P2"), cards: deck.cards };
+    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(identity.cosmeticLoadout, "P2"), cards: deck.cards };
     room.state = createMatch({
       matchId: `match-${room.id}`,
       seed: this.seedFactory(),

@@ -17,12 +17,12 @@ const server = root("server/server.mjs");
 const html = root("public/index.html");
 const readme = root("README.md");
 
-test("v7.69.22 version markers are current", () => {
-  assert.equal(pkg.version, "7.69.22");
+test("v7.69.23 version markers are current", () => {
+  assert.equal(pkg.version, "7.69.23");
   assert.match(pkg.scripts.test, /dist\/test\/v76921\.test\.js/);
-  assert.match(server, /version: "7\.69\.22"/);
-  assert.match(server, /Office Card Game v7\.69\.22 server/);
-  assert.match(html, /v7\.69\.22 Alpha Playtest/);
+  assert.match(server, /version: "7\.69\.23"/);
+  assert.match(server, /Office Card Game v7\.69\.23 server/);
+  assert.match(html, /v7\.69\.23 Alpha Playtest/);
   assert.match(readme, /## v7\.69\.22 — Normalized Desktop Field Spacing/);
 });
 
@@ -59,4 +59,4 @@ test("flat overlays and mobile remain outside the transformed world", () => {
   assert.match(css, /\.player-board > \.player-world > \.zone-title \{ display:none !important; \}/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.22 tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.23 tests passed.`);

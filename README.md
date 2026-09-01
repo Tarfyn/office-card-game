@@ -1805,3 +1805,9 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Aligns desktop Employee and Support grid tracks to the responsive 5:7 card footprint.
 - Removes hidden spacing from centered undersized cards while preserving the accepted 3.25deg perspective and full-width board.
 - Keeps mobile layout, gameplay, assets, HUD and overlays unchanged.
+
+## v7.69.23 — Cosmetic Inventory + Company Store Foundation
+
+- Adds persistent grant-based cosmetic ownership, loadout validation and server-authoritative Office Credits purchases.
+- Adds the localized Personnel File and Company Store Lobby destinations with owned, equipped, empty-state and purchase flows.
+- Propagates validated cosmetic loadouts into future room identity projections while preserving legacy defaults and mobile/gameplay behavior.

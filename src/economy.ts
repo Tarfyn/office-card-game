@@ -1,3 +1,5 @@
+import { defaultCosmeticLoadout, defaultCosmeticOwnership, type PlayerCosmeticState } from "./cosmetics.js";
+
 export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
 export type CollectionMode = "SANDBOX_ALL_AVAILABLE" | "OWNED_COPIES";
 
@@ -17,6 +19,7 @@ export interface PlayerMetaProfile {
   collectionMode: CollectionMode;
   claimedRewardRooms: string[];
   progression: PlayerProgression;
+  cosmetics: PlayerCosmeticState;
 }
 
 export interface CraftingTierConfig {
@@ -42,6 +45,7 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
     ownedCards: {},
     collectionMode: "SANDBOX_ALL_AVAILABLE",
     claimedRewardRooms: [],
+    cosmetics: { owned:defaultCosmeticOwnership(), loadout:defaultCosmeticLoadout("P1") },
     progression: {
       level: 1,
       xp: 0,
