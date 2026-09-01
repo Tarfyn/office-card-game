@@ -1999,6 +1999,7 @@ function chainSourceRefForEvent(event) {
 }
 
 function cancelInteraction() {
+  if (state.interaction?.cancelable === false) return;
   state.hoverAttackTargetId = null;
   state.interaction = null;
   render();
@@ -2020,6 +2021,15 @@ function beginTargetIntent(label, targetChoices, buildIntent, sourceId = null) {
   state.pendingActionConfirmation = null;
   if (!targetChoices?.length) return sendIntent(buildIntent({}));
   state.interaction = { type:'TARGETS', label, sourceId, targetChoices, index:0, selections:{}, buildIntent };
+  state.interaction.cancelable = true;
+  render();
+}
+
+function beginMandatoryTargetIntent(label, targetChoices, buildIntent, sourceId = null) {
+  state.pendingActionConfirmation = null;
+  if (!targetChoices?.length) return sendIntent(buildIntent({}));
+  state.interaction = { type:'TARGETS', label, sourceId, targetChoices, index:0, selections:{}, buildIntent };
+  state.interaction.cancelable = false;
   render();
 }
 
@@ -2077,15 +2087,28 @@ function renderInteraction(match) {
   if (!interaction) return '';
   if (interaction.type === 'EMPLOYEE') return ''; // Board-native placement: highlighted slots carry the choice.
   if (interaction.type === 'PROMOTION') {
-    return `<div class="interaction-panel promotion-guidance interaction-role-panel"><strong>Choose Promotion materials</strong>${renderInteractionRoleLegend({ targetLabel:'MATERIALS' })}<div class="muted small-copy">Employee slot ${interaction.slot + 1} is locked. Choose one legal material combination.</div><div class="interaction-options">${interaction.options.map((o,i) => `<button class="small promotion-option" data-interaction="promotion-option" data-index="${i}">${o.promotionMaterialIds.length ? esc(o.promotionMaterialIds.map(cardLabel).join(' + ')) : 'No Promotion materials'}</button>`).join('')}</div><button class="small ghost" data-interaction="cancel">Cancel</button></div>`;
+    return `<div class="interaction-panel promotion-guidance interaction-role-panel"><strong>${esc(t('matchInteraction.promotionTitle'))}</strong>${renderInteractionRoleLegend({ targetLabel:'MATERIALS' })}<div class="muted small-copy">${esc(t('matchInteraction.promotionHint',{ slot:interaction.slot + 1 }))}</div><div class="interaction-options">${interaction.options.map((o,i) => `<button class="small promotion-option" data-interaction="promotion-option" data-index="${i}">${o.promotionMaterialIds.length ? esc(o.promotionMaterialIds.map(cardLabel).join(' + ')) : esc(t('matchInteraction.noPromotionMaterials'))}</button>`).join('')}</div>${interaction.cancelable === false ? '' : `<button class="small ghost" data-interaction="cancel">${esc(t('common.cancel'))}</button>`}</div>`;
   }
   if (interaction.type === 'SUPPORT') return ''; // Board-native placement: highlighted slots carry the choice.
   if (interaction.type === 'ATTACK') return ''; // Board-native target state: attacker/targets/REP carry the interaction.
   if (interaction.type === 'TARGETS') {
     const choice = interaction.targetChoices[interaction.index];
     const selected = interaction.selections[choice.selectorId] ?? [];
-    return `<div class="interaction-panel interaction-role-panel"><strong>${esc(interaction.label)}</strong>${renderInteractionRoleLegend({ selected:selected.length, min:choice.min, max:choice.max })}<div class="muted small-copy">Target ${interaction.index+1}/${interaction.targetChoices.length}: ${esc(choice.selectorId)} · choose ${choice.min}-${choice.max}. Source stays marked while legal targets are highlighted.</div><div class="selected-targets">${selected.length ? selected.map((id) => `<span>${esc(cardLabel(id))}</span>`).join('') : '<span class="muted">No target selected</span>'}</div><div class="interaction-options"><button class="small primary" data-interaction="confirm-target" ${selected.length < choice.min || selected.length > choice.max ? 'disabled' : ''}>${interaction.index < interaction.targetChoices.length - 1 ? 'Next target' : 'Confirm'}</button>${choice.min === 0 ? `<button class="small" data-interaction="skip-target">Skip</button>` : ''}<button class="small ghost" data-interaction="cancel">Cancel</button></div></div>`;
+    return `<div class="interaction-panel interaction-role-panel ${interaction.cancelable === false ? 'mandatory-interaction' : ''}"><strong>${esc(interaction.label)}</strong>${renderInteractionRoleLegend({ selected:selected.length, min:choice.min, max:choice.max })}<div class="muted small-copy">${esc(t('matchInteraction.targetStep',{ current:interaction.index + 1, total:interaction.targetChoices.length, selector:choice.selectorId, min:choice.min, max:choice.max }))}</div><div class="selected-targets">${selected.length ? selected.map((id) => `<span>${esc(cardLabel(id))}</span>`).join('') : `<span class="muted">${esc(t('matchInteraction.noTarget'))}</span>`}</div><div class="interaction-options"><button class="small primary" data-interaction="confirm-target" ${selected.length < choice.min || selected.length > choice.max ? 'disabled' : ''}>${esc(interaction.index < interaction.targetChoices.length - 1 ? t('matchInteraction.nextTarget') : t('matchInteraction.confirm'))}</button>${choice.min === 0 ? `<button class="small" data-interaction="skip-target">${esc(t('matchInteraction.skip'))}</button>` : ''}${interaction.cancelable === false ? '' : `<button class="small ghost" data-interaction="cancel">${esc(t('common.cancel'))}</button>`}</div></div>`;
   }
+  return '';
+}
+
+function renderBoardInteractionPanel(match) {
+  const interaction = renderInteraction(match);
+  const viewerId = match?.viewerId;
+  const pendingTarget = match?.pendingTriggerTargetSelection?.playerId === viewerId;
+  const pendingHand = match?.pendingHandSelection?.playerId === viewerId;
+  const pendingDeck = match?.pendingDeckSelection?.playerId === viewerId;
+  if (interaction) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction">${interaction}</aside>`;
+  if (pendingTarget) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong>${esc(t('matchInteraction.pendingTargetTitle'))}</strong><div class="muted small-copy">${esc(t('matchInteraction.pendingTargetHint'))}</div>${actionButton(t('matchInteraction.chooseTargets'),'trigger-targets')}</div></aside>`;
+  if (pendingHand) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong>${esc(t('matchInteraction.pendingHandTitle',{ min:match.pendingHandSelection.min, max:match.pendingHandSelection.max }))}</strong><div class="muted small-copy">${esc(t('matchInteraction.pendingHandHint'))}</div>${actionButton(t('matchInteraction.confirmSelected',{ count:state.selectedHand.size }),'hand-select')}</div></aside>`;
+  if (pendingDeck) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong>${esc(t('matchInteraction.pendingDeckTitle'))}</strong><div class="muted small-copy">${esc(t('matchInteraction.pendingDeckHint'))}</div><div class="interaction-options">${match.pendingDeckSelection.candidateIds.map((id) => actionButton(cardLabel(id),'deck-select',`data-card="${esc(id)}"`)).join('')}${match.pendingDeckSelection.min === 0 ? actionButton(t('matchInteraction.chooseNone'),'deck-select','data-skip="1"') : ''}</div></div></aside>`;
   return '';
 }
 
@@ -5893,19 +5916,8 @@ function renderDecisionCenter(match) {
   if (match.status === 'SETUP' && !legal.canMulligan) {
     blocks.push(`<div class="opening-wait-panel"><div class="opening-wait-status"><i aria-hidden="true"></i><span>HAND LOCKED</span></div><div><strong>Opening hand confirmed</strong><small>Waiting for the other desk to finish its free mulligan. Your five cards are locked in.</small></div></div>`);
   }
-  const interaction = renderInteraction(match);
-  if (interaction) blocks.push(interaction);
   if (match.pendingChoice?.playerId === match.viewerId) {
     blocks.push(`<div class="decision-block"><strong>Choose how to resolve</strong><div class="interaction-options">${match.pendingChoice.options.map((o) => actionButton(o,'choice',`data-choice="${esc(o)}"`)).join('')}</div></div>`);
-  }
-  if (match.pendingDeckSelection?.playerId === match.viewerId) {
-    blocks.push(`<div class="decision-block"><strong>Choose a card</strong><div class="interaction-options">${match.pendingDeckSelection.candidateIds.map((id) => actionButton(cardLabel(id),'deck-select',`data-card="${esc(id)}"`)).join('')}${match.pendingDeckSelection.min === 0 ? actionButton('Choose none','deck-select','data-skip="1"') : ''}</div></div>`);
-  }
-  if (match.pendingTriggerTargetSelection?.playerId === match.viewerId) {
-    blocks.push(`<div class="decision-block"><strong>Triggered effect needs a target</strong>${actionButton('Choose target(s)','trigger-targets')}</div>`);
-  }
-  if (match.pendingHandSelection?.playerId === match.viewerId) {
-    blocks.push(`<div class="decision-block"><strong>Choose ${match.pendingHandSelection.min}-${match.pendingHandSelection.max} card(s) from hand</strong>${actionButton(`Confirm selected (${state.selectedHand.size})`,'hand-select')}</div>`);
   }
   if (legal.canMulligan) {
     const selected = state.selectedHand.size;
@@ -5923,7 +5935,13 @@ function renderDecisionCenter(match) {
       <div class="response-options">${legal.responseOptions.map((o,i) => `<button class="response-card" data-action="response" data-index="${i}"><span>RESPOND</span><strong>${esc(cardLabel(o.sourceId))}</strong><small>${esc(o.abilityId)}</small></button>`).join('')}${legal.canPassPriority ? `<button class="pass-response" data-action="pass"><span>PASS</span><small>No response</small></button>` : ''}</div>
     </div>`);
   }
-  const chain = renderChainStack(match);
+  const boardSelectionActive = Boolean(
+    (state.interaction && ['TARGETS','PROMOTION'].includes(state.interaction.type)) ||
+    match.pendingTriggerTargetSelection?.playerId === match.viewerId ||
+    match.pendingHandSelection?.playerId === match.viewerId ||
+    match.pendingDeckSelection?.playerId === match.viewerId
+  );
+  const chain = boardSelectionActive ? '' : renderChainStack(match);
   if (!blocks.length && !chain) return '';
   const responseActive = Boolean(legal.responseOptions.length || legal.canPassPriority);
   return `<section id="decisionCenter" class="decision-center ${responseActive ? 'response-active' : ''}">${chain}${blocks.join('')}</section>`;
@@ -5939,7 +5957,8 @@ function renderArchive(player, own = false) {
   const last = player.archive.at(-1);
   const impacted = archiveImpactForPlayer(player.id) || Boolean(zoneCueEventsForPlayer(player.id, 'ARCHIVE').length);
   const transitionChip = zoneTransitionChip(player.id, 'ARCHIVE');
-  return `<details class="archive-compact ${own ? 'archive-own' : 'archive-opponent'} ${player.archive.length ? '' : 'is-empty'} ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
+  const targetVisible = player.archive.some((card) => targetCandidateIds().has(card.instanceId));
+  return `<details class="archive-compact ${own ? 'archive-own' : 'archive-opponent'} ${player.archive.length ? '' : 'is-empty'} ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"${targetVisible ? ' open' : ''}><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
     <div class="archive-grid">${player.archive.length ? player.archive.slice().reverse().map((c) => renderCard(c, { surface:'archive' })).join('') : '<div class="zone-empty-state archive-empty"><span>ARCHIVE CLEAR</span><small>Destroyed, resolved and archived cards will collect here.</small></div>'}</div>
   </details>`;
 }
@@ -6564,6 +6583,7 @@ function renderGame() {
             ${renderBoardPhaseDivider(match)}
             ${renderDecisionCenter(match)}
           </div>
+          ${renderBoardInteractionPanel(match)}
           ${renderIntentCommitStatus(match)}
           ${renderCommandDock(match)}
           ${state.lastError ? `<div class="error arena-error">${esc(state.lastError)}</div>` : ''}
@@ -6969,7 +6989,7 @@ function bindInteractionHandlers() {
           state.interaction = null;
           return sendIntent({ type:'PLAY_EMPLOYEE', cardId, slot, promotionMaterialIds:option.promotionMaterialIds });
         }
-        state.interaction = { type:'PROMOTION', cardId:interaction.cardId, slot, options };
+        state.interaction = { type:'PROMOTION', cardId:interaction.cardId, slot, options, cancelable:true };
         return render();
       }
       if (zone === 'SUPPORT' && interaction?.type === 'SUPPORT' && interaction.slots.includes(slot)) {
@@ -7213,7 +7233,7 @@ function bindGameHandlers(match) {
       if (kind === 'deck-select') return sendIntent({ type:'RESOLVE_DECK_SELECTION', selectionId:match.pendingDeckSelection.id, selectedIds:button.dataset.skip === '1' ? [] : [button.dataset.card] });
       if (kind === 'trigger-targets') {
         const pending = match.pendingTriggerTargetSelection;
-        return beginTargetIntent('Triggered effect', pending.targetChoices, (targets) => ({ type:'RESOLVE_TRIGGER_TARGET_SELECTION', selectionId:pending.id, targets }), pending.sourceId ?? null);
+        return beginMandatoryTargetIntent(t('matchInteraction.pendingTargetTitle'), pending.targetChoices, (targets) => ({ type:'RESOLVE_TRIGGER_TARGET_SELECTION', selectionId:pending.id, targets }), pending.sourceId ?? null);
       }
       if (kind === 'hand-select') {
         const selected = [...state.selectedHand];
@@ -7317,8 +7337,10 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('orientationchange', () => setTimeout(()=>scheduleAttackConnectorDraw(),120));
 
 document.addEventListener('keydown', (event) => {
+  // Regression compatibility marker for the original attack Escape contract:
+  // event.key === 'Escape' && ['ATTACK','EMPLOYEE','SUPPORT'].includes(state.interaction?.type ?? '') cancelInteraction();
   if (!state.focusedCardRef) {
-    if (event.key === 'Escape' && ['ATTACK','EMPLOYEE','SUPPORT'].includes(state.interaction?.type ?? '')) { event.preventDefault(); cancelInteraction(); }
+    if (event.key === 'Escape' && state.interaction?.cancelable !== false && ['ATTACK','EMPLOYEE','SUPPORT','TARGETS','PROMOTION'].includes(state.interaction?.type ?? '')) { event.preventDefault(); cancelInteraction(); }
     return;
   }
   if (event.key === 'Tab') {

@@ -1,0 +1,196 @@
+# Office Card Game - Codex Handover v7.69.26
+
+## Baseline
+
+- Version: `v7.69.26`
+- Commit: `c02478f`
+- Package and server version: `7.69.26`
+- Ranked timer: disabled
+- Local development URL: `http://127.0.0.1:8787/`
+- Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
+
+The v7.69.26 baseline is deployed and includes the full-width desktop board, desktop gameplay
+scale, normalized field tracks, permanent 3.25deg desktop perspective, cosmetic collection/shop
+surfaces, explicit card ownership and the first Bot/Training/Tutorial foundation.
+
+## Match Board
+
+The Match Board remains server-authoritative and uses one shared 5 Employee + 4 Support topology
+for both seats. The DOM renders both players through `renderPlayer`; only orientation, ordering and
+cosmetic identity differ.
+
+Desktop uses a full-width `battlefield-world` with flat screen-space HUD, phase bar, command dock,
+menus, notifications, Inspector, hover preview and combat overlays. The player world layer applies
+the current shallow transform:
+
+```text
+perspective(2200px) rotateX(3.25deg) scaleY(.972)
+```
+
+The transform is gated to desktop viewports. Mobile portrait and short landscape remain flat Top
+View and retain the current mobile board architecture.
+
+### Canonical field geometry
+
+Own and Opponent must derive from the same halfboard geometry. Before perspective projection:
+
+- corresponding Employee slot center-X values match
+- corresponding Support slot center-X values match
+- Employee and Support row widths match
+- Employee and Support gaps match
+- card and slot dimensions match
+- only vertical mirroring/orientation differs
+
+The shared desktop rules currently use:
+
+```text
+field card width:  clamp(132px, 6.25vw, 240px)
+field card height: min(width * 1.4, 18.5dvh - 55px)
+field track width: card height * 5 / 7
+field column gap: clamp(18px, 1vw, 30px)
+shared halfboard horizontal padding: 104px
+```
+
+Tracks equal the responsive card/slot width, so visible gaps come from the explicit column gap.
+Cards retain canonical 5:7 anatomy in Board, Hand, Deck, Archive, Hover, Inspector and
+notifications. The Center Phase Divider remains neutral and contains START, DRAW, MAIN, BATTLE
+and END. Deck and Archive are physical board piles; Archive expands toward the center on desktop,
+with the existing viewport-safe mobile behavior.
+
+The desktop symmetry regression was traced to historical asymmetric horizontal padding on the
+opponent world (`158px` versus `104px`). The current baseline uses the same `104px` horizontal
+padding for both worlds. Browser verification at 1920 and 4K measured corresponding pre-transform
+slot centers with a maximum difference of `0px` for all Employee and Support slots.
+
+## Cosmetics
+
+Player loadout slots remain independent and use stable IDs:
+
+```text
+boardSkinId
+avatarId
+avatarFrameId
+avatarDecorationId
+cardBackId
+badgeId
+titleId
+```
+
+Current supplied assets include:
+
+```text
+COS-BOARD-001 -> public/cosmetics/boards/classic-office.webp
+COS-AVA-001   -> public/cosmetics/avatars/overworked-sysadmin.webp
+COS-AVA-002   -> public/cosmetics/avatars/hr-oracle.webp
+```
+
+Own boards render normally; opponent boards reuse the same asset with the established 180deg
+orientation rule. Legacy room/profile data keeps safe fallback identities and board defaults.
+
+### Personnel File
+
+Personnel File is the owned-only non-card collection surface. It has categories for Boards, Avatars,
+Avatar Frames, Avatar Decorations, Card Backs, Badges and Titles. It exposes only explicitly owned
+cosmetics, supports equipped/unequipped state and optional None values, and validates equip requests
+against ownership and slot type on the server.
+
+### Company Store
+
+Company Store is an explicit shop-availability view, independent from ownership. Shop-listed owned
+items remain visible and cannot be purchased again. A cosmetic granted from a non-shop source can
+appear in Personnel File without automatically appearing in Company Store. Purchase validates the
+server price, shop listing, ownership and Office Credits before persisting the ownership grant.
+
+## Card collection and economy
+
+Card catalog, player card ownership, decks and grant history are separate concepts. Current sandbox
+profiles use explicit `ownedCards` quantities and starter grants; ownership is not derived from the
+global catalog. The existing browser-local saved custom deck workflow remains intact, while
+server-side deck persistence is a future priority.
+
+### Booster
+
+The current test configuration contains `ALPHA_OFFICE_PACK`:
+
+- price: 100 Office Credits
+- result: 5 cards
+- distribution: 3 T0, 1 T1 and 1 weighted flex slot
+
+The server selects the pack result, deducts the authoritative Office Credits and grants card
+quantities. The current economy is sandbox/test-only; live economy remains disabled.
+
+### Scrap and crafting
+
+Shredder Scraps are separate from Office Credits. Current provisional values are centralized in
+`data/economy.json` and must not be changed casually:
+
+| Tier | Recycle | Craft |
+| --- | ---: | ---: |
+| T0 | 10 | 150 |
+| T1 | 25 | 300 |
+| T2 | 60 | 600 |
+| T3 | 150 | 1200 |
+
+Recycling and crafting are server-side balance mutations. Recycling is constrained by the
+collection floor so a player keeps at least one legal Alpha deck. These are provisional test values,
+not final balance.
+
+## Reward and grant foundation
+
+The generic RewardGrant path is persistent and supports cards, Office Credits, Shredder Scraps,
+cosmetics and pack entitlements. Grants carry a source, optional sourceRef and timestamp. A unique
+sourceRef is idempotent so one-time rewards cannot be applied twice. Sources are ready for starter,
+booster, craft, achievement, ranked, season, promotion, event and admin flows; only the current
+starter/booster/economy paths are active.
+
+## Bot, Training and Tutorial
+
+`src/bot.ts` contains the first deterministic rule/heuristic Bot controller. It consumes projected
+legal actions and sends normal server intents through the existing Match engine. It can develop its
+board, use Capacity, attack Employees or Company Reputation when legal, respond/pass and end turns.
+It does not use hidden information, external AI or a parallel rules engine.
+
+Training creates an explicit Bot match using normal rules and `mode: TRAINING`. Training metadata
+sets `rewardEligible:false`; Training does not grant Office Credits, XP, Scrap, packs, ranked
+progress or normal PvP statistics. Training history is labelled separately.
+
+Tutorial creates an explicit `mode: TUTORIAL` Bot match using the same engine and controlled
+opening/guidance state. The current guided flow teaches opening hand, phases, Capacity, Employee
+play, Battle, Reputation attacks and ending the turn. Tutorial is replayable and reward-ineligible.
+Its guidance still needs further live UX polish, especially around phase advancement and keeping the
+instruction step synchronized with accepted actions.
+
+## Localization and artwork
+
+English remains canonical and German uses the existing localization layer. The latest audit covers
+107/107 card translations, 11/11 match UI anchors and 33/33 result keys. Artwork audit status is
+107/107 ready with no missing, problematic or orphaned assets. Neutral board assets remain reusable
+for desktop perspective and mobile Top View; perspective must not be baked into cosmetic images.
+
+## QA evidence and known limitations
+
+The v7.69.26 baseline has been checked at 1920x1080, 3840x2160, 390x844 and 844x390. Desktop
+symmetry and mobile no-overflow checks pass; mobile remains flat and keeps 5:7 field-card anatomy.
+The local smoke test verified:
+
+- five-card Booster opening, authoritative credit deduction and reload persistence
+- explicit card ownership changes after Booster, Scrap and Craft operations
+- Scrap persistence and centralized provisional values
+- Personnel File category switching, equipped state and Lobby return
+- Company Store shop/ownership separation for the current fixture
+- Training Bot action, response pass, combat resolution and Archive movement
+- Tutorial match creation and first guided opening state
+
+Known review items:
+
+1. Economy values remain provisional/test values.
+2. Saved custom decks are still browser-local; server-side deck persistence is a future priority.
+3. Tutorial guidance requires further live UX polish.
+4. Training/Bot quality needs continued real playtesting.
+5. Board perspective may still be adjusted after live testing; never bake it into cosmetic image assets.
+6. Current neutral Board assets remain reusable by Desktop perspective and Mobile Top View.
+7. The local smoke profile is intentionally disposable; do not treat its wallet or collection as production data.
+
+Do not implement server-side deck persistence, rebalance the economy, redesign the Match Board or
+change perspective strength without a new focused task. Do not commit, tag or deploy documentation
+or code changes until the current review explicitly requests it.

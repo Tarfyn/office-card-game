@@ -12,9 +12,9 @@ const server=root("server/server.mjs");
 const polish=css.slice(css.lastIndexOf("/* v7.69.16 — small visual regression fixes: catalog art, mobile field cards, hand isolation + 4K piles */"));
 
 test("v7.69.17 compatibility remains current",()=>{
-  assert.equal(pkg.version,"7.69.26");
-  assert.match(server,/version: "7\.69\.26"/);
-  assert.match(server,/version:"7\.69\.26"/);
+  assert.equal(pkg.version,"7.69.27");
+  assert.match(server,/version: "7\.69\.27"/);
+  assert.match(server,/version:"7\.69\.27"/);
   assert.match(pkg.scripts.test,/dist\/test\/v76916\.test\.js/);
 });
 
