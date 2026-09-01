@@ -1806,6 +1806,12 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Removes hidden spacing from centered undersized cards while preserving the accepted 3.25deg perspective and full-width board.
 - Keeps mobile layout, gameplay, assets, HUD and overlays unchanged.
 
+## v7.69.24 — Cosmetic Gallery Polish
+
+- Replaces wide Personnel File and Company Store records with a shared responsive cosmetic gallery.
+- Adds bounded premium collection tiles with category-appropriate previews, clearer equipped/owned states and compact empty states.
+- Preserves the accepted cosmetic ownership, shop, loadout, localization and persistence architecture.
+
 ## v7.69.23 — Cosmetic Inventory + Company Store Foundation
 
 - Adds persistent grant-based cosmetic ownership, loadout validation and server-authoritative Office Credits purchases.

@@ -8,6 +8,7 @@ let passed = 0;
 function test(name: string, fn: () => void) { fn(); passed += 1; console.log(`✓ ${name}`); }
 const root = (name: string) => readFileSync(fileURLToPath(new URL(`../../${name}`, import.meta.url)), "utf8");
 const app = root("public/app.js");
+const styles = root("public/styles.css");
 const server = root("server/server.mjs");
 const en = root("public/locales/en.js");
 const de = root("public/locales/de.js");
@@ -51,15 +52,22 @@ test("personnel and shop surfaces use separate authenticated endpoints and lobby
   assert.match(app, /id="openStore"/);
   assert.match(app, /function renderPersonnelFile\(\)/);
   assert.match(app, /function renderCompanyStore\(\)/);
+  assert.match(app, /state\.mode='PLAY';render\(\)/);
+  assert.match(app, /const selectedSlot = COSMETIC_SLOT_BY_KIND\[state\.cosmeticCategory\]/);
 });
 
 test("new cosmetic surfaces have complete English and German localization anchors", () => {
-  for (const key of ["personnel", "shop", "owned", "equipped", "equip", "unequip", "buy", "buyQuestion", "insufficientCredits", "emptyCategory"]) {
+  for (const key of ["personnel", "shop", "owned", "equipped", "equip", "unequip", "buy", "buyQuestion", "insufficientCredits", "emptyCategory", "shopEmpty", "shopEmptyHint", "currentLoadout"]) {
     assert.match(en, new RegExp(`${key}:`));
     assert.match(de, new RegExp(`${key}:`));
   }
   assert.match(de, /personnel: "Personalakte"/);
   assert.match(de, /shop: "Firmen-Shop"/);
+  assert.match(en, /shopEmpty: "No items are listed in this category right now\."/);
+  assert.match(de, /shopEmpty: "Derzeit sind in dieser Kategorie keine Artikel verfügbar\."/);
+  assert.match(app, /const emptyHint = shop \? t\('cosmetics\.shopEmptyHint'\) : t\('cosmetics\.emptyCategoryHint'\)/);
+  assert.match(app, /data-cosmetic-kind=/);
+  assert.match(styles, /repeat\(auto-fill,minmax\(min\(100%,280px\),320px\)\)/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.23 tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.24 tests passed.`);
