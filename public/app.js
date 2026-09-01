@@ -6371,7 +6371,7 @@ function renderGame() {
   const guidanceMode = guidanceTip ? ` guidance-active guidance-focus-${guidanceTip.focus}` : '';
   const busyMode = state.intentBusy ? ' intent-submitting' : '';
   const resultsMode = match.status === 'ENDED' && state.matchEndOverlayDismissedRoomId === state.view?.roomId ? ' results-view' : '';
-  const perspectiveMode = new URLSearchParams(window.location.search).get('perspective') === 'tilt' ? ' perspective-prototype' : '';
+  const perspectiveMode = ' perspective-prototype';
   const arena = matchArenaStyle();
   app.innerHTML = `<div class="game-shell board-first-shell${interactionMode}${eventMode}${combatMode}${promotionMode}${guidanceMode}${busyMode}${resultsMode}${perspectiveMode}" aria-busy="${state.intentBusy ? 'true' : 'false'}" data-arena-id="${esc(arena.id)}" style="${arena.style}">
     <div class="arena-background-layer" aria-hidden="true"></div>

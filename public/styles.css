@@ -12233,8 +12233,13 @@ body.match-mode .archive-compact { position:relative; }
 @media (min-width:1181px) and (min-height:601px) {
   body.match-mode {
     --desktop-field-card-width:clamp(132px,6.25vw,240px);
+    --desktop-field-card-height:min(calc(var(--desktop-field-card-width) * 1.4), calc(18.5dvh - 55px));
+    --desktop-field-track-width:calc(var(--desktop-field-card-height) * 5 / 7);
     --desktop-hand-card-width:clamp(104px,3.65vw,140px);
     --desktop-hand-rail-width:clamp(1000px,42.2vw,1620px);
+    --desktop-hand-row-height:clamp(142px,5.6vw,240px);
+    --desktop-field-row-gap:clamp(8px,.45vw,12px);
+    --desktop-field-column-gap:clamp(18px,1vw,30px);
     --desktop-pile-rail-width:clamp(118px,4.6vw,176px);
     --desktop-pile-visual-width:clamp(96px,4.06vw,156px);
     --desktop-phase-bar-height:clamp(34px,1.05vw,40px);
@@ -12245,34 +12250,59 @@ body.match-mode .archive-compact { position:relative; }
     --player-outer-reserve:clamp(98px,4.95vw,190px);
   }
 
+  /* Give the own hand its own board band. The field rows then size from their real lane height
+     instead of spilling into the hand or relying on an absolute overlay. */
+  body.match-mode .player-board {
+    gap:var(--desktop-field-row-gap);
+  }
+  body.match-mode .own-board {
+    padding-bottom:0;
+    grid-template-rows:minmax(0,1fr) minmax(0,1fr) var(--desktop-hand-row-height);
+  }
+  body.match-mode .own-hand {
+    position:relative;
+    grid-column:1;
+    grid-row:3;
+    left:auto;
+    bottom:auto;
+    transform:none;
+    width:min(82%,var(--desktop-hand-rail-width));
+    height:var(--desktop-hand-row-height);
+    min-height:0;
+    align-self:stretch;
+    justify-self:center;
+  }
+
   /* Two equal rows retain the canonical 5:7 card footprint while using more of each halfboard. */
   body.match-mode .slots.employee-row,
   body.match-mode .slots.support-row,
   body.match-mode .slots.support {
-    gap:clamp(6px,.21vw,8px);
+    column-gap:var(--desktop-field-column-gap);
+    row-gap:clamp(6px,.21vw,8px);
+    padding:2px 4px;
   }
   body.match-mode .slots.employee-row {
-    grid-template-columns:repeat(5,minmax(0,var(--desktop-field-card-width))) !important;
+    grid-template-columns:repeat(5,minmax(0,var(--desktop-field-track-width))) !important;
   }
   body.match-mode .slots.support-row,
   body.match-mode .slots.support {
-    grid-template-columns:repeat(4,minmax(0,var(--desktop-field-card-width))) !important;
+    grid-template-columns:repeat(4,minmax(0,var(--desktop-field-track-width))) !important;
   }
   body.match-mode .employee-row > .card,
   body.match-mode .support-row > .card,
   body.match-mode .employee-row > .empty-slot,
   body.match-mode .support-row > .empty-slot {
-    width:var(--desktop-field-card-width) !important;
-    max-width:var(--desktop-field-card-width) !important;
-    height:auto !important;
-    max-height:none !important;
+    width:var(--desktop-field-track-width) !important;
+    max-width:var(--desktop-field-track-width) !important;
+    height:var(--desktop-field-card-height) !important;
+    max-height:var(--desktop-field-card-height) !important;
     aspect-ratio:5 / 7 !important;
   }
 
   /* The hand grows with the field, but keeps its existing centered fan and overlap behavior. */
   body.match-mode .own-hand {
     width:min(82%,var(--desktop-hand-rail-width));
-    height:clamp(215px,5.6vw,240px);
+    height:var(--desktop-hand-row-height);
   }
   body.match-mode .own-hand .hand-fan-card {
     width:var(--desktop-hand-card-width);
@@ -12369,7 +12399,7 @@ body.match-mode .archive-compact { position:relative; }
   .desktop-match-utility > summary b { font-size:clamp(7px,.23vw,9px); }
 }
 
-/* Isolated subtle-perspective prototype. The default match remains the accepted flat layout. */
+/* Accepted desktop perspective prototype. Mobile remains flat through the desktop media gate below. */
 .battlefield-world,
 .player-world { display:contents; }
 
@@ -12393,9 +12423,31 @@ body.match-mode .archive-compact { position:relative; }
     grid-template-rows:minmax(0,1fr) var(--field-seam) minmax(0,1fr);
     gap:0;
     overflow:visible;
-    transform:perspective(2400px) rotateX(.82deg) scaleY(.994);
+    transform:none;
+  }
+  body.match-mode .game-shell.perspective-prototype .battlefield-world > .player-board {
+    display:block;
+    padding:0;
+  }
+  body.match-mode .game-shell.perspective-prototype .player-board > .player-world {
+    position:absolute;
+    z-index:1;
+    inset:0;
+    min-width:0;
+    min-height:0;
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr) minmax(0,1fr);
+    gap:var(--desktop-field-row-gap);
+    padding:98px 104px 0 158px;
+    overflow:visible;
+    transform:perspective(2200px) rotateX(3.25deg) scaleY(.972);
     transform-origin:50% 50%;
     transform-style:preserve-3d;
+  }
+  body.match-mode .game-shell.perspective-prototype .own-board > .player-world {
+    padding:0 104px;
+    grid-template-rows:minmax(0,1fr) minmax(0,1fr) var(--desktop-hand-row-height);
   }
   body.match-mode .game-shell.perspective-prototype .board-phase-divider,
   body.match-mode .game-shell.perspective-prototype .decision-center {
@@ -12403,5 +12455,4 @@ body.match-mode .archive-compact { position:relative; }
   }
   body.match-mode .game-shell.perspective-prototype .battlefield-world > .opponent-board { grid-row:1; grid-column:1; }
   body.match-mode .game-shell.perspective-prototype .battlefield-world > .own-board { grid-row:3; grid-column:1; }
-  body.match-mode .game-shell.perspective-prototype .player-world { display:contents; }
 }

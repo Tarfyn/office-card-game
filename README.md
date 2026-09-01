@@ -1799,3 +1799,9 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Adds an opt-in desktop-only tabletop camera treatment to the board/world layer.
 - Keeps HUD, phase controls, menus, overlays, Inspector and notifications flat in screen space.
 - Preserves mobile rendering, board topology, interaction coordinates and canonical 5:7 card anatomy.
+
+## v7.69.22 — Normalized Desktop Field Spacing
+
+- Aligns desktop Employee and Support grid tracks to the responsive 5:7 card footprint.
+- Removes hidden spacing from centered undersized cards while preserving the accepted 3.25deg perspective and full-width board.
+- Keeps mobile layout, gameplay, assets, HUD and overlays unchanged.
