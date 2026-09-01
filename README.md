@@ -1806,6 +1806,12 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Removes hidden spacing from centered undersized cards while preserving the accepted 3.25deg perspective and full-width board.
 - Keeps mobile layout, gameplay, assets, HUD and overlays unchanged.
 
+## v7.69.25 — Cosmetic Gallery Refinement
+
+- Gives ultra-wide Board cosmetics a bounded two-column gallery treatment with proportional previews.
+- Brings equipped and owned states into compact brass badges and centers compact empty-category states.
+- Preserves the shared cosmetic gallery architecture, responsive behavior and all ownership/shop logic.
+
 ## v7.69.24 — Cosmetic Gallery Polish
 
 - Replaces wide Personnel File and Company Store records with a shared responsive cosmetic gallery.

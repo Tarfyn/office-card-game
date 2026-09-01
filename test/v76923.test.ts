@@ -67,7 +67,11 @@ test("new cosmetic surfaces have complete English and German localization anchor
   assert.match(de, /shopEmpty: "Derzeit sind in dieser Kategorie keine Artikel verfügbar\."/);
   assert.match(app, /const emptyHint = shop \? t\('cosmetics\.shopEmptyHint'\) : t\('cosmetics\.emptyCategoryHint'\)/);
   assert.match(app, /data-cosmetic-kind=/);
+  assert.match(app, /cosmetic-grid \$\{visibleItems\.length\?'':'is-empty'\}/);
   assert.match(styles, /repeat\(auto-fill,minmax\(min\(100%,280px\),320px\)\)/);
+  assert.match(styles, /data-cosmetic-kind="BOARD"\] \{ grid-column:span 2/);
+  assert.match(styles, /cosmetic-grid\.is-empty \{ min-height:clamp\(230px,22vh,360px\)/);
+  assert.match(styles, /cosmetic-item-state b \{ display:inline-flex/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.24 tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.25 tests passed.`);
