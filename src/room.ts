@@ -4,6 +4,7 @@ import { createMatch, resign, validateDeck } from "./engine.js";
 import { ALPHA_FORMAT } from "./formats.js";
 import { defaultCosmeticLoadout, normalizeCosmeticLoadout, type CosmeticLoadout } from "./cosmetics.js";
 import { executeHostedMatchIntent, executeMatchIntent } from "./intents.js";
+import { chooseAuthoritativeBotIntent } from "./bot.js";
 import { projectEventsSince, projectStateForViewer } from "./projection.js";
 import {
   clearReconnectDeadline,
@@ -38,7 +39,7 @@ import type { SnapshotPersistence } from "./storage.js";
 
 export type RoomStatus = "WAITING" | "ACTIVE" | "ENDED";
 export type RoomSeatConnectionStatus = "CONNECTED" | "DISCONNECTED";
-export type RoomMatchMode = "FRIENDLY" | "RANKED";
+export type RoomMatchMode = "FRIENDLY" | "RANKED" | "TRAINING" | "TUTORIAL";
 
 const DEFAULT_BOARD_SKIN_ID = "classic-office"; // legacy persistence fallback only
 // Compatibility marker: cosmeticLoadout: defaultCosmeticLoadout("P1") and cosmeticLoadout: defaultCosmeticLoadout("P2") remain the legacy seat fallbacks.
@@ -49,18 +50,23 @@ export interface RoomMatchSettings {
   timerActive: boolean;
   /** Rated ladder updates are allowed only for server-created Ranked Quick Match rooms. */
   ratingActive?: boolean;
+  bot?: boolean;
+  rewardEligible?: boolean;
 }
 
 export interface RoomSettingsSelection {
   mode?: RoomMatchMode | string;
   timerProfileId?: string;
   ratingActive?: boolean;
+  bot?: boolean;
+  rewardEligible?: boolean;
 }
 
 export interface RoomSeatIdentity {
   profileId?: string | null;
   displayName?: string | null;
   cosmeticLoadout?: CosmeticLoadout | null;
+  isBot?: boolean;
 }
 
 export interface FinishedRankedRoomResult {
@@ -132,6 +138,7 @@ export interface PersistedRoomSeat {
   department: string;
   boardSkinId?: string;
   cosmeticLoadout: CosmeticLoadout;
+  isBot?: boolean;
   cards: DeckEntry[];
 }
 
@@ -210,6 +217,7 @@ export interface RoomClientView {
   guestBoardSkinId: string | null;
   hostCosmeticLoadout: CosmeticLoadout;
   guestCosmeticLoadout: CosmeticLoadout | null;
+  guestIsBot?: boolean;
   settings: RoomMatchSettings;
   lifecycle: RoomLifecycleView;
   timer: RoomTimerView;
@@ -316,11 +324,13 @@ const DEFAULT_TIMER_PROFILES: Record<string, TimerProfileConfig> = {
 const REMATCH_REQUEST_TIMEOUT_MS = 90_000;
 
 function normalizeRoomSettings(selection: RoomSettingsSelection = {}, timerProfiles: Record<string, TimerProfileConfig> = DEFAULT_TIMER_PROFILES): RoomMatchSettings {
-  const mode: RoomMatchMode = selection.mode === "RANKED" ? "RANKED" : "FRIENDLY";
+  const mode: RoomMatchMode = selection.mode === "RANKED" ? "RANKED" : selection.mode === "TRAINING" ? "TRAINING" : selection.mode === "TUTORIAL" ? "TUTORIAL" : "FRIENDLY";
   const fallbackProfileId = mode === "RANKED" ? "RANKED_STANDARD_TBD" : "UNTIMED";
   const requested = typeof selection.timerProfileId === "string" && timerProfiles[selection.timerProfileId] ? selection.timerProfileId : fallbackProfileId;
   const profile = timerProfiles[requested] ?? DEFAULT_TIMER_PROFILES[fallbackProfileId];
-  const base = { mode, timerProfileId: requested, timerActive: timerProfileIsRunnable(profile) };
+  const bot = selection.bot === true || mode === "TRAINING" || mode === "TUTORIAL";
+  const base = { mode, timerProfileId: requested, timerActive: mode === "FRIENDLY" || mode === "RANKED" ? timerProfileIsRunnable(profile) : false };
+  if (bot || selection.rewardEligible != null) return { ...base, bot, rewardEligible: selection.rewardEligible ?? false };
   return mode === "RANKED" && selection.ratingActive === true ? { ...base, ratingActive:true } : base;
 }
 
@@ -469,12 +479,20 @@ export class RoomService {
     return { roomId, token, playerId: "P1", view: this.projectRoom(room, token, 0) };
   }
 
+  createBotRoom(deckSelection: DeckSelection, settingsSelection: RoomSettingsSelection = {}, identity: RoomSeatIdentity = {}, botDeckSelection: DeckSelection = "it-starter", botDisplayName = "Office Coach"): CreateRoomResult {
+    const created = this.createRoom(deckSelection, { ...settingsSelection, bot:true, rewardEligible:false }, identity);
+    this.joinRoom(created.roomId, botDeckSelection, { displayName:botDisplayName, isBot:true });
+    const room = this.getRoom(created.roomId);
+    this.runBot(room);
+    return { ...created, view:this.projectRoom(room, created.token, 0) };
+  }
+
   joinRoom(roomId: string, deckSelection: DeckSelection, identity: RoomSeatIdentity = {}): JoinRoomResult {
     const deck = this.resolveDeck(deckSelection);
     const room = this.getRoom(roomId);
     if (room.guest) throw new RoomError("ROOM_FULL", "Room already has two players.");
     const token = this.tokenFactory();
-    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(identity.cosmeticLoadout, "P2"), cards: deck.cards };
+    room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(identity.cosmeticLoadout, "P2"), cards: deck.cards, isBot:Boolean(identity.isBot) };
     room.state = createMatch({
       matchId: `match-${room.id}`,
       seed: this.seedFactory(),
@@ -777,6 +795,7 @@ export class RoomService {
     } else {
       this.persist();
     }
+    if (execution.response.accepted && this.isBotRoom(room)) this.runBot(room);
     return {
       response: execution.response,
       view: this.projectRoom(room, token, beforeSeq, clientId || undefined),
@@ -923,6 +942,30 @@ export class RoomService {
     throw new RoomError("INVALID_TOKEN", "Session token is invalid for this room.");
   }
 
+  private isBotRoom(room: RoomRecord): boolean { return Boolean(room.settings.bot && room.guest?.isBot); }
+
+  private runBot(room: RoomRecord): void {
+    if (!this.isBotRoom(room) || !room.state) return;
+    for (let step = 0; step < 500 && room.state.status !== "ENDED"; step += 1) {
+      const decision = chooseAuthoritativeBotIntent(room.state, "P2");
+      if (!decision) break;
+      const previous = room.state;
+      const execution = executeMatchIntent(previous, { intentId:`bot-${room.id}-${previous.stateVersion}-${step}`, matchId:previous.matchId, playerId:"P2", expectedStateVersion:previous.stateVersion, intent:decision.intent });
+      if (!execution.response.accepted) break;
+      room.state = execution.state;
+      const now = this.nowFactory();
+      room.lifecycle.seats.P2.lastSeenAt = now;
+      room.lifecycle.seats.P2.lastActionAt = now;
+      if (room.state.turnNumber !== previous.turnNumber || room.state.activePlayerId !== previous.activePlayerId) room.lifecycle.turnStartedAt = now;
+      synchronizeTimerRuntime(room.timer, this.effectiveTimerProfile(room.settings), previous, room.state, now);
+      this.recordStateTransitionDiagnostics(room, previous, room.state, now);
+      synchronizeRoomTelemetry(room.telemetry, room.state, now);
+      room.roomVersion += 1;
+    }
+    this.persist();
+    this.notify(room);
+  }
+
   private projectRoom(room: RoomRecord, token: string, afterEventSeq: number, clientId?: string): RoomClientView {
     const seat = this.resolveSeat(room, token);
     const status: RoomStatus = !room.state ? "WAITING" : room.state.status === "ENDED" ? "ENDED" : "ACTIVE";
@@ -943,6 +986,7 @@ export class RoomService {
       guestBoardSkinId: room.guest?.boardSkinId || (room.guest ? DEFAULT_BOARD_SKIN_ID : null),
       hostCosmeticLoadout: structuredClone(room.host.cosmeticLoadout),
       guestCosmeticLoadout: room.guest ? structuredClone(room.guest.cosmeticLoadout) : null,
+      guestIsBot: Boolean(room.guest?.isBot),
       settings: structuredClone(room.settings),
       lifecycle: {
         serverNow: this.nowFactory(),

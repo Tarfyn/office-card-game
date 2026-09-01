@@ -2,7 +2,7 @@ import type { RoomTelemetryView } from "./telemetry.js";
 import type { PlayerId } from "./types.js";
 
 export type PlaytestRoomStatus = "WAITING" | "ACTIVE" | "ENDED";
-export type PlaytestMode = "FRIENDLY" | "RANKED";
+export type PlaytestMode = "FRIENDLY" | "RANKED" | "TRAINING" | "TUTORIAL";
 
 export interface PlaytestSeatRecord {
   deckId: string;
@@ -302,7 +302,9 @@ export function aggregatePlaytestAnalytics(records: PlaytestMatchRecord[], now =
     },
     modes: {
       FRIENDLY: bucket(modeRecords("FRIENDLY")),
-      RANKED: bucket(modeRecords("RANKED"))
+      RANKED: bucket(modeRecords("RANKED")),
+      TRAINING: bucket(modeRecords("TRAINING")),
+      TUTORIAL: bucket(modeRecords("TUTORIAL"))
     },
     endReasons: [...endReasonCounts.entries()].map(([reason, matches]) => ({ reason, matches })).sort((a, b) => b.matches - a.matches || a.reason.localeCompare(b.reason)),
     departments: [...departments.entries()].map(([department, value]) => ({ department, ...value, winRate: pct(value.wins, value.wins + value.losses) })).sort((a, b) => b.appearances - a.appearances || a.department.localeCompare(b.department)),

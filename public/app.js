@@ -186,6 +186,9 @@ const state = {
   rewardBusy: false,
   rewardMessage: null,
   lastRewardReceipt: null,
+  botBusy: false,
+  botDeckId: 'it-starter',
+  botMessage: null,
   lobbyMatchMode: 'FRIENDLY',
   serverProfile: null,
   serverAccount: null,
@@ -1450,6 +1453,10 @@ function departmentCode(department) {
 
 function lobbyCopy(english, german) {
   return currentLocale() === 'de' ? german : english;
+}
+
+function collectionCopy(key, params = {}, fallback = null) {
+  return t(`collection.${key}`, params, fallback);
 }
 
 function lobbyModeName(mode) {
@@ -3544,6 +3551,10 @@ function lobbyDeckOptions() {
   return presetOptions + customDeckOptions();
 }
 
+function botDeckOptions() {
+  return state.presets.map((preset) => `<option value="${esc(preset.id)}" ${state.botDeckId === preset.id ? 'selected' : ''}>${esc(preset.name)} — ${esc(preset.department)}</option>`).join('');
+}
+
 function effectiveLobbyDeckValue(value = state.preferredDeckValue) {
   if (value && (state.presets.some((preset) => preset.id === value) || state.customDecks.some((deck) => `custom:${deck.id}` === value))) return value;
   return state.presets[0]?.id ?? (state.customDecks[0] ? `custom:${state.customDecks[0].id}` : '');
@@ -4354,14 +4365,15 @@ function renderEconomyRoadmap() {
   const progression = state.metaProfile?.progression ?? { level:1,xp:0 };
   const grind = crafting.lowTierCraftTargetScraps ?? {};
   const pack = boosters.packs?.[0];
+  const packDescription = pack ? t('collectionMeta.creditsPathDescription', { name:pack.name, cards:pack.cardCount, price:pack.price ?? 'TBD' }) : t('collectionMeta.packStructurePlanned');
   return `<section class="meta-roadmap">
-    <div class="meta-roadmap-head"><div><span>META-GAME BLUEPRINT</span><strong>Progression without grind-locking decks</strong></div><b>DESIGN SANDBOX</b></div>
+    <div class="meta-roadmap-head"><div><span>${esc(t('collectionMeta.roadmapLabel'))}</span><strong>${esc(t('collectionMeta.roadmapHeadline'))}</strong></div><b>${esc(t('collectionMeta.designSandbox'))}</b></div>
     <div class="meta-roadmap-grid">
-      <article class="meta-path credits"><span>OFFICE CREDITS</span><strong>Play → earn → boosters</strong><p>Primary pack currency. ${pack ? `${esc(pack.name)} is modeled as ${esc(pack.cardCount)} cards at a provisional ${esc(pack.price ?? 'TBD')} Credit test price.` : 'Pack structure is planned.'}</p><small>Live economy: OFF</small></article>
-      <article class="meta-path scraps"><span>SHREDDER SCRAPS</span><strong>Unwanted cards → scrap → targeted craft</strong><p>Keep one legal deck, recycle anything else down to 0 copies, then craft the exact card you need.</p><small>Low-tier tuning goal: roughly ${esc(grind.minCards ?? 'TBD')}–${esc(grind.maxCards ?? 'TBD')} unwanted low-tier cards per chosen low-tier craft.</small></article>
-      <article class="meta-path progression"><span>PROFILE</span><strong>Level ${esc(progression.level ?? 1)} · ${esc(progression.xp ?? 0)} XP</strong><p>Completed matches can now award sandbox Office Credits and XP. Ranked values remain preview-only.</p><small>${esc(progression.matchesCompleted ?? 0)} rewarded matches · no daily grind cap planned by default.</small></article>
+      <article class="meta-path credits"><span>${esc(collectionCopy('officeCredits'))}</span><strong>${esc(t('collectionMeta.creditsPathHeadline'))}</strong><p>${esc(packDescription)}</p><small>${esc(t('collectionMeta.liveEconomyOff'))}</small></article>
+      <article class="meta-path scraps"><span>${esc(collectionCopy('scrap'))}</span><strong>${esc(t('collectionMeta.scrapsPathHeadline'))}</strong><p>${esc(t('collectionMeta.scrapsPathDescription'))}</p><small>${esc(t('collectionMeta.lowTierGoal', { min:grind.minCards ?? 'TBD', max:grind.maxCards ?? 'TBD' }))}</small></article>
+      <article class="meta-path progression"><span>${esc(t('collectionMeta.profileLabel'))}</span><strong>${esc(t('collectionMeta.profilePathHeadline', { level:progression.level ?? 1, xp:progression.xp ?? 0 }))}</strong><p>${esc(t('collectionMeta.profilePathDescription'))}</p><small>${esc(t('collectionMeta.rewardedMatches', { count:progression.matchesCompleted ?? 0 }))}</small></article>
     </div>
-    <div class="rarity-plan">${(economy.rarityTiers ?? []).map((tier) => `<span><b>${esc(tier.id)}</b>${esc(tier.label ?? '')}<small>Scrap ${tier.scrapValue ?? 'TBD'} · Craft ${tier.craftCost ?? 'TBD'}</small></span>`).join('')}</div>
+    <div class="rarity-plan">${(economy.rarityTiers ?? []).map((tier) => `<span><b>${esc(tier.id)}</b>${esc(tier.label ?? '')}<small>${esc(t('collectionMeta.rarityScrap'))} ${tier.scrapValue ?? 'TBD'} · ${esc(t('collectionMeta.rarityCraft'))} ${tier.craftCost ?? 'TBD'}</small></span>`).join('')}</div>
   </section>`;
 }
 
@@ -4374,7 +4386,11 @@ function renderBoosterReveal() {
   const newUnique = newCardIds.size;
   const duplicatePulls = Math.max(0, total - newUnique);
   const deckFlow = boosterDeckFlowStats();
-  return `<div class="booster-reveal ${complete ? 'complete' : 'opening'}"><div class="booster-reveal-head"><div><span>${complete ? 'PACK COMPLETE' : 'PACK OPENING'}</span><strong>${complete ? `${esc(total)} cards added to your collection` : `Reveal ${esc(revealed + 1)} of ${esc(total)}`}</strong><small>${complete ? `${esc(newUnique)} new · ${esc(duplicatePulls)} duplicate${duplicatePulls===1?'':'s'} · ${esc(deckFlow.usedPulls)} pull${deckFlow.usedPulls===1?'':'s'} already used in saved decks.` : 'Reveal cards one by one — the flex rarity is hiding in here.'}</small></div><div class="booster-reveal-actions"><b>${esc(revealed)}/${esc(total)} REVEALED</b>${!complete ? '<button id="revealAllBooster">Reveal all</button>' : `<button data-view-last-booster>View pack</button>${newUnique ? '<button id="viewNewBoosterCards">New pulls</button>' : ''}`}</div></div><div class="booster-card-row">${state.lastBooster.cardIds.map((id, index) => {
+  const packSummary = collectionCopy('packSummary', { newCount:newUnique, duplicateCount:duplicatePulls, duplicateSuffix:duplicatePulls === 1 ? '' : currentLocale() === 'de' ? 'e' : 's', usedPulls:deckFlow.usedPulls, pullSuffix:deckFlow.usedPulls === 1 ? '' : currentLocale() === 'de' ? 'n' : 's' });
+  const detail = complete ? packSummary : collectionCopy('revealHint');
+  const title = complete ? collectionCopy('packComplete') : collectionCopy('packOpening');
+  const headline = complete ? collectionCopy('cardsAddedCount', { count:total }) : collectionCopy('revealCardOf', { current:revealed + 1, total });
+  return `<div class="booster-reveal ${complete ? 'complete' : 'opening'}"><div class="booster-reveal-head"><div><span>${esc(title)}</span><strong>${esc(headline)}</strong><small>${esc(detail)}</small></div><div class="booster-reveal-actions"><b>${esc(revealed)}/${esc(total)} ${esc(collectionCopy('revealed'))}</b>${!complete ? `<button id="revealAllBooster">${esc(collectionCopy('revealAll'))}</button>` : `<button data-view-last-booster> ${esc(collectionCopy('viewPack'))}</button>${newUnique ? `<button id="viewNewBoosterCards">${esc(collectionCopy('newPulls'))}</button>` : ''}`}</div></div><div class="booster-card-row">${state.lastBooster.cardIds.map((id, index) => {
     const def=cardDef(id);
     const tier=state.lastBooster.tiers?.[index] ?? sandboxRarityTier(def);
     const isRevealed=index < revealed;
@@ -4382,10 +4398,10 @@ function renderBoosterReveal() {
     const appearedEarlier=state.lastBooster.cardIds.slice(0,index).filter((item)=>item===id).length;
     const isCollectionNew=newCardIds.has(id) && appearedEarlier === 0;
     const isFreshPackPull=true;
-    if (!isRevealed) return `<button class="booster-hit booster-facedown tier-${esc(String(tier).toLowerCase())} ${isNext ? 'next-reveal' : 'locked-reveal'}" ${isNext ? `data-booster-reveal="${index}"` : 'disabled'}><div class="booster-card-back"><span>OFFICE</span><b>ALPHA</b><small>${isNext ? 'TAP TO REVEAL' : 'LOCKED'}</small></div></button>`;
+    if (!isRevealed) return `<button class="booster-hit booster-facedown tier-${esc(String(tier).toLowerCase())} ${isNext ? 'next-reveal' : 'locked-reveal'}" ${isNext ? `data-booster-reveal="${index}"` : 'disabled'}><div class="booster-card-back"><span>OFFICE</span><b>ALPHA</b><small>${isNext ? esc(collectionCopy('tapToReveal')) : esc(collectionCopy('locked'))}</small></div></button>`;
     const deckUses=savedDeckCardUse(id).filter((item)=>item.copies>0).length;
-    return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${isCollectionNew ? 'collection-new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, isNew:isFreshPackPull, artReady:Boolean(def.artId), owned:ownedCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">INSPECT</i>${deckUses ? `<i class="booster-deck-use">USED IN ${esc(deckUses)} DECK${deckUses===1?'':'S'}</i>` : ''}</button>`;
-  }).join('')}</div>${complete ? `<div class="booster-deck-bridge"><div><span>PACK → DECK</span><strong>${esc(deckFlow.opportunityPulls)} of ${esc(deckFlow.uniquePulls)} unique pulls have a saved-deck path</strong><small>Inspect a pull to see existing deck use, add it to a draft with room, or open a full deck for the existing swap flow.</small></div><button data-view-last-booster>Browse this pack</button></div>` : ''}</div>`;
+    return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${isCollectionNew ? 'collection-new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, isNew:isFreshPackPull, artReady:Boolean(def.artId), owned:ownedCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">${esc(collectionCopy('inspect'))}</i>${deckUses ? `<i class="booster-deck-use">${esc(collectionCopy('usedInDeck', { count:deckUses, suffix:deckUses === 1 ? '' : 'S' }))}</i>` : ''}</button>`;
+  }).join('')}</div>${complete ? `<div class="booster-deck-bridge"><div><span>${esc(collectionCopy('packToDeck'))}</span><strong>${esc(collectionCopy('deckBridge', { opportunity:deckFlow.opportunityPulls, unique:deckFlow.uniquePulls }))}</strong><small>${esc(collectionCopy('deckBridgeHint'))}</small></div><button data-view-last-booster>${esc(collectionCopy('browsePack'))}</button></div>` : ''}</div>`;
 }
 
 function revealBoosterThrough(index) {
@@ -4404,11 +4420,11 @@ function renderEconomyLab() {
   const collectionFloor = Number(state.format?.deckSize ?? 40);
   const needsStarterFloor = playableCapacity < collectionFloor;
   return `<section class="economy-lab">
-    <div class="economy-lab-head"><div><span>ECONOMY LAB · PLAYTEST PROFILE</span><strong>Open → collect → specialize → craft exact cards</strong><small>Test values only. Test values only. Profile persists on this local playtest server.</small></div><div class="wallet"><span>OFFICE CREDITS <b>${credits}</b></span><span>SHREDDER SCRAPS <b>${scraps}</b></span></div></div>
-    <div class="economy-loop" aria-label="Economy loop"><span><b>1</b>Open pack</span><i>→</i><span><b>2</b>Build collection</span><i>→</i><span><b>3</b>Shred unwanted</span><i>→</i><span><b>4</b>Craft target</span></div>
+    <div class="economy-lab-head"><div><span>${esc(collectionCopy('economyLab'))}</span><strong>${esc(collectionCopy('economyHeadline'))}</strong><small>${esc(collectionCopy('economyNote'))}</small></div><div class="wallet"><span>${esc(collectionCopy('officeCredits'))} <b>${credits}</b></span><span>${esc(collectionCopy('scrap'))} <b>${scraps}</b></span></div></div>
+    <div class="economy-loop" aria-label="${esc(collectionCopy('economyLoop'))}"><span><b>1</b>${esc(collectionCopy('economyLoopOpen'))}</span><i>→</i><span><b>2</b>${esc(collectionCopy('economyLoopBuild'))}</span><i>→</i><span><b>3</b>${esc(collectionCopy('economyLoopShred'))}</span><i>→</i><span><b>4</b>${esc(collectionCopy('economyLoopCraft'))}</span></div>
     <div class="economy-lab-grid">
-      <article class="booster-station"><div><span>BOOSTER</span><strong>${esc(pack?.name ?? 'Office Alpha Pack')}</strong><p>${esc(pack?.cardCount ?? 5)} cards · ${esc(pack?.price ?? '—')} Office Credits</p><small>Sandbox slots: 3× T0 · 1× T1 · 1 flex rarity.</small></div><div class="economy-actions">${!hasSandboxWallet || needsStarterFloor ? `<button class="primary" id="startEconomySandbox" ${state.economyBusy?'disabled':''}>${hasSandboxWallet ? 'Restart with legal starter' : `Start sandbox · starter + ${esc(economy.sandbox?.startingOfficeCredits ?? 500)} credits`}</button>` : `<button class="primary" id="openBooster" ${credits < Number(pack?.price ?? Infinity) || state.economyBusy ? 'disabled' : ''}>Open pack · ${esc(pack?.price ?? '—')}</button><button id="refillEconomySandbox" ${state.economyBusy?'disabled':''}>Refill test wallet</button>`}<button class="ghost" id="resetEconomySandbox" ${state.economyBusy?'disabled':''}>Reset</button></div></article>
-      <article class="shredder-station"><span>SHREDDER</span><strong>Specialize without losing your last playable deck</strong><p>Any card can go to 0 copies. A shred is blocked only if your remaining collection could no longer build one legal ${esc(state.format?.deckSize ?? 40)}-card deck.</p><small>Playable capacity ${esc(playableCapacity)}/${esc(collectionFloor)} minimum · ${(economy.rarityTiers ?? []).map((tier) => `${tier.id}: +${tier.scrapValue}/−${tier.craftCost}`).join(' · ')}</small><div class="economy-shortcuts"><button data-economy-filter="DECK_GAPS">Missing deck cards</button><button data-economy-filter="SHREDDABLE">Shred candidates</button></div></article>
+      <article class="booster-station"><div><span>${esc(collectionCopy('boosterLabel'))}</span><strong>${esc(pack?.name ?? 'Office Alpha Pack')}</strong><p>${esc(pack?.cardCount ?? 5)} ${esc(t('common.cards'))} · ${esc(pack?.price ?? '—')} ${esc(collectionCopy('officeCredits'))}</p><small>${esc(collectionCopy('boosterSlots'))}</small></div><div class="economy-actions">${!hasSandboxWallet || needsStarterFloor ? `<button class="primary" id="startEconomySandbox" ${state.economyBusy?'disabled':''}>${hasSandboxWallet ? esc(collectionCopy('restartStarter')) : esc(collectionCopy('startSandbox', { credits:economy.sandbox?.startingOfficeCredits ?? 500 }))}</button>` : `<button class="primary" id="openBooster" ${credits < Number(pack?.price ?? Infinity) || state.economyBusy ? 'disabled' : ''}>${esc(collectionCopy('openPack', { price:pack?.price ?? '—' }))}</button><button id="refillEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('refillWallet'))}</button>`}<button class="ghost" id="resetEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('reset'))}</button></div></article>
+      <article class="shredder-station"><span>${esc(collectionCopy('shredderLabel'))}</span><strong>${esc(collectionCopy('shredderHeadline'))}</strong><p>${esc(collectionCopy('shredderDescription', { deckSize:state.format?.deckSize ?? 40 }))}</p><small>${esc(collectionCopy('playableCapacity', { current:playableCapacity, minimum:collectionFloor }))} · ${(economy.rarityTiers ?? []).map((tier) => `${tier.id}: +${tier.scrapValue}/−${tier.craftCost}`).join(' · ')}</small><div class="economy-shortcuts"><button data-economy-filter="DECK_GAPS">${esc(collectionCopy('missingDeckCards'))}</button><button data-economy-filter="SHREDDABLE">${esc(collectionCopy('shredCandidates'))}</button></div></article>
     </div>
     ${state.economyMessage ? `<div class="economy-message">${esc(state.economyMessage)}</div>` : ''}
     ${renderBoosterReveal()}
@@ -4429,7 +4445,7 @@ async function applyEconomyResponse(path, body, successMessage) {
     state.economyMessage = successMessage(result);
     return result;
   } catch (error) {
-    state.economyMessage = error.message || 'Economy sandbox action failed.';
+    state.economyMessage = error.message || collectionCopy('economyActionFailed');
     return null;
   } finally {
     state.economyBusy = false;
@@ -4442,11 +4458,11 @@ async function startEconomySandbox() {
   state.collectionPackFilter = 'ALL';
   state.boosterRevealCount = 0;
   clearNewCollectionCards();
-  return applyEconomyResponse('/api/economy/sandbox/start', metaRequest(), (data) => `${data.starterDeckName ?? 'Starter collection'} added with test wallet. Open boosters or start specializing.`);
+  return applyEconomyResponse('/api/economy/sandbox/start', metaRequest(), (data) => collectionCopy('starterAdded', { name:data.starterDeckName ?? 'Starter collection' }));
 }
 
 async function refillEconomySandbox() {
-  return applyEconomyResponse('/api/economy/sandbox/refill', metaRequest(), (data) => `Test Office Credits refilled to ${data.profile?.balances?.OFFICE_CREDITS ?? state.metaProfile.balances.OFFICE_CREDITS}.`);
+  return applyEconomyResponse('/api/economy/sandbox/refill', metaRequest(), (data) => collectionCopy('walletRefilled', { credits:data.profile?.balances?.OFFICE_CREDITS ?? state.metaProfile.balances.OFFICE_CREDITS }));
 }
 
 async function resetEconomySandbox() {
@@ -4455,13 +4471,13 @@ async function resetEconomySandbox() {
   state.boosterRevealCount = 0;
   clearNewCollectionCards();
   state.pendingScrapConfirmation = null;
-  return applyEconomyResponse('/api/economy/sandbox/reset', metaRequest(), () => 'Economy sandbox reset.');
+  return applyEconomyResponse('/api/economy/sandbox/reset', metaRequest(), () => collectionCopy('sandboxReset'));
 }
 
 async function openEconomyBooster() {
   const pack = state.economyConfig?.boosters?.packs?.[0];
   const ownedBefore = new Map([...state.catalog.keys()].map((id) => [id, ownedCopies(id)]));
-  const result = await applyEconomyResponse('/api/economy/booster/open', metaRequest({ packId:pack?.id }), (data) => `Opened ${data.cardIds?.length ?? 0} cards.`);
+  const result = await applyEconomyResponse('/api/economy/booster/open', metaRequest({ packId:pack?.id }), (data) => collectionCopy('boosterOpened', { count:data.cardIds?.length ?? 0 }));
   if (result) {
     const newCardIds = [...new Set((result.cardIds ?? []).filter((id) => Number(ownedBefore.get(id) ?? 0) === 0 && ownedCopies(id) > 0))];
     markCollectionCardsNew(newCardIds);
@@ -4476,7 +4492,7 @@ async function scrapEconomyCard(definitionId) {
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
   state.pendingScrapConfirmation = null;
-  return applyEconomyResponse('/api/economy/scrap', metaRequest({ definitionId, copies:1 }), (data) => `Shredded ${def?.name ?? definitionId} for ${data.scrapValueEach} Scraps.`);
+  return applyEconomyResponse('/api/economy/scrap', metaRequest({ definitionId, copies:1 }), (data) => collectionCopy('cardShredded', { name:def?.name ?? definitionId, amount:data.scrapValueEach }));
 }
 
 function requestScrapEconomyCard(definitionId) {
@@ -4500,7 +4516,7 @@ async function craftEconomyCard(definitionId) {
   const wasOwned = ownedCopies(definitionId) > 0;
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
-  const result = await applyEconomyResponse('/api/economy/craft', metaRequest({ definitionId, copies:1 }), (data) => `Crafted ${def?.name ?? definitionId} for ${data.craftCostEach} Scraps.`);
+  const result = await applyEconomyResponse('/api/economy/craft', metaRequest({ definitionId, copies:1 }), (data) => collectionCopy('cardCrafted', { name:def?.name ?? definitionId, amount:data.craftCostEach }));
   if (result && !wasOwned && ownedCopies(definitionId) > 0) markCollectionCardsNew([definitionId]);
   return result;
 }
@@ -4509,9 +4525,13 @@ function matchModeConfig(mode) {
   return state.matchSettings?.modes?.find((item) => item.id === mode) ?? null;
 }
 
+function isBotMatch() { return Boolean(state.view?.settings?.bot || state.view?.settings?.mode === 'TRAINING' || state.view?.settings?.mode === 'TUTORIAL'); }
+
 function roomModeLabel() {
   const settings = state.view?.settings;
   if (!settings) return 'Friendly';
+  if (settings.mode === 'TRAINING') return t('training.modeLabel');
+  if (settings.mode === 'TUTORIAL') return t('tutorial.modeLabel');
   return settings.mode === 'RANKED' ? (settings.ratingActive ? 'Ranked Alpha · Rated' : 'Ranked Rules · Unrated') : 'Friendly';
 }
 
@@ -4544,6 +4564,7 @@ function matchResultRatingLine(rankedReceipt) {
 function matchRewardPreview(match) {
   const outcome = matchRewardOutcome(match);
   if (!outcome) return null;
+  if (state.view?.settings?.rewardEligible === false || isBotMatch()) return null;
   const mode = state.view?.settings?.mode === 'RANKED' ? 'RANKED' : 'FRIENDLY';
   const config = state.economyConfig?.progression?.matchRewards?.profiles?.[mode];
   if (!config) return null;
@@ -4569,6 +4590,12 @@ function renderMatchRewardPanel(match) {
   const xpPercent = Math.max(0, Math.min(100, Math.round((xpIntoLevel / step) * 100)));
   const credits = Number(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0);
   return `<section class="match-reward-panel ${claimed ? 'claimed' : ''}"><div class="match-reward-copy"><span>${esc(label)} · ${esc(preview.mode)}</span><strong>${esc(t('result.rewardSummary', { credits:preview.credits, xp:preview.xp }))}</strong><small>${claimed ? esc(t('result.rewardClaimedDetail')) : esc(t('result.rewardPendingDetail'))}</small></div><div class="match-reward-progress"><span>${esc(t('result.level', { level }))}</span><div class="xp-track" aria-label="${esc(t('result.xpTowardNext', { current:xpIntoLevel, total:step }))}"><i style="width:${xpPercent}%"></i></div><small>${esc(t('result.xpCredits', { current:xpIntoLevel, total:step, credits }))}</small></div>${claimed ? `<b class="reward-claimed">${esc(t('result.claimed'))}</b>` : `<button class="primary" id="claimMatchReward" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?esc(t('result.claiming')):esc(t('result.claimReward'))}</button>`}${state.rewardMessage ? `<p class="match-reward-message">${esc(state.rewardMessage)}</p>` : ''}</section>`;
+}
+
+function renderBotResultNotice() {
+  if (!isBotMatch()) return '';
+  const copy = state.view?.settings?.mode === 'TUTORIAL' ? t('tutorial.complete') : t('training.noRewards');
+  return `<div class="bot-result-notice"><span>${esc(roomModeLabel())}</span><strong>${esc(copy)}</strong></div>`;
 }
 
 function matchEndReasonLabel(reason) {
@@ -4637,9 +4664,10 @@ function renderMatchResultPanel(match) {
   return `<section id="matchResultPanel" class="match-result-panel ${esc(tone)}">
     <div class="match-result-emblem"><span>${outcome === 'WIN' ? 'W' : outcome === 'DRAW' ? '=' : 'L'}</span><small>${esc(t('result.you'))}</small></div>
     <div class="match-result-copy"><span>${esc(t('result.matchComplete'))}</span><strong>${esc(matchResultTitle(outcome))}</strong><p>${esc(mine.playerName)} <i>vs</i> ${esc(theirs.playerName)}</p><div class="match-scoreline"><span>${esc(t('result.you'))} <b>${esc(myRep)}</b></span><i>${esc(t('result.companyReputation'))}</i><span>${esc(t('result.opponent'))} <b>${esc(theirRep)}</b></span></div><div class="match-result-chips"><b>${esc(matchEndReasonLabel(match.reason))}</b><b>${esc(ratingLine)}</b><b>${esc(roomTimerLabel())}</b><b>${esc(t('result.session', { id:alphaTestSessionId() }))}</b></div></div>
-    <div class="match-result-actions"><button data-download-bug-report>${esc(t('result.reportIssue'))}</button><button id="reviewCurrentMatch">${esc(t('result.reviewMatch'))}</button><button id="resultChangeDeck">${esc(t('result.changeDeck'))}</button><button id="resultBackLobby">${esc(t('result.backToLobby'))}</button>${rated ? '' : `<button id="resultAlternateRematch" ${state.rewardBusy||rematchReady?'disabled':''}>${esc(t('result.alternateOpener'))}</button>`}<button class="primary" id="resultPlayAnother" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?esc(t('result.claiming')):esc(nextLabel)}</button></div>
+    <div class="match-result-actions"><button data-download-bug-report>${esc(t('result.reportIssue'))}</button><button id="reviewCurrentMatch">${esc(t('result.reviewMatch'))}</button><button id="resultChangeDeck">${esc(t('result.changeDeck'))}</button><button id="resultBackLobby">${esc(t('result.backToLobby'))}</button>${isBotMatch() ? (state.view?.settings?.mode === 'TUTORIAL' ? `<button id="resultPlayAnother" class="primary">${esc(t('tutorial.replay'))}</button>` : `<button id="resultPlayAnother" class="primary">${esc(t('training.start'))}</button>`) : `${rated ? '' : `<button id="resultAlternateRematch" ${state.rewardBusy||rematchReady?'disabled':''}>${esc(t('result.alternateOpener'))}</button>`}<button class="primary" id="resultPlayAnother" ${state.rewardBusy?'disabled':''}>${state.rewardBusy?esc(t('result.claiming')):esc(nextLabel)}</button>`}</div>
     <div class="match-result-summary"><span><small>${esc(t('result.turns'))}</small><b>${esc(match.turnNumber)}</b></span><span><small>${esc(t('result.duration'))}</small><b>${elapsed == null ? '—' : esc(formatTelemetrySeconds(elapsed))}</b></span><span><small>${esc(t('result.seat'))}</small><b>${esc(seatLabel)}</b></span><span><small>${esc(t('result.finalRep'))}</small><b>${esc(myRep)}–${esc(theirRep)}</b></span></div>
     ${renderMatchRewardPanel(match)}
+    ${renderBotResultNotice()}
     ${renderHumanPlaytestCapture(match)}
   </section>`;
 }
@@ -5372,6 +5400,31 @@ async function beginQuickMatch() {
   finally { state.matchmakingBusy = false; if (!state.session) renderLobby(); }
 }
 
+async function startBotMatch(mode) {
+  if (!state.profileToken || state.botBusy) return;
+  state.botBusy = true;
+  state.botMessage = null;
+  try {
+    if (state.session) { closeCurrentStream(); resetLiveSessionState(); }
+    const deckId = effectiveLobbyDeckValue();
+    const prep = lobbyDeckSummary(deckId);
+    if (!prep?.formatReady) throw new Error(t('training.deckNotReady'));
+    if (prep.ownedReady === false) throw new Error(t('training.deckNeedsCopies'));
+    const botDeckId = document.querySelector('#botOpponentDeck')?.value || state.botDeckId || 'it-starter';
+    state.botDeckId = botDeckId;
+    const result = await api('/api/rooms/bot', { method:'POST', body:JSON.stringify({ ...selectedDeckPayload(deckId), mode, botDeckId, profileToken:state.profileToken }) });
+    saveSession({ roomId:result.roomId, token:result.token, playerId:result.playerId });
+    acceptView(result.view);
+    appendEvents(result.view.events);
+    await claimSessionControl({ restartStream:false, renderAfter:false });
+    startStream();
+    render();
+  } catch (error) {
+    state.botMessage = error.message || t('training.startFailed');
+    renderLobby();
+  } finally { state.botBusy = false; }
+}
+
 async function cancelQuickMatch() {
   if (!state.profileToken || !state.matchmakingTicket) return;
   stopMatchmakingPoll();
@@ -5520,7 +5573,7 @@ function renderLobby() {
   const preferredDeck = effectiveLobbyDeckValue();
   if (!state.preferredDeckValue) state.preferredDeckValue = preferredDeck;
   const options = lobbyDeckOptions();
-  const modes = state.matchSettings?.modes ?? [{id:'FRIENDLY',name:'Friendly',description:'Manual friendly room.'}];
+  const modes = (state.matchSettings?.modes ?? [{id:'FRIENDLY',name:'Friendly',description:'Manual friendly room.'}]).filter((mode) => mode.id === 'FRIENDLY' || mode.id === 'RANKED');
   const selectedMode = matchModeConfig(state.lobbyMatchMode) ?? modes[0];
   const queueWaiting = state.matchmakingTicket?.status === 'WAITING';
   app.innerHTML = `<section class="executive-lobby material-executive-lobby">
@@ -5529,8 +5582,10 @@ function renderLobby() {
       <aside class="executive-desk-left" aria-label="${esc(lobbyCopy('Lobby navigation and utilities','Lobby-Navigation und Werkzeuge'))}">
         <div class="desk-nav-rail">
           <div class="desk-nav-heading"><span>${lobbyCopy('OFFICE TERMINAL','OFFICE-TERMINAL')}</span><strong>${lobbyCopy('Main Lobby','Hauptlobby')}</strong></div>
-          <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Quick Match','Quick Match')}</strong><small>${lobbyCopy('Selected deck is staged on the desk.','Das gewählte Deck liegt auf dem Schreibtisch bereit.')}</small></div>
-          <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
+           <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Quick Match','Quick Match')}</strong><small>${lobbyCopy('Selected deck is staged on the desk.','Das gewählte Deck liegt auf dem Schreibtisch bereit.')}</small></div>
+           <button id="startTraining" class="desk-file-button bot-nav-button" type="button"><span>${esc(t('training.modeLabel'))}</span><strong>${esc(t('training.title'))}</strong><small>${esc(t('training.description'))}</small></button>
+           <button id="startTutorial" class="desk-file-button bot-nav-button" type="button"><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><small>${esc(t('tutorial.description'))}</small></button>
+           <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
           <button id="openPersonnel" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.ownedCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.personnel'))}</strong><small>${esc(t('cosmetics.equip'))}</small></button>
           <button id="openStore" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.shopCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.shop'))}</strong><small>${esc(t('cosmetics.buy'))}</small></button>
           <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
@@ -5550,8 +5605,10 @@ function renderLobby() {
               <label class="quick-match-field quick-match-mode">${lobbyCopy('Mode','Modus')}<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
               ${queueWaiting ? `<button id="cancelQuickMatch">${lobbyCopy('Cancel search','Suche abbrechen')}</button>` : `<button class="primary desk-quick-match-button" id="quickMatchBtn" ${state.matchmakingBusy?'disabled':''}>${state.matchmakingBusy?lobbyCopy('Queueing…','Suche läuft…'):lobbyCopy('Quick Match','Quick Match')}</button>`}
             </div>
+            <div class="bot-match-controls"><div><span>${esc(t('training.botOpponent').toUpperCase())}</span><small>${esc(t('training.selectOpponent'))}</small></div><label class="quick-match-field">${esc(t('training.opponentDeck'))}<select id="botOpponentDeck">${botDeckOptions()}</select></label><button id="startTrainingPanel" ${state.botBusy?'disabled':''}>${esc(t('training.start'))}</button><button id="startTutorialPanel" ${state.botBusy?'disabled':''}>${esc(t('tutorial.start'))}</button></div>
             <div data-lobby-deck-prep-host="QUICK">${renderLobbyDeckPrep(preferredDeck,'QUICK')}</div>
             ${state.matchmakingMessage ? `<p class="desk-matchmaking-message">${esc(state.matchmakingMessage)}</p>` : ''}
+            ${state.botMessage ? `<p class="desk-matchmaking-message error">${esc(state.botMessage)}</p>` : ''}
           </div>
         </section>
         ${renderStarterDeckGuide()}
@@ -5625,11 +5682,16 @@ function renderLobby() {
     document.querySelector('#quickDeck')?.focus({ preventScroll:true });
   }));
   ['quickDeck','createDeck','joinDeck'].forEach((id) => document.querySelector(`#${id}`)?.addEventListener('change', (event) => syncLobbyDeckChoice(event.target.value)));
+  document.querySelector('#botOpponentDeck')?.addEventListener('change', (event) => { state.botDeckId = event.target.value; });
   syncLobbyDeckChoice(preferredDeck);
   document.querySelector('#createMode').onchange = (event) => { state.lobbyMatchMode=event.target.value; renderLobby(); };
   document.querySelector('#createRoomBtn').onclick = createRoom;
   document.querySelector('#joinRoomBtn').onclick = joinRoom;
-  document.querySelector('#quickMatchBtn')?.addEventListener('click', beginQuickMatch);
+   document.querySelector('#quickMatchBtn')?.addEventListener('click', beginQuickMatch);
+   document.querySelector('#startTraining')?.addEventListener('click', () => startBotMatch('TRAINING'));
+   document.querySelector('#startTutorial')?.addEventListener('click', () => startBotMatch('TUTORIAL'));
+   document.querySelector('#startTrainingPanel')?.addEventListener('click', () => startBotMatch('TRAINING'));
+   document.querySelector('#startTutorialPanel')?.addEventListener('click', () => startBotMatch('TUTORIAL'));
   document.querySelector('#cancelQuickMatch')?.addEventListener('click', cancelQuickMatch);
 }
 
@@ -6450,6 +6512,17 @@ function renderArenaSidePanel(match, guidanceTip) {
   </aside>`;
 }
 
+function renderTutorialGuide(match) {
+  if (state.view?.settings?.mode !== 'TUTORIAL' || !match || match.status === 'ENDED') return '';
+  const mine = match.players?.[match.viewerId];
+  let key = 'stepOpening';
+  if (match.phase === 'MAIN' && !(mine?.employeeField ?? []).some(Boolean)) key = 'stepEmployee';
+  else if (match.phase === 'BATTLE' && !match.pendingAttack) key = 'stepBattle';
+  else if (match.phase === 'BATTLE') key = 'stepRep';
+  else if (match.phase === 'END') key = 'stepEnd';
+  return `<aside class="tutorial-guide" aria-live="polite"><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><p>${esc(t('tutorial.' + key))}</p></aside>`;
+}
+
 function renderGame() {
   // Regression compatibility marker for v6.5 board order: battlefield-surface renderPlayer(them,false,match) renderDecisionCenter(match) renderPlayer(me,true,match)
   // Regression compatibility marker for v7.69.8 board order: ${renderPlayer(them,false,match)} ${renderBoardPhaseDivider(match)} ${renderPlayer(me,true,match)}
@@ -6477,8 +6550,9 @@ function renderGame() {
         ${renderConnectionBanner()}
         <div class="turn-banner ${esc(status.tone)}"><div><span class="turn-label">${esc(status.label)}</span><span class="turn-detail">${esc(status.detail)}</span></div>${match.chainLength ? `<span class="chain-badge">CHAIN ${match.chainLength}</span>` : ''}</div>
       </div>
-      ${renderMobileBoardNav(match)}
-      ${renderMobileMatchMenu(match)}
+       ${renderMobileBoardNav(match)}
+       ${renderMobileMatchMenu(match)}
+       ${renderTutorialGuide(match)}
       <div class="arena-layout">
         <div class="arena-board-column">
           <div class="battlefield-surface" aria-label="Office battlefield">
@@ -6503,7 +6577,8 @@ function renderGame() {
   syncCombatPresentationHost();
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
-  document.querySelector('#resultPlayAnother')?.addEventListener('click', playAnotherMatch);
+  // Compatibility marker: addEventListener('click', playAnotherMatch)
+  document.querySelector('#resultPlayAnother')?.addEventListener('click', () => isBotMatch() ? startBotMatch(state.view?.settings?.mode === 'TUTORIAL' ? 'TUTORIAL' : 'TRAINING') : playAnotherMatch());
   document.querySelector('#resultAlternateRematch')?.addEventListener('click', () => rematchCurrentRoom({ alternateFirstPlayer:true }));
   document.querySelector('#resultChangeDeck')?.addEventListener('click', changeDeckAfterMatch);
   document.querySelector('#reviewCurrentMatch')?.addEventListener('click', reviewCurrentMatch);

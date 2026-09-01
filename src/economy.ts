@@ -1,7 +1,8 @@
-import { defaultCosmeticLoadout, defaultCosmeticOwnership, type PlayerCosmeticState } from "./cosmetics.js";
+import { COSMETIC_CATALOG, defaultCosmeticLoadout, defaultCosmeticOwnership, normalizePlayerCosmetics, type PlayerCosmeticState } from "./cosmetics.js";
 
 export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
 export type CollectionMode = "SANDBOX_ALL_AVAILABLE" | "OWNED_COPIES";
+export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop";
 
 export interface PlayerProgression {
   level: number;
@@ -16,10 +17,29 @@ export interface PlayerMetaProfile {
   profileVersion: number;
   balances: Record<CurrencyId, number>;
   ownedCards: Record<string, number>;
+  /** Entitled but unopened booster packs, keyed by stable pack id. */
+  ownedPacks: Record<string, number>;
   collectionMode: CollectionMode;
   claimedRewardRooms: string[];
+  rewardGrants: RewardGrant[];
   progression: PlayerProgression;
   cosmetics: PlayerCosmeticState;
+}
+
+export interface RewardGrantItem {
+  cardId: string;
+  quantity: number;
+}
+
+export interface RewardGrant {
+  source: RewardSource;
+  sourceRef: string | null;
+  cards: RewardGrantItem[];
+  officeCredits: number;
+  scrap: number;
+  cosmetics: string[];
+  packs: Array<{ packId: string; quantity: number }>;
+  grantedAt: number;
 }
 
 export interface CraftingTierConfig {
@@ -43,8 +63,10 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
       SHREDDER_SCRAPS: 0
     },
     ownedCards: {},
+    ownedPacks: {},
     collectionMode: "SANDBOX_ALL_AVAILABLE",
     claimedRewardRooms: [],
+    rewardGrants: [],
     cosmetics: { owned:defaultCosmeticOwnership(), loadout:defaultCosmeticLoadout("P1") },
     progression: {
       level: 1,
@@ -55,6 +77,90 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
       cardsCrafted: 0
     }
   };
+}
+
+/** Production player shape: explicit starter collection, never catalog-wide ownership. */
+export function createPlayerMetaProfile(starterCards: OwnedDeckEntry[] = [], startingOfficeCredits = 0, now = Date.now()): PlayerMetaProfile {
+  const profile = createAlphaMetaProfile();
+  profile.profileVersion = 2;
+  profile.collectionMode = "OWNED_COPIES";
+  profile.balances.OFFICE_CREDITS = Math.max(0, Math.floor(Number(startingOfficeCredits) || 0));
+  profile.cosmetics = { owned: defaultCosmeticOwnership(now), loadout: defaultCosmeticLoadout("P1") };
+  profile.rewardGrants = [];
+  if (starterCards.length) {
+    return applyRewardGrant(profile, {
+      source: "starter",
+      sourceRef: "starter:alpha:v1",
+      cards: starterCards.map((entry) => ({ cardId: entry.definitionId, quantity: entry.copies })),
+      officeCredits: 0,
+      scrap: 0,
+      cosmetics: [],
+      packs: [],
+      grantedAt: now
+    }, now).profile;
+  }
+  return profile;
+}
+
+export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | null | undefined, now = Date.now()): PlayerMetaProfile {
+  const base = createAlphaMetaProfile();
+  const next = { ...base, ...structuredClone(value ?? {}) } as PlayerMetaProfile;
+  next.profileVersion = Math.max(1, Math.floor(Number(next.profileVersion) || 1));
+  next.collectionMode = next.collectionMode === "OWNED_COPIES" ? "OWNED_COPIES" : "SANDBOX_ALL_AVAILABLE";
+  const balances = next.balances ?? {};
+  next.balances = { OFFICE_CREDITS:Number(balances.OFFICE_CREDITS ?? 0), SHREDDER_SCRAPS:Number(balances.SHREDDER_SCRAPS ?? 0) };
+  for (const currency of ["OFFICE_CREDITS", "SHREDDER_SCRAPS"] as const) next.balances[currency] = Math.max(0, Math.floor(Number(next.balances[currency]) || 0));
+  next.ownedCards = Object.fromEntries(Object.entries(next.ownedCards ?? {}).flatMap(([id, quantity]) => {
+    const count = Math.max(0, Math.floor(Number(quantity) || 0));
+    return id && count > 0 ? [[String(id), count]] : [];
+  }));
+  next.ownedPacks = Object.fromEntries(Object.entries(next.ownedPacks ?? {}).flatMap(([id, quantity]) => {
+    const count = Math.max(0, Math.floor(Number(quantity) || 0));
+    return id && count > 0 ? [[String(id), count]] : [];
+  }));
+  next.claimedRewardRooms = Array.isArray(next.claimedRewardRooms) ? [...new Set(next.claimedRewardRooms.map(String))] : [];
+  next.rewardGrants = Array.isArray(next.rewardGrants) ? next.rewardGrants.filter(Boolean).map((grant) => ({
+    source: grant.source ?? "admin",
+    sourceRef: grant.sourceRef == null ? null : String(grant.sourceRef),
+    cards: Array.isArray(grant.cards) ? grant.cards.filter((item) => item && item.cardId && Number(item.quantity) > 0).map((item) => ({ cardId:String(item.cardId), quantity:Math.floor(Number(item.quantity)) })) : [],
+    officeCredits: Math.max(0, Math.floor(Number(grant.officeCredits) || 0)),
+    scrap: Math.max(0, Math.floor(Number(grant.scrap) || 0)),
+    cosmetics: Array.isArray(grant.cosmetics) ? grant.cosmetics.map(String).filter((id) => COSMETIC_CATALOG[id]) : [],
+    packs: Array.isArray(grant.packs) ? grant.packs.filter((item) => item && item.packId && Number(item.quantity) > 0).map((item) => ({ packId:String(item.packId), quantity:Math.floor(Number(item.quantity)) })) : [],
+    grantedAt: Number(grant.grantedAt) || now
+  })) : [];
+  next.progression = { ...base.progression, ...(next.progression ?? {}) };
+  for (const key of Object.keys(base.progression) as Array<keyof PlayerProgression>) next.progression[key] = Math.max(0, Math.floor(Number(next.progression[key]) || 0));
+  next.progression.level = Math.max(1, next.progression.level);
+  next.cosmetics = normalizePlayerCosmetics(next.cosmetics, now);
+  return next;
+}
+
+export interface RewardGrantReceipt { applied: boolean; profile: PlayerMetaProfile; grant: RewardGrant; }
+
+export function applyRewardGrant(profile: PlayerMetaProfile, grant: RewardGrant, now = Date.now()): RewardGrantReceipt {
+  const normalized = normalizePlayerMetaProfile(profile, now);
+  const sourceRef = grant.sourceRef == null ? null : String(grant.sourceRef);
+  if (sourceRef && normalized.rewardGrants.some((existing) => existing.sourceRef === sourceRef)) return { applied:false, profile:normalized, grant:structuredClone(grant) };
+  const next = structuredClone(normalized);
+  for (const item of grant.cards ?? []) {
+    const quantity = Math.floor(Number(item.quantity));
+    if (!item.cardId || quantity <= 0) continue;
+    next.ownedCards[String(item.cardId)] = (next.ownedCards[String(item.cardId)] ?? 0) + quantity;
+  }
+  next.balances.OFFICE_CREDITS += Math.max(0, Math.floor(Number(grant.officeCredits) || 0));
+  next.balances.SHREDDER_SCRAPS += Math.max(0, Math.floor(Number(grant.scrap) || 0));
+  for (const pack of grant.packs ?? []) {
+    const quantity = Math.floor(Number(pack.quantity));
+    if (pack.packId && quantity > 0) next.ownedPacks[String(pack.packId)] = (next.ownedPacks[String(pack.packId)] ?? 0) + quantity;
+  }
+  next.cosmetics = normalizePlayerCosmetics(next.cosmetics, now);
+  for (const cosmeticId of grant.cosmetics ?? []) {
+    if (!COSMETIC_CATALOG[cosmeticId] || next.cosmetics.owned.some((entry) => entry.cosmeticId === cosmeticId)) continue;
+    next.cosmetics.owned.push({ cosmeticId, acquiredAt:now, source:grant.source as any, sourceRef });
+  }
+  next.rewardGrants.push({ ...structuredClone(grant), sourceRef, grantedAt:Number(grant.grantedAt) || now });
+  return { applied:true, profile:next, grant:structuredClone(grant) };
 }
 
 export function canSpendCurrency(profile: PlayerMetaProfile, currency: CurrencyId, amount: number): boolean {
@@ -289,6 +395,7 @@ export function openSandboxBooster(
   const cardIds = tiers.map((tier) => randomCardFromTier(cards, tier, rng).id);
   for (const id of cardIds) next.ownedCards[id] = (next.ownedCards[id] ?? 0) + 1;
   next.progression.boostersOpened += 1;
+  next.rewardGrants.push({ source:"booster", sourceRef:null, cards:cardIds.map((cardId) => ({ cardId, quantity:1 })), officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:Date.now() });
   return { profile: next, cardIds, tiers, spentCredits: config.price };
 }
 

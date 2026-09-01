@@ -525,7 +525,7 @@ function choosePendingIntent(state: GameState): { playerId: PlayerId; intent: Ma
   return null;
 }
 
-function nextBotIntent(state: GameState): { playerId: PlayerId; intent: MatchIntent } | null {
+export function nextBotIntent(state: GameState): { playerId: PlayerId; intent: MatchIntent } | null {
   const pending = choosePendingIntent(state);
   if (pending) return pending;
   if (state.status !== "ACTIVE") return null;

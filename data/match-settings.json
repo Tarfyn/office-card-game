@@ -15,6 +15,24 @@
       "ratingEnabled": true,
       "timerProfile": "RANKED_STANDARD_TBD",
       "description": "Alpha preseason rating is active in Ranked Quick Match only. Private Ranked-rule rooms remain unrated; Ranked timer remains disabled until timing telemetry is tuned."
+    },
+    {
+      "id": "TRAINING",
+      "name": "Training",
+      "ratingEnabled": false,
+      "timerProfile": "UNTIMED",
+      "bot": true,
+      "rewardEligible": false,
+      "description": "Practice against a deterministic Bot using normal match rules. No progression rewards."
+    },
+    {
+      "id": "TUTORIAL",
+      "name": "Tutorial Match",
+      "ratingEnabled": false,
+      "timerProfile": "UNTIMED",
+      "bot": true,
+      "rewardEligible": false,
+      "description": "Learn the core loop in a guided match. No progression rewards."
     }
   ],
   "timerProfiles": [

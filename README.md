@@ -1806,6 +1806,12 @@ Adds stable ID-based per-seat cosmetic loadouts with provisional avatar defaults
 - Removes hidden spacing from centered undersized cards while preserving the accepted 3.25deg perspective and full-width board.
 - Keeps mobile layout, gameplay, assets, HUD and overlays unchanged.
 
+## v7.69.26 — Collection, Bot Modes & Desktop Geometry
+
+- Adds explicit card collection ownership, generic grants, booster/scrap/crafting foundations and server-validated deck ownership.
+- Adds deterministic Human vs Bot Training and Tutorial match foundations with reward-ineligible mode metadata.
+- Normalizes desktop Own/Opponent field rows onto one shared horizontal halfboard geometry while preserving the accepted 3.25deg world perspective.
+
 ## v7.69.25 — Cosmetic Gallery Refinement
 
 - Gives ultra-wide Board cosmetics a bounded two-column gallery treatment with proportional previews.

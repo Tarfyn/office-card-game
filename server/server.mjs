@@ -158,7 +158,9 @@ const profiles = new PlayerProfileService({
   playerPersistence,
   credentialPersistence: guestCredentialPersistence,
   maxHistoryEntries: 30,
-  rankedConfig
+  rankedConfig,
+  starterCards: alphaDeckPresets[String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter")]?.cards ?? [],
+  startingOfficeCredits: Number(economyConfig.sandbox?.startingOfficeCredits ?? 0)
 });
 const matchmaking = new MatchmakingQueue({
   ticketIdFactory: () => `mm-${randomBytes(6).toString("hex")}`,
@@ -193,7 +195,7 @@ function matchHistoryEntry(view, outcome) {
   return {
     roomId: view.roomId,
     matchId: view.match?.matchId ?? `match-${view.roomId}`,
-    mode: view.settings?.mode === "RANKED" ? "RANKED" : "FRIENDLY",
+    mode: view.settings?.mode === "RANKED" ? "RANKED" : view.settings?.mode === "TRAINING" ? "TRAINING" : view.settings?.mode === "TUTORIAL" ? "TUTORIAL" : "FRIENDLY",
     outcome,
     opponentName: (isP1 ? view.guestDisplayName : view.hostDisplayName) ?? "Opponent",
     deckName: (isP1 ? view.hostDeckName : view.guestDeckName) ?? "Unknown Deck",
@@ -350,7 +352,7 @@ function adminOpsSnapshot() {
   };
   return {
     generatedAt: now,
-    version: "7.69.25",
+    version: "7.69.26",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
     counts,
@@ -491,6 +493,16 @@ function validateQueuedDeck(selection) {
   return selection;
 }
 
+function validateOwnedDeck(profile, selection) {
+  if (!profile || profile.meta?.collectionMode !== "OWNED_COPIES") return;
+  const deck = typeof selection === "string" ? alphaDeckPresets[selection] : selection;
+  if (!deck) throw new RoomError("INVALID_DECK", "Unknown deck preset.");
+  for (const entry of deck.cards ?? []) {
+    const owned = Number(profile.meta.ownedCards?.[entry.definitionId] ?? 0);
+    if (owned < Number(entry.copies ?? 0)) throw new RoomError("DECK_NOT_OWNED", `Not enough owned copies for ${entry.definitionId}.`);
+  }
+}
+
 function sseWrite(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -532,8 +544,8 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.25", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.25", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.26", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.26", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
       return json(res, 200, { ops:adminOpsSnapshot() });
@@ -607,7 +619,10 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/profiles/guest") {
       const body = await readJson(req);
       const imported = body?.importMeta && typeof body.importMeta === "object" ? body.importMeta : undefined;
-      const created = profiles.create(imported, body?.displayName);
+      // v7.69 sandbox snapshots are not production ownership state. New
+      // accounts receive the server-defined starter profile instead.
+      const initialMeta = imported && Number(imported.profileVersion ?? 0) >= 2 ? imported : undefined;
+      const created = profiles.create(initialMeta, body?.displayName);
       return json(res, 201, { ...created, storage:profiles.playerStorageLabel, account:{ playerId:created.profile.playerId, authMode:profiles.authMode }, importedSandbox:Boolean(imported) });
     }
 
@@ -758,6 +773,7 @@ const server = createServer(async (req, res) => {
       settleRankedRooms();
       const outcome = matchRewardOutcome(view);
       if (!outcome) return json(res, 409, { error:{ code:"MATCH_NOT_ENDED", message:"Match rewards can only be claimed after the match ends." } });
+      if (view.settings?.rewardEligible === false || view.settings?.mode === "TRAINING" || view.settings?.mode === "TUTORIAL") return json(res, 409, { error:{ code:"REWARD_NOT_ELIGIBLE", message:"This match mode does not grant progression rewards." } });
       const rewardConfig = rewardProfileForMode(view.settings?.mode);
       if (!economyConfig.progression?.matchRewards?.sandboxEnabled || !rewardConfig) return json(res, 409, { error:{ code:"REWARD_NOT_AVAILABLE", message:"Sandbox match rewards are not available." } });
       const body = await readJson(req);
@@ -784,6 +800,7 @@ const server = createServer(async (req, res) => {
       const profile = profiles.get(String(body?.profileToken ?? ""));
       const mode = matchmakingMode(body?.mode);
       const deckSelection = validateQueuedDeck(deckSelectionFromBody(body));
+      validateOwnedDeck(profile, deckSelection);
       const enqueued = matchmaking.enqueue(profile.playerId, mode, matchmakingPayload(profile, deckSelection, mode));
       if (!enqueued.opponent) return json(res, 202, { ticket:enqueued.ticket, ranked:mode === "RANKED" ? profile.ranked : null });
       const matched = pairQueuedTickets(enqueued.opponent, enqueued.ticket, profile, deckSelection, mode);
@@ -813,14 +830,31 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && path === "/api/rooms") {
       const body = await readJson(req);
-      const result = rooms.createRoom(deckSelectionFromBody(body), { mode: body?.mode, timerProfileId: body?.timerProfileId }, profileIdentity(body));
+      const profile = body?.profileToken ? profiles.get(String(body.profileToken)) : null;
+      const deckSelection = deckSelectionFromBody(body);
+      validateOwnedDeck(profile, deckSelection);
+      const result = rooms.createRoom(deckSelection, { mode: body?.mode, timerProfileId: body?.timerProfileId }, profileIdentity(body));
+      return json(res, 201, result);
+    }
+
+    if (req.method === "POST" && path === "/api/rooms/bot") {
+      const body = await readJson(req);
+      const profile = profiles.get(String(body?.profileToken ?? ""));
+      const deckSelection = deckSelectionFromBody(body);
+      validateOwnedDeck(profile, deckSelection);
+      const mode = body?.mode === "TUTORIAL" ? "TUTORIAL" : "TRAINING";
+      const botDeck = alphaDeckPresets[String(body?.botDeckId ?? "it-starter")] ? String(body?.botDeckId ?? "it-starter") : "it-starter";
+      const result = rooms.createBotRoom(deckSelection, { mode }, profileIdentity(body), botDeck, mode === "TUTORIAL" ? "Office Coach" : "Training Bot");
       return json(res, 201, result);
     }
 
     const joinMatch = /^\/api\/rooms\/([^/]+)\/join$/.exec(path);
     if (req.method === "POST" && joinMatch) {
       const body = await readJson(req);
-      const result = rooms.joinRoom(joinMatch[1].toUpperCase(), deckSelectionFromBody(body), profileIdentity(body));
+      const profile = body?.profileToken ? profiles.get(String(body.profileToken)) : null;
+      const deckSelection = deckSelectionFromBody(body);
+      validateOwnedDeck(profile, deckSelection);
+      const result = rooms.joinRoom(joinMatch[1].toUpperCase(), deckSelection, profileIdentity(body));
       return json(res, 200, result);
     }
 
@@ -947,7 +981,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.25 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.26 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

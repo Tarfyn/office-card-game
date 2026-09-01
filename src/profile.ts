@@ -1,4 +1,4 @@
-import { createAlphaMetaProfile, type PlayerMetaProfile } from "./economy.js";
+import { applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type OwnedDeckEntry, type PlayerMetaProfile } from "./economy.js";
 import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, type CosmeticSlotKey } from "./cosmetics.js";
 import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedProfile, rankedK, ratingDelta, type PlayerRankedProfile, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
@@ -8,7 +8,7 @@ export type MatchHistoryOutcome = "WIN" | "LOSS" | "DRAW" | "RESIGN_LOSS";
 export interface PlayerMatchHistoryEntry {
   roomId: string;
   matchId: string;
-  mode: "FRIENDLY" | "RANKED";
+  mode: "FRIENDLY" | "RANKED" | "TRAINING" | "TUTORIAL";
   outcome: MatchHistoryOutcome;
   opponentName: string;
   deckName: string;
@@ -94,6 +94,8 @@ export interface PlayerProfileServiceOptions {
   credentialPersistence?: GuestCredentialPersistence;
   maxHistoryEntries?: number;
   rankedConfig?: Partial<RankedSystemConfig>;
+  starterCards?: OwnedDeckEntry[];
+  startingOfficeCredits?: number;
 }
 
 function defaultId(): string {
@@ -126,11 +128,31 @@ function normalizeProfile(profile: Omit<ServerPlayerProfile, "playerId" | "ranke
     ...structuredClone(profile),
     playerId,
     profileId: playerId,
-    meta: { ...structuredClone(profile.meta), cosmetics:normalizePlayerCosmetics(profile.meta?.cosmetics) },
+    meta: normalizePlayerMetaProfile(profile.meta),
     stats: normalizeStats(profile.stats),
     ranked: normalizeRankedProfile(profile.ranked, rankedConfig),
     matchHistory: Array.isArray(profile.matchHistory) ? profile.matchHistory.map((entry) => structuredClone(entry)) : []
   };
+}
+
+function migrateLegacyCollection(profile: ServerPlayerProfile, starterCards: OwnedDeckEntry[], now: number): ServerPlayerProfile {
+  if (profile.meta.profileVersion >= 2) return profile;
+  let meta = normalizePlayerMetaProfile(profile.meta, now);
+  // v7.69 profiles used an explicit sandbox flag. Convert restored player data
+  // to owned copies while preserving any already-granted cards.
+  if (meta.collectionMode === "SANDBOX_ALL_AVAILABLE") {
+    if (Object.keys(meta.ownedCards).length === 0 && starterCards.length) {
+      meta = applyRewardGrant(meta, {
+        source:"starter", sourceRef:"starter:alpha:v1", cards:starterCards.map((entry) => ({ cardId:entry.definitionId, quantity:entry.copies })),
+        officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:now
+      }, now).profile;
+    } else if (Object.keys(meta.ownedCards).length && !meta.rewardGrants.length) {
+      meta.rewardGrants.push({ source:"starter", sourceRef:"migration:legacy-owned:v1", cards:Object.entries(meta.ownedCards).map(([cardId, quantity]) => ({ cardId, quantity })), officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:now });
+    }
+    meta.collectionMode = "OWNED_COPIES";
+  }
+  meta.profileVersion = 2;
+  return { ...profile, meta };
 }
 
 export class PlayerProfileService {
@@ -144,6 +166,8 @@ export class PlayerProfileService {
   private readonly credentialPersistence: GuestCredentialPersistence | null;
   private readonly maxHistoryEntries: number;
   private readonly rankedConfig: RankedSystemConfig;
+  private readonly starterCards: OwnedDeckEntry[];
+  private readonly startingOfficeCredits: number;
   private migratedLegacyStore = false;
 
   constructor(options: PlayerProfileServiceOptions = {}) {
@@ -155,6 +179,8 @@ export class PlayerProfileService {
     this.credentialPersistence = options.credentialPersistence ?? null;
     this.maxHistoryEntries = Math.max(1, Number(options.maxHistoryEntries ?? 30));
     this.rankedConfig = normalizeRankedConfig(options.rankedConfig);
+    this.starterCards = structuredClone(options.starterCards ?? []);
+    this.startingOfficeCredits = Math.max(0, Math.floor(Number(options.startingOfficeCredits) || 0));
     this.restore();
   }
 
@@ -190,7 +216,7 @@ export class PlayerProfileService {
       playerId,
       profileId: playerId,
       displayName: cleanName(requestedName, `Employee ${suffix}`),
-      meta: { ...structuredClone(initialMeta ?? createAlphaMetaProfile()), cosmetics:normalizePlayerCosmetics(initialMeta?.cosmetics) },
+      meta: normalizePlayerMetaProfile(initialMeta ?? createPlayerMetaProfile(this.starterCards, this.startingOfficeCredits, now), now),
       stats: emptyStats(),
       ranked: createRankedProfile(this.rankedConfig),
       matchHistory: [],
@@ -222,7 +248,8 @@ export class PlayerProfileService {
 
   updateMeta(profileToken: string, meta: PlayerMetaProfile): ServerPlayerProfile {
     const profile = this.requireByToken(profileToken);
-    profile.meta = { ...structuredClone(meta), cosmetics:normalizePlayerCosmetics(meta?.cosmetics) };
+    profile.meta = normalizePlayerMetaProfile(meta);
+    profile.meta.cosmetics = normalizePlayerCosmetics(profile.meta.cosmetics);
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
@@ -271,13 +298,18 @@ export class PlayerProfileService {
     if (profile.matchHistory.some((existing) => existing.roomId === entry.roomId)) return structuredClone(profile);
     profile.matchHistory.unshift(structuredClone(entry));
     profile.matchHistory = profile.matchHistory.slice(0, this.maxHistoryEntries);
+    if (entry.mode === "TRAINING" || entry.mode === "TUTORIAL") {
+      profile.updatedAt = this.nowFactory();
+      this.persist();
+      return structuredClone(profile);
+    }
     profile.stats.matchesPlayed += 1;
     if (entry.outcome === "WIN") profile.stats.wins += 1;
     else if (entry.outcome === "DRAW") profile.stats.draws += 1;
     else profile.stats.losses += 1;
     if (entry.outcome === "RESIGN_LOSS") profile.stats.resignLosses += 1;
     if (entry.mode === "RANKED") profile.stats.rankedMatches += 1;
-    else profile.stats.friendlyMatches += 1;
+    else if (entry.mode === "FRIENDLY") profile.stats.friendlyMatches += 1;
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
@@ -372,10 +404,13 @@ export class PlayerProfileService {
     const playerSnapshot = this.playerPersistence?.load();
     const credentialSnapshot = this.credentialPersistence?.load();
     let restored = false;
+    let migrated = false;
     if ((playerSnapshot?.version === 1 || playerSnapshot?.version === 2) && Array.isArray(playerSnapshot.players)) {
       for (const raw of playerSnapshot.players) {
         if (!raw?.profileId && !raw?.playerId) continue;
-        const profile = normalizeProfile(raw, this.rankedConfig);
+        const normalized = normalizeProfile(raw, this.rankedConfig);
+        const profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
+        migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length;
         if (!profile.playerId) continue;
         this.playersById.set(profile.playerId, profile);
         restored = true;
@@ -388,6 +423,7 @@ export class PlayerProfileService {
         this.credentialsByToken.set(raw.profileToken, structuredClone(raw));
       }
     }
+    if (migrated) this.persistSeparated();
     return restored && this.credentialsByToken.size > 0;
   }
 
@@ -395,15 +431,19 @@ export class PlayerProfileService {
     const snapshot = this.legacyPersistence?.load();
     if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.records)) return false;
     let restored = false;
+    let migrated = false;
     for (const record of snapshot.records) {
       if (!record?.profileToken || !record.profile?.profileId) continue;
-      const profile = normalizeProfile(record.profile, this.rankedConfig);
+       const normalized = normalizeProfile(record.profile, this.rankedConfig);
+       const profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
+       migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length;
       if (!profile.playerId) continue;
       this.playersById.set(profile.playerId, profile);
       const now = Number(profile.updatedAt || profile.createdAt || this.nowFactory());
       this.credentialsByToken.set(record.profileToken, { kind:"GUEST_LOCAL", profileToken:record.profileToken, playerId:profile.playerId, createdAt:Number(profile.createdAt || now), lastUsedAt:now });
       restored = true;
     }
+    if (migrated && this.usesSeparatedStores) this.persistSeparated();
     return restored;
   }
 

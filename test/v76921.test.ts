@@ -17,12 +17,12 @@ const server = root("server/server.mjs");
 const html = root("public/index.html");
 const readme = root("README.md");
 
-test("v7.69.25 version markers are current", () => {
-  assert.equal(pkg.version, "7.69.25");
+test("v7.69.26 version markers are current", () => {
+  assert.equal(pkg.version, "7.69.26");
   assert.match(pkg.scripts.test, /dist\/test\/v76921\.test\.js/);
-  assert.match(server, /version: "7\.69\.25"/);
-  assert.match(server, /Office Card Game v7\.69\.25 server/);
-  assert.match(html, /v7\.69\.25 Alpha Playtest/);
+  assert.match(server, /version: "7\.69\.26"/);
+  assert.match(server, /Office Card Game v7\.69\.26 server/);
+  assert.match(html, /v7\.69\.26 Alpha Playtest/);
   assert.match(readme, /## v7\.69\.22 — Normalized Desktop Field Spacing/);
 });
 
@@ -52,6 +52,11 @@ test("desktop field rows use a responsive horizontal cluster gap", () => {
   assert.match(css, /\.employee-row > \.card,[\s\S]*\.support-row > \.empty-slot \{[\s\S]*width:var\(--desktop-field-track-width\) !important;[\s\S]*max-width:var\(--desktop-field-track-width\) !important;/);
 });
 
+test("desktop field rows share one horizontal halfboard geometry", () => {
+  assert.match(css, /\.game-shell\.perspective-prototype \.player-board > \.player-world \{[\s\S]*padding:98px 104px 0;/);
+  assert.doesNotMatch(css, /padding:98px 104px 0 158px/);
+});
+
 test("flat overlays and mobile remain outside the transformed world", () => {
   assert.match(app, /battlefield-world[\s\S]*renderBoardPhaseDivider\(match\)[\s\S]*renderDecisionCenter\(match\)/);
   assert.match(css, /\.game-shell\.perspective-prototype \.board-phase-divider,\s*[\s\S]*\.decision-center \{[\s\S]*grid-column:1/);
@@ -59,4 +64,4 @@ test("flat overlays and mobile remain outside the transformed world", () => {
   assert.match(css, /\.player-board > \.player-world > \.zone-title \{ display:none !important; \}/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.25 tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.26 tests passed.`);
