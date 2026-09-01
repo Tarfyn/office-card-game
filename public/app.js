@@ -478,7 +478,12 @@ async function enterCosmeticSurface(mode) {
 function renderCosmeticPreview(item, kind) {
   const def = item.definition;
   if (kind === 'BOARD') return def.assetPath ? `<div class="cosmetic-board-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : '<div class="cosmetic-board-preview fallback">OFFICE</div>';
-  if (kind === 'AVATAR' || kind === 'AVATAR_FRAME' || kind === 'AVATAR_DECORATION') return def.assetPath ? `<div class="cosmetic-avatar-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : `<div class="cosmetic-avatar-preview layered"><span>${esc(state.serverProfile?.displayName?.slice(0,1) ?? 'O')}</span></div>`;
+  if (kind === 'AVATAR') return def.assetPath ? `<div class="cosmetic-avatar-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : `<div class="cosmetic-avatar-preview layered"><span>${esc(state.serverProfile?.displayName?.slice(0,1) ?? 'O')}</span></div>`;
+  if (kind === 'AVATAR_FRAME' || kind === 'AVATAR_DECORATION') {
+    const avatarId = state.cosmeticPersonnel?.loadout?.avatarId ?? 'COS-AVA-001';
+    const avatarAsset = COSMETIC_UI_CATALOG.avatars[String(avatarId)]?.asset;
+    return `<div class="cosmetic-avatar-preview layered"><img class="cosmetic-avatar-base" src="${esc(avatarAsset ?? '/cosmetics/avatars/overworked-sysadmin.webp')}" alt="" />${def.assetPath ? `<img class="cosmetic-avatar-layer" src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" />` : ''}</div>`;
+  }
   if (kind === 'CARD_BACK') return `<div class="cosmetic-cardback-preview"><span>OFFICE</span><b>ALPHA</b></div>`;
   if (kind === 'BADGE') return '<div class="cosmetic-badge-preview">★</div>';
   return `<div class="cosmetic-title-preview">${esc(cosmeticText(def,'name'))}</div>`;
@@ -1751,8 +1756,26 @@ const PHASE_PRESENTATION = {
   END:{ title:'END', hint:'Wrap up' }
 };
 
+const PHASE_I18N_KEYS = {
+  START:'match.phaseStart',
+  DRAW:'match.phaseDraw',
+  MAIN:'match.phaseMain',
+  BATTLE:'match.phaseBattle',
+  END:'match.phaseEnd'
+};
+
+function phaseDisplayTitle(phase) {
+  return t(PHASE_I18N_KEYS[phase] ?? phase, {}, PHASE_PRESENTATION[phase]?.title ?? phase);
+}
+
+function phaseControlIsManual(match) {
+  const tutorial = state.view?.settings?.mode === 'TUTORIAL';
+  return tutorial || match.phase === 'MAIN' || match.phase === 'BATTLE';
+}
+
 function phaseAdvanceLabel(phase) {
-  return ({ START:'Continue to Draw →', DRAW:'Continue to Main →', MAIN:'Go to Battle →', BATTLE:'Go to End →', END:'End turn →' })[phase] ?? `End ${phase} phase →`;
+  const keys = { START:'match.continueToDraw', DRAW:'match.continueToMain', MAIN:'match.goToBattle', BATTLE:'match.goToEnd', END:'match.endTurn' };
+  return t(keys[phase] ?? 'match.endTurn', {}, `End ${phase} phase →`);
 }
 
 function phaseAdvanceSafety(match) {
@@ -1799,15 +1822,18 @@ function requestPhaseAdvance(match) {
 
 function renderPhaseTrack(match) {
   const currentIndex = MATCH_PHASE_FLOW.indexOf(match.phase);
-  return `<div class="phase-track" aria-label="Turn phases · current ${esc(match.phase)}">${MATCH_PHASE_FLOW.map((phase, index) => {
+  return `<div class="phase-track" aria-label="${esc(t('match.phaseTrackLabel', { phase: phaseDisplayTitle(match.phase) }))}">${MATCH_PHASE_FLOW.map((phase, index) => {
     const meta = PHASE_PRESENTATION[phase];
     const progress = index === currentIndex ? 'active' : index < currentIndex ? 'complete' : 'upcoming';
-    return `<span class="${progress}" ${index === currentIndex ? 'aria-current="step"' : ''}><b>${meta.title}</b></span>`;
+    return `<span class="${progress}" ${index === currentIndex ? 'aria-current="step"' : ''}><b>${esc(phaseDisplayTitle(phase))}</b></span>`;
   }).join('')}</div>`;
 }
 
 function renderBoardPhaseDivider(match) {
-  return `<div class="office-divider board-phase-divider" role="navigation" aria-label="Current turn phase">${renderPhaseTrack(match)}</div>`;
+  const localTurn = match.activePlayerId === match.viewerId;
+  const ownerClass = localTurn ? 'turn-owner-own' : 'turn-owner-opponent';
+  const ownerLabel = t(localTurn ? 'match.yourTurn' : 'match.opponentTurn');
+  return `<div class="office-divider board-phase-divider ${ownerClass}" role="navigation" aria-label="${esc(t('match.currentTurnPhase'))}"><span class="turn-owner-cue">${esc(ownerLabel)}</span>${renderPhaseTrack(match)}</div>`;
 }
 
 function actionAvailability(match) {
@@ -5113,6 +5139,15 @@ function alphaTestSessionId() {
 function newAlphaTestSession() { try { sessionStorage.setItem(ALPHA_TEST_SESSION_KEY,makeAlphaSessionId()); } catch {} render(); }
 function renderAlphaSessionStrip() { const id=alphaTestSessionId(); return `<section class="alpha-session-strip"><div><span>${lobbyCopy('TEST SESSION','TESTSESSION')}</span><strong>${esc(id)}</strong><small>${lobbyCopy('Rematches, replays and human notes from this browser session can be grouped together.','Rematches, Replays und menschliche Notizen aus dieser Browser-Sitzung können gemeinsam gruppiert werden.')}</small></div><button id="newAlphaTestSession">${lobbyCopy('New test session','Neue Testsession')}</button></section>`; }
 function bindAlphaSessionControls() { document.querySelector('#newAlphaTestSession')?.addEventListener('click',newAlphaTestSession); }
+function renderLobbyProfileAvatar() {
+  const loadout = state.metaProfile?.cosmetics?.loadout ?? {};
+  const avatarId = loadout.avatarId ?? 'COS-AVA-001';
+  const avatarAsset = cosmeticAvatarAsset(avatarId);
+  const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
+  const face = avatarAsset ? `<img class="player-avatar-image" src="${esc(avatarAsset)}" alt="" />` : `<span>${esc(playerInitials(state.serverProfile?.displayName))}</span>`;
+  return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}"><div class="player-avatar-frame">${face}${frameAsset ? `<img class="player-avatar-frame-image" src="${esc(frameAsset)}" alt="" />` : ''}</div></div>`;
+}
+
 function renderProfileStrip() {
   const profile = state.serverProfile;
   const progression = state.metaProfile?.progression ?? {};
@@ -5120,7 +5155,7 @@ function renderProfileStrip() {
   const stats = profile.stats ?? {};
   const ranked = profile.ranked ?? {};
   const rankLabel = ranked.status === 'RATED' ? `${ranked.rating ?? 1000} MMR` : `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed ?? 0}/${ranked.placementsRequired ?? 5}`;
-  return `<section class="profile-strip"><div class="profile-identity"><span>${lobbyCopy('PLAYTEST PROFILE · SERVER','PLAYTEST-PROFIL · SERVER')}</span><strong>${esc(profile.displayName)}</strong><small>${lobbyCopy('Guest profile · progress saved on this server','Gastprofil · Fortschritt wird auf diesem Server gespeichert')}</small></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','BÜRO-CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
+  return `<section class="profile-strip"><div class="profile-identity">${renderLobbyProfileAvatar()}<div class="profile-identity-copy"><span>${lobbyCopy('PLAYTEST PROFILE · SERVER','PLAYTEST-PROFIL · SERVER')}</span><strong>${esc(profile.displayName)}</strong><small>${lobbyCopy('Guest profile · progress saved on this server','Gastprofil · Fortschritt wird auf diesem Server gespeichert')}</small></div></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','BÜRO-CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
 }
 
 function renderRankedStanding() {
@@ -6212,7 +6247,17 @@ const COSMETIC_UI_CATALOG = Object.freeze({
   }),
   avatars: Object.freeze({
     'COS-AVA-001': Object.freeze({ asset:'/cosmetics/avatars/overworked-sysadmin.webp' }),
-    'COS-AVA-002': Object.freeze({ asset:'/cosmetics/avatars/hr-oracle.webp' })
+    'COS-AVA-002': Object.freeze({ asset:'/cosmetics/avatars/hr-oracle.webp' }),
+    'COS-AVA-003': Object.freeze({ asset:'/cosmetics/avatars/executive-director.webp' }),
+    'COS-AVA-004': Object.freeze({ asset:'/cosmetics/avatars/overloaded-junior.webp' }),
+    'COS-AVA-005': Object.freeze({ asset:'/cosmetics/avatars/confident-analyst.webp' }),
+    'COS-AVA-006': Object.freeze({ asset:'/cosmetics/avatars/customer-care-veteran.webp' })
+  }),
+  frames: Object.freeze({
+    'COS-FRAME-002': Object.freeze({ asset:'/cosmetics/avatar-frames/default-blue-silver.webp' }),
+    'COS-FRAME-003': Object.freeze({ asset:'/cosmetics/avatar-frames/bronze-ranked-s01.webp' }),
+    'COS-FRAME-004': Object.freeze({ asset:'/cosmetics/avatar-frames/gold-ranked-s01.webp' }),
+    'COS-FRAME-005': Object.freeze({ asset:'/cosmetics/avatar-frames/diamond-ranked-s01.webp' })
   })
 });
 
@@ -6234,6 +6279,10 @@ function cosmeticAvatarAsset(avatarId) {
   return COSMETIC_UI_CATALOG.avatars[String(avatarId || '')]?.asset ?? null;
 }
 
+function cosmeticFrameAsset(frameId) {
+  return COSMETIC_UI_CATALOG.frames[String(frameId || '')]?.asset ?? null;
+}
+
 function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}) {
   const meta = roomDeckMeta(playerId);
   const loadout = roomCosmeticLoadout(playerId);
@@ -6241,7 +6290,8 @@ function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}
   const avatarFace = avatarAsset
     ? `<img class="player-avatar-image" src="${esc(avatarAsset)}" alt="" />`
     : `<span>${esc(playerInitials(meta.playerName))}</span>`;
-  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame">${avatarFace}</div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
+  const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
+  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame">${avatarFace}${frameAsset ? `<img class="player-avatar-frame-image" src="${esc(frameAsset)}" alt="" />` : ''}</div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
 }
 
 function renderDeckStackVisual(deckCount) {
@@ -6297,7 +6347,7 @@ function renderActions(match, { includeResign = true } = {}) {
   const legal = match.legalActions;
   const groups = [];
   if (legal.activatableAbilities.length) groups.push(`<div class="group"><div class="group-title">Activated abilities</div>${legal.activatableAbilities.map((o,i) => actionButton(`${cardLabel(o.sourceId)} · ${o.abilityId}`,'ability',`data-index="${i}"`)).join('')}</div>`);
-  if (legal.canAdvancePhase) groups.push(`<div class="group"><div class="group-title">Turn</div>${actionButton(phaseAdvanceLabel(match.phase),'advance')}</div>`);
+  if (legal.canAdvancePhase && phaseControlIsManual(match)) groups.push(`<div class="group"><div class="group-title">Turn</div>${actionButton(phaseAdvanceLabel(match.phase),'advance')}</div>`);
   if (includeResign) groups.push(`<div class="group"><div class="group-title">Match</div>${actionButton('Resign','resign')}</div>`);
   return groups.join('');
 }
@@ -6309,7 +6359,7 @@ function coarsePointerUi() {
 function renderMobileBoardNav(match) {
   const status = turnStatus(match);
   const currentIndex = Math.max(0, MATCH_PHASE_FLOW.indexOf(match.phase));
-  const phaseDots = MATCH_PHASE_FLOW.map((phase, index) => `<i class="${index === currentIndex ? 'active' : index < currentIndex ? 'complete' : 'upcoming'}" title="${esc(PHASE_PRESENTATION[phase].title)}"></i>`).join('');
+  const phaseDots = MATCH_PHASE_FLOW.map((phase, index) => `<i class="${index === currentIndex ? 'active' : index < currentIndex ? 'complete' : 'upcoming'}" title="${esc(phaseDisplayTitle(phase))}"></i>`).join('');
   const chain = match.chainLength ? `<b class="mobile-chain-pill">CHAIN ${esc(match.chainLength)}</b>` : '';
   return `<nav class="mobile-board-nav" aria-label="Battlefield navigation">
     <div class="mobile-match-hud"><div><span>${esc(status.label)}</span><small>Turn ${esc(match.turnNumber)} · ${esc(match.phase)}</small></div><div class="mobile-phase-dots" aria-label="Current phase ${esc(match.phase)}">${phaseDots}</div>${chain}</div>
@@ -6336,7 +6386,8 @@ function renderCommandDock(match) {
   const abilityCount = legal.activatableAbilities.length;
   const prompt = currentActionPrompt(match);
   const confirmation = activeAdvanceConfirmation(match);
-  const showDock = Boolean(legal.canAdvancePhase || abilityCount || legal.responseOptions.length || legal.canPassPriority || prompt.tone === 'required' || confirmation);
+  const phaseControlVisible = phaseControlIsManual(match);
+  const showDock = Boolean((phaseControlVisible && legal.canAdvancePhase) || abilityCount || legal.responseOptions.length || legal.canPassPriority || prompt.tone === 'required' || confirmation);
   if (!showDock || match.status === 'ENDED') return '';
   const busy = state.intentBusy;
   if (confirmation && !busy) {
@@ -6358,7 +6409,7 @@ function renderCommandDock(match) {
     <div class="command-buttons">
       ${busy ? `<span class="intent-busy-pill"><i aria-hidden="true"></i>SYNCING</span>` : abilityCount ? `<span class="ability-hint">${abilityCount} activated ${abilityCount === 1 ? 'ability' : 'abilities'} ready</span>` : ''}
       ${legal.canPassPriority ? `<button class="pass-response dock-pass" data-action="pass" ${busy ? 'disabled' : ''}>Pass priority</button>` : ''}
-      ${legal.canAdvancePhase ? `${advanceSafety && !busy ? `<span class="phase-risk-pill" title="${esc(advanceSafety.detail)}">${esc(advanceSafety.count)} REMAIN</span>` : ''}<button class="primary phase-button ${advanceSafety ? 'guarded' : ''}" data-action="advance" ${busy ? 'disabled' : ''}>${esc(phaseAdvanceLabel(match.phase))}</button>` : ''}
+      ${phaseControlVisible && legal.canAdvancePhase ? `${advanceSafety && !busy ? `<span class="phase-risk-pill" title="${esc(advanceSafety.detail)}">${esc(advanceSafety.count)} REMAIN</span>` : ''}<button class="primary phase-button ${advanceSafety ? 'guarded' : ''}" data-action="advance" ${busy ? 'disabled' : ''}>${esc(phaseAdvanceLabel(match.phase))}</button>` : ''}
     </div>
   </div>`;
 }

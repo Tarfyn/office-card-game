@@ -139,6 +139,40 @@ function autoPassUnavailablePriority(state: GameState): number {
   return passed;
 }
 
+function hasUnresolvedInteraction(state: GameState): boolean {
+  return Boolean(
+    state.responseWindow ||
+    state.priorityPlayerId ||
+    state.pendingChoice ||
+    state.pendingDeckSelection ||
+    state.pendingTriggerTargetSelection ||
+    state.pendingHandSelection ||
+    state.pendingAttack ||
+    state.pendingBattleResolution ||
+    state.pendingTriggers.length ||
+    state.resolvingTriggerEvent ||
+    state.chain.length
+  );
+}
+
+/**
+ * Advance only boundary phases that have no authoritative interaction left.
+ * Main and Battle deliberately remain explicit player-controlled phases.
+ */
+export function autoAdvanceSafePhases(state: GameState): number {
+  let advanced = 0;
+  while (state.status === "ACTIVE" && advanced < 16) {
+    if (state.phase !== "START" && state.phase !== "DRAW" && state.phase !== "END") break;
+    if (hasUnresolvedInteraction(state)) break;
+    if (state.phase === "END" && state.players[state.activePlayerId].hand.length > HAND_LIMIT) break;
+    advancePhase(state, state.activePlayerId);
+    advanced += 1;
+    if (autoPassUnavailablePriority(state) > 0) continue;
+    if (hasUnresolvedInteraction(state)) break;
+  }
+  return advanced;
+}
+
 export function executeMatchIntent(state: GameState, command: MatchIntentCommand): MatchCommandExecution {
   if (command.matchId !== state.matchId) return rejected(state, command, "MATCH_MISMATCH", "Intent belongs to a different match.");
   if (command.expectedStateVersion !== state.stateVersion) {
@@ -172,12 +206,29 @@ export function executeMatchIntent(state: GameState, command: MatchIntentCommand
  * Room/server execution path. The core engine keeps explicit priority semantics,
  * while hosted play skips response windows that have no legal response at all.
  */
-export function executeHostedMatchIntent(state: GameState, command: MatchIntentCommand): MatchCommandExecution {
+export interface HostedMatchIntentOptions {
+  autoAdvancePhases?: boolean;
+}
+
+export function executeHostedMatchIntent(
+  state: GameState,
+  command: MatchIntentCommand,
+  options: HostedMatchIntentOptions = {}
+): MatchCommandExecution {
   const beforeEventSeq = state.eventSeq;
   const execution = executeMatchIntent(state, command);
   if (!execution.response.accepted) return execution;
-  const autoPassCount = autoPassUnavailablePriority(execution.state);
-  if (autoPassCount === 0) return execution;
+  let hostedProgress = autoPassUnavailablePriority(execution.state);
+  if (options.autoAdvancePhases !== false) {
+    for (let cycle = 0; cycle < 16; cycle += 1) {
+      const phaseCount = autoAdvanceSafePhases(execution.state);
+      hostedProgress += phaseCount;
+      const passCount = autoPassUnavailablePriority(execution.state);
+      hostedProgress += passCount;
+      if (phaseCount === 0 && passCount === 0) break;
+    }
+  }
+  if (hostedProgress === 0) return execution;
   execution.response.lastEventSeq = execution.state.eventSeq;
   execution.response.events = projectEventsSince(execution.state, command.playerId, beforeEventSeq);
   execution.response.view = projectStateForViewer(execution.state, command.playerId);

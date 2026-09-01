@@ -27,9 +27,9 @@ test("v5.6 turns the phase rail into a readable completed/current/upcoming flow"
 
 test("v5.6 replaces technical phase-ending copy with player-facing transitions", () => {
   assert.match(app,/function phaseAdvanceLabel\(phase\)/);
-  assert.match(app,/MAIN:'Go to Battle →'/);
-  assert.match(app,/BATTLE:'Go to End →'/);
-  assert.match(app,/END:'End turn →'/);
+  assert.match(app,/MAIN:'match\.goToBattle'/);
+  assert.match(app,/BATTLE:'match\.goToEnd'/);
+  assert.match(app,/END:'match\.endTurn'/);
   assert.match(app,/phaseAdvanceLabel\(match\.phase\)/);
 });
 

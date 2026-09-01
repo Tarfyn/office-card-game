@@ -19,13 +19,13 @@ const service = new PlayerProfileService({
 const created = service.create();
 const starterCards = alphaDeckPresets["customer-service-starter"].cards;
 
-test("v7.69.28 creates and persists a player deck with a stable id", () => {
+test("v7.69.29 creates and persists a player deck with a stable id", () => {
   const profile = service.createDeck(created.profileToken, { id:"deck-alpha", name:"Alpha Build", cards:starterCards });
   assert.equal(profile.decks[0].id, "deck-alpha");
   assert.equal(service.get(created.profileToken).decks[0].name, "Alpha Build");
 });
 
-test("v7.69.28 selected deck persists and stale revisions are rejected", () => {
+test("v7.69.29 selected deck persists and stale revisions are rejected", () => {
   service.setSelectedDeck(created.profileToken, "customer-service-starter");
   assert.equal(service.get(created.profileToken).selectedDeckId, "customer-service-starter");
   service.selectDeck(created.profileToken, "deck-alpha");
@@ -34,7 +34,7 @@ test("v7.69.28 selected deck persists and stale revisions are rejected", () => {
   assert.throws(() => service.updateDeck(created.profileToken, "deck-alpha", { name:"Stale", cards:starterCards }, 1), /DECK_CONFLICT/);
 });
 
-test("v7.69.28 restores saved decks from the existing profile stores", () => {
+test("v7.69.29 restores saved decks from the existing profile stores", () => {
   let players: PlayerDataStoreSnapshot | null = null;
   let credentials: GuestCredentialStoreSnapshot | null = null;
   const stores = {
@@ -48,14 +48,14 @@ test("v7.69.28 restores saved decks from the existing profile stores", () => {
   assert.equal(restarted.get(account.profileToken).decks[0].id, "persisted-deck");
 });
 
-test("v7.69.28 keeps valid-format missing-card decks visible but unusable", () => {
+test("v7.69.29 keeps valid-format missing-card decks visible but unusable", () => {
   const profile = service.createDeck(created.profileToken, { id:"deck-missing", name:"Needs Cards", cards:alphaDeckPresets["it-starter"].cards });
   const view = service.listDecks(created.profileToken).decks.find((deck) => deck.id === profile.decks.find((deck) => deck.id === "deck-missing")?.id);
   assert.equal(view?.validation.state, "INVALID_MISSING_CARDS");
   assert.throws(() => service.selectDeck(created.profileToken, "deck-missing"), /DECK_NOT_VALID/);
 });
 
-test("v7.69.28 imports browser decks idempotently without collapsing same-name variants", () => {
+test("v7.69.29 imports browser decks idempotently without collapsing same-name variants", () => {
   const result = service.importDecks(created.profileToken, [
     { id:"local-one", name:"Same Name", cards:starterCards },
     { id:"local-two", name:"Same Name", cards:alphaDeckPresets["it-starter"].cards }
@@ -69,17 +69,17 @@ test("v7.69.28 imports browser decks idempotently without collapsing same-name v
   assert.equal(service.get(created.profileToken).decks.filter((deck) => deck.name === "Same Name").length, 2);
 });
 
-test("v7.69.28 deck ownership is isolated between profiles", () => {
+test("v7.69.29 deck ownership is isolated between profiles", () => {
   const other = new PlayerProfileService({ idFactory:() => "other-owner", tokenFactory:() => "other-token", starterCards:[], deckDefinitions:alphaDefinitions, deckFormat:ALPHA_FORMAT }).create();
   assert.equal(other.profile.decks.length, 0);
   assert.throws(() => service.get(other.profileToken), /INVALID_PROFILE_TOKEN/);
 });
 
-test("v7.69.28 malformed and over-limit deck input is rejected", () => {
+test("v7.69.29 malformed and over-limit deck input is rejected", () => {
   assert.throws(() => service.createDeck(created.profileToken, { name:"Bad", cards:[{ definitionId:"NOPE", copies:1 }] }), /DECK_UNKNOWN_CARD/);
   assert.throws(() => service.createDeck(created.profileToken, { name:"Too Many", cards:[{ definitionId:"CS-001", copies:ALPHA_FORMAT.defaultCopyLimit + 1 }] }), /DECK_COPY_LIMIT/);
 });
 
 service.deleteDeck(created.profileToken, "deck-missing");
 assert.equal(service.get(created.profileToken).decks.some((deck) => deck.id === "deck-missing"), false);
-console.log(`\n${passed}/7 v7.69.28 deck persistence tests passed.`);
+console.log(`\n${passed}/7 v7.69.29 deck persistence tests passed.`);

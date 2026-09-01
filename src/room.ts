@@ -774,7 +774,7 @@ export class RoomService {
       playerId: seat.playerId,
       expectedStateVersion: request.expectedStateVersion,
       intent: request.intent
-    });
+    }, { autoAdvancePhases: room.settings.mode !== "TUTORIAL" });
     room.state = execution.state;
     const now = this.nowFactory();
     recordIntentResult(room.telemetry, now, seat.playerId, request.intent.type, execution.response.accepted, room.state.stateVersion);
@@ -950,7 +950,13 @@ export class RoomService {
       const decision = chooseAuthoritativeBotIntent(room.state, "P2");
       if (!decision) break;
       const previous = room.state;
-      const execution = executeMatchIntent(previous, { intentId:`bot-${room.id}-${previous.stateVersion}-${step}`, matchId:previous.matchId, playerId:"P2", expectedStateVersion:previous.stateVersion, intent:decision.intent });
+      const execution = executeHostedMatchIntent(previous, {
+        intentId:`bot-${room.id}-${previous.stateVersion}-${step}`,
+        matchId:previous.matchId,
+        playerId:"P2",
+        expectedStateVersion:previous.stateVersion,
+        intent:decision.intent
+      }, { autoAdvancePhases: room.settings.mode !== "TUTORIAL" });
       if (!execution.response.accepted) break;
       room.state = execution.state;
       const now = this.nowFactory();

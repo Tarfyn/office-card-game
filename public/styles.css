@@ -4738,6 +4738,7 @@ body {
   .deck-completion-progress i { transition:none; }
 }
 
+
 /* v7.4 capacity curve + deck composition polish */
 .curve-title-row { display:flex; align-items:end; justify-content:space-between; gap:8px; margin-top:9px; }
 .curve-title-row .curve-title { margin-top:0; }
@@ -11758,6 +11759,48 @@ body.match-mode .own-hand .hand-fan-card:focus-within { z-index:60 !important; }
   object-fit:cover;
   object-position:center center;
 }
+.player-avatar-frame { position:relative; }
+.player-avatar-frame .player-avatar-image { position:relative; z-index:1; }
+.player-avatar-frame .player-avatar-frame-image {
+  position:absolute;
+  inset:-4%;
+  z-index:2;
+  width:108%;
+  height:108%;
+  display:block;
+  object-fit:cover;
+  pointer-events:none;
+}
+.cosmetic-avatar-preview.layered { position:relative; }
+.cosmetic-avatar-preview.layered .cosmetic-avatar-base,
+.cosmetic-avatar-preview.layered .cosmetic-avatar-layer {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+.cosmetic-avatar-preview.layered .cosmetic-avatar-base { z-index:1; }
+.cosmetic-avatar-preview.layered .cosmetic-avatar-layer { z-index:2; pointer-events:none; }
+.cosmetic-avatar-preview.layered {
+  border:0;
+  border-radius:8px;
+  overflow:visible;
+  box-shadow:none;
+}
+
+/* Lobby profile identity uses the same avatar/frame stack as Match HUD identity. */
+.profile-identity { min-width:0; display:flex; align-items:center; gap:9px; }
+.profile-identity-copy { min-width:0; display:grid; gap:2px; }
+.profile-identity-copy > span { font-size:8px; font-weight:950; letter-spacing:.12em; color:#8b8177; }
+.profile-identity-copy > strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.profile-identity-copy > small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#8a837a; font-size:9px; }
+.profile-avatar-chip { flex:0 0 44px; width:44px; height:44px; }
+.profile-avatar-chip .player-avatar-frame { width:44px; height:44px; }
+@media (max-width:620px) {
+  .profile-avatar-chip, .profile-avatar-chip .player-avatar-frame { width:38px; height:38px; flex-basis:38px; }
+}
 
 /* Deck and Archive are physical tabletop piles, not translucent dashboard tiles. */
 body.match-mode .deck-pile,
@@ -12591,3 +12634,62 @@ body.cosmetic-mode {
   .board-interaction-panel .interaction-panel strong { font-size:10px; }
   .board-interaction-panel .interaction-options button { min-height:28px; font-size:8px; }
 }
+
+/* Turn ownership is a restrained divider-level cue; the rest of the match UI stays flat. */
+body.match-mode .board-phase-divider .turn-owner-cue {
+  position:absolute;
+  left:clamp(8px,1.25vw,22px);
+  top:50%;
+  z-index:2;
+  max-width:clamp(48px,6vw,108px);
+  transform:translateY(-50%);
+  color:#82e8a0;
+  font-size:clamp(5px,.34vw,8px);
+  font-weight:950;
+  letter-spacing:.12em;
+  line-height:1.1;
+  text-align:left;
+  text-shadow:0 0 9px rgba(74,225,118,.34);
+  white-space:nowrap;
+}
+body.match-mode .board-phase-divider.turn-owner-opponent .turn-owner-cue {
+  color:#f0a5a1;
+  text-shadow:0 0 9px rgba(214,103,96,.30);
+}
+body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.active {
+  color:#f1aaa5;
+  background:linear-gradient(180deg,rgba(214,103,96,.04),rgba(214,103,96,.14));
+  box-shadow:inset 0 -2px #d66760,0 0 18px rgba(214,103,96,.11);
+}
+body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.active::after {
+  background:#d66760;
+  box-shadow:0 0 9px rgba(214,103,96,.58);
+}
+@media (max-width:760px) {
+  body.match-mode .board-phase-divider .turn-owner-cue { display:none; }
+}
+
+/* Frame cosmetics use their transparent square artwork as an overlay, not the avatar crop. */
+.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered {
+  display:block;
+  position:relative;
+  border:0;
+  border-radius:8px;
+  overflow:visible;
+  box-shadow:none;
+}
+.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-base,
+.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-layer {
+  position:absolute;
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-base { inset:0; }
+.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-layer {
+  inset:-4%;
+  width:108%;
+  height:108%;
+}
+.player-avatar-frame { overflow:visible; }

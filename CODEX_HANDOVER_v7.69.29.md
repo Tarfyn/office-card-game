@@ -1,16 +1,17 @@
-# Office Card Game - Codex Handover v7.69.28
+# Office Card Game - Codex Handover v7.69.29
 
 ## Baseline
 
-- Version: `v7.69.28`
-- Commit: `(release commit; see annotated tag)`
+- Version: `v7.69.29`
+- Commit: final release commit resolved by immutable annotated tag `v7.69.29`
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.28 release includes the full-width desktop board, desktop gameplay
-scale, normalized field tracks, permanent 3.25deg desktop perspective, cosmetic collection/shop
-surfaces, explicit card ownership and the first Bot/Training/Tutorial foundation.
+The v7.69.29 release includes the full-width desktop board, desktop gameplay scale, normalized
+field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
+phase visuals, cosmetic collection/shop surfaces, explicit card ownership and the Bot/Training/
+Tutorial foundation.
 
 ## Match Board
 
@@ -28,6 +29,15 @@ perspective(2200px) rotateX(3.25deg) scaleY(.972)
 
 The transform is gated to desktop viewports. Mobile portrait and short landscape remain flat Top
 View and retain the current mobile board architecture.
+
+Normal hosted matches automatically process safe START, DRAW and END boundaries. MAIN and BATTLE
+remain explicit player-controlled phases. Auto-advance stops for pending choices, targets,
+responses, triggers, chain resolution and hand-limit decisions. Tutorial can suppress this runner
+to retain instructional pauses; Bot and Training use the same hosted Match path.
+
+The Center Phase Divider keeps the five-phase track flat in screen space. A local player's active
+phase is green with `YOUR TURN` / `DEIN ZUG`; an opponent's active phase is a restrained red with
+`OPPONENT TURN` / `GEGNERISCHER ZUG`. Mobile preserves the existing Top View turn cue.
 
 ### Canonical field geometry
 
@@ -75,12 +85,31 @@ badgeId
 titleId
 ```
 
+Avatar frames are transparent overlays on the base avatar. They reach the outer perimeter of the
+avatar composition and replace the ordinary avatar border; they must not render as an inset framed
+square. The same composition is used by Personnel File, Company Store, Lobby identity and Match
+HUD surfaces.
+
+Acquisition is explicit: COS-FRAME-002 is starter-owned and may remain shop-listed; COS-FRAME-003,
+COS-FRAME-004 and COS-FRAME-005 are ranked-reward-only and are neither starter-owned nor
+shop-listed. COS-AVA-003 through COS-AVA-006 are shop inventory and are not starter-owned. Legacy
+accidental starter grants for these IDs are normalized away. Ranked reward infrastructure itself is
+not active yet.
+
 Current supplied assets include:
 
 ```text
 COS-BOARD-001 -> public/cosmetics/boards/classic-office.webp
 COS-AVA-001   -> public/cosmetics/avatars/overworked-sysadmin.webp
 COS-AVA-002   -> public/cosmetics/avatars/hr-oracle.webp
+COS-AVA-003   -> public/cosmetics/avatars/executive-director.webp
+COS-AVA-004   -> public/cosmetics/avatars/overloaded-junior.webp
+COS-AVA-005   -> public/cosmetics/avatars/confident-analyst.webp
+COS-AVA-006   -> public/cosmetics/avatars/customer-care-veteran.webp
+COS-FRAME-002 -> public/cosmetics/avatar-frames/default-blue-silver.webp
+COS-FRAME-003 -> public/cosmetics/avatar-frames/bronze-ranked-s01.webp
+COS-FRAME-004 -> public/cosmetics/avatar-frames/gold-ranked-s01.webp
+COS-FRAME-005 -> public/cosmetics/avatar-frames/diamond-ranked-s01.webp
 ```
 
 Own boards render normally; opponent boards reuse the same asset with the established 180deg

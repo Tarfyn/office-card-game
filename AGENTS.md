@@ -20,7 +20,10 @@ Current meta systems include persistent cosmetic ownership and CosmeticLoadout, 
 Company Store, explicit persistent card ownership, server-persisted player Decks with browser
 migration, Office Credits for sandbox boosters, Shredder Scraps for recycling and crafting, and a
 generic RewardGrant foundation. TRAINING and TUTORIAL are explicit Match modes with
-rewardEligible:false. Bots use the authoritative Match engine and choose legal actions. Ranked
+rewardEligible:false. Normal hosted matches safely auto-advance START, DRAW and END only when no
+authoritative interaction is pending; MAIN and BATTLE remain player-controlled. The Center Phase
+Divider distinguishes local and opponent turns with green/red active-phase treatment plus a
+localized non-color cue. Bots use the authoritative Match engine and choose legal actions. Ranked
 timer enforcement remains disabled.
 
 # Board symmetry contract
