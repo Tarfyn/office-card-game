@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.29
+# Office Card Game - Codex Handover v7.69.30
 
 ## Baseline
 
-- Version: `v7.69.29`
-- Commit: final release commit resolved by immutable annotated tag `v7.69.29`
+- Version: `v7.69.30`
+- Commit: final release commit resolved by immutable annotated tag `v7.69.30`
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.29 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.30 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership and the Bot/Training/
 Tutorial foundation.
@@ -87,8 +87,9 @@ titleId
 
 Avatar frames are transparent overlays on the base avatar. They reach the outer perimeter of the
 avatar composition and replace the ordinary avatar border; they must not render as an inset framed
-square. The same composition is used by Personnel File, Company Store, Lobby identity and Match
-HUD surfaces.
+square. The portrait is clipped to a per-frame inner-opening mask derived from the frame alpha, so
+portrait pixels cannot appear through exterior transparency or below the decorative frame. The same
+composition is used by Personnel File, Company Store, Lobby identity and Match HUD surfaces.
 
 Acquisition is explicit: COS-FRAME-002 is starter-owned and may remain shop-listed; COS-FRAME-003,
 COS-FRAME-004 and COS-FRAME-005 are ranked-reward-only and are neither starter-owned nor
@@ -178,6 +179,23 @@ Shredder Scraps are separate from Office Credits. Current provisional values are
 Recycling and crafting are server-side balance mutations. Recycling is constrained by the
 collection floor so a player keeps at least one legal Alpha deck. These are provisional test values,
 not final balance.
+
+### Executive Edition card variants
+
+Every eligible collectible card can derive a presentation-only Executive Edition variant. Variants use
+`finish: EXECUTIVE` and the stable ID convention `<BASE_CARD_ID>-EXEC` (for example `CS-001-EXEC`);
+they are not duplicate gameplay definitions. The Match engine resolves gameplay from the base card,
+while Decks, ownership and renderers preserve the selected variant for presentation. Standard and
+Executive Edition copies share the base card's copy limit, and Executive Edition ownership is tracked
+separately from standard card quantities.
+
+Executive Edition uses the premium gold material and restrained artwork foil treatment. The finish is
+selectable in the Deckbuilder and propagates through Decks, Hand, Board, Archive, hover, Inspector,
+notifications and Lobby showcase rendering without changing card rules or stats. Executive Edition
+variants cannot be crafted; recycling one uses the underlying card tier's normal Scrap value. The
+provisional Alpha Booster premium roll is centralized at `0.75%` per pack. `EXECUTIVE_EDITION_PACK`
+is a reward-only, one-card guaranteed Executive Edition pack that can be granted through RewardGrant.
+No legacy `-H` or `Gold Holo` premium IDs remain in the current implementation.
 
 ## Reward and grant foundation
 

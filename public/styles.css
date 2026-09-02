@@ -11751,44 +11751,8 @@ body.match-mode .own-hand .hand-fan-card {
 body.match-mode .own-hand .hand-fan-card:hover,
 body.match-mode .own-hand .hand-fan-card:focus-within { z-index:60 !important; }
 
-/* Real avatar artwork sits inside the existing cosmetic-ready frame. Initials remain the fallback. */
-.player-avatar-frame .player-avatar-image {
-  width:100%;
-  height:100%;
-  display:block;
-  object-fit:cover;
-  object-position:center center;
-}
+/* Avatar art and fallback initials are composed by the shared avatar-composition root below. */
 .player-avatar-frame { position:relative; }
-.player-avatar-frame .player-avatar-image { position:relative; z-index:1; }
-.player-avatar-frame .player-avatar-frame-image {
-  position:absolute;
-  inset:-4%;
-  z-index:2;
-  width:108%;
-  height:108%;
-  display:block;
-  object-fit:cover;
-  pointer-events:none;
-}
-.cosmetic-avatar-preview.layered { position:relative; }
-.cosmetic-avatar-preview.layered .cosmetic-avatar-base,
-.cosmetic-avatar-preview.layered .cosmetic-avatar-layer {
-  position:absolute;
-  inset:0;
-  width:100%;
-  height:100%;
-  display:block;
-  object-fit:cover;
-}
-.cosmetic-avatar-preview.layered .cosmetic-avatar-base { z-index:1; }
-.cosmetic-avatar-preview.layered .cosmetic-avatar-layer { z-index:2; pointer-events:none; }
-.cosmetic-avatar-preview.layered {
-  border:0;
-  border-radius:8px;
-  overflow:visible;
-  box-shadow:none;
-}
 
 /* Lobby profile identity uses the same avatar/frame stack as Match HUD identity. */
 .profile-identity { min-width:0; display:flex; align-items:center; gap:9px; }
@@ -11801,6 +11765,84 @@ body.match-mode .own-hand .hand-fan-card:focus-within { z-index:60 !important; }
 @media (max-width:620px) {
   .profile-avatar-chip, .profile-avatar-chip .player-avatar-frame { width:38px; height:38px; flex-basis:38px; }
 }
+
+/* Shared avatar composition: the equipped frame owns the complete visible perimeter. */
+.avatar-composition {
+  position:relative;
+  box-sizing:border-box;
+  display:block;
+  width:100%;
+  height:100%;
+  isolation:isolate;
+}
+.avatar-composition .avatar-composition-image,
+.avatar-composition .avatar-composition-decoration,
+.avatar-composition .avatar-composition-frame {
+  position:absolute;
+  inset:0;
+  display:block;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+}
+.avatar-composition .avatar-composition-image { z-index:1; object-fit:cover; object-position:center center; }
+.avatar-composition .avatar-composition-decoration { z-index:2; object-fit:fill; }
+.avatar-composition .avatar-composition-frame { z-index:3; object-fit:fill; }
+.avatar-composition .avatar-portrait-mask {
+  position:absolute;
+  inset:0;
+  z-index:1;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  -webkit-mask-repeat:no-repeat;
+  mask-repeat:no-repeat;
+  -webkit-mask-position:center;
+  mask-position:center;
+  -webkit-mask-size:100% 100%;
+  mask-size:100% 100%;
+}
+.avatar-composition .avatar-portrait-mask.avatar-frame-mask-blue-silver {
+  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/blue-silver.png');
+  mask-image:url('/cosmetics/avatar-frames/masks/blue-silver.png');
+}
+.avatar-composition .avatar-portrait-mask.avatar-frame-mask-bronze {
+  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/bronze-ranked-s01.png');
+  mask-image:url('/cosmetics/avatar-frames/masks/bronze-ranked-s01.png');
+}
+.avatar-composition .avatar-portrait-mask.avatar-frame-mask-gold {
+  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/gold-ranked-s01.png');
+  mask-image:url('/cosmetics/avatar-frames/masks/gold-ranked-s01.png');
+}
+.avatar-composition .avatar-portrait-mask.avatar-frame-mask-diamond {
+  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/diamond-ranked-s01.png');
+  mask-image:url('/cosmetics/avatar-frames/masks/diamond-ranked-s01.png');
+}
+.avatar-composition .avatar-composition-fallback {
+  position:absolute;
+  inset:0;
+  z-index:1;
+  display:grid;
+  place-items:center;
+  color:#dcecff;
+  font-weight:950;
+  letter-spacing:.05em;
+}
+.avatar-composition.has-avatar-frame {
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  overflow:hidden;
+}
+.avatar-composition.has-avatar-frame .avatar-composition-frame { inset:0; width:100%; height:100%; }
+.cosmetic-avatar-preview.avatar-composition.has-avatar-frame {
+  width:min(88%,220px);
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+}
+.profile-avatar-chip .avatar-composition { width:100%; height:100%; }
 
 /* Deck and Archive are physical tabletop piles, not translucent dashboard tiles. */
 body.match-mode .deck-pile,
@@ -12669,27 +12711,39 @@ body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.activ
   body.match-mode .board-phase-divider .turn-owner-cue { display:none; }
 }
 
-/* Frame cosmetics use their transparent square artwork as an overlay, not the avatar crop. */
-.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered {
-  display:block;
-  position:relative;
-  border:0;
-  border-radius:8px;
-  overflow:visible;
-  box-shadow:none;
+/* The shared avatar-composition root owns frame bounds; no category-specific inset is needed. */
+
+/* Executive Edition is a collectible finish layered on the existing card engine. */
+.card.executive-edition,
+.catalog-card-face.executive-edition,
+.hover-card-face.executive-edition {
+  --gold-light:#f8df8d;
+  --gold-mid:#c89432;
+  --gold-deep:#765016;
+  border-color:#b47d23;
+  background:
+    linear-gradient(145deg,rgba(255,250,211,.86),transparent 24%),
+    linear-gradient(180deg,#f2d77a 0 34px,#bd8c2e 34px 35px,#f7e3a1 35px 100%);
+  box-shadow:inset 0 0 0 1px rgba(255,248,199,.92),inset 0 0 0 3px rgba(111,70,11,.18),0 8px 20px rgba(86,52,8,.2);
 }
-.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-base,
-.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-layer {
-  position:absolute;
-  width:100%;
-  height:100%;
-  display:block;
-  object-fit:cover;
-}
-.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-base { inset:0; }
-.cosmetic-item[data-cosmetic-kind="AVATAR_FRAME"] .cosmetic-avatar-preview.layered .cosmetic-avatar-layer {
-  inset:-4%;
-  width:108%;
-  height:108%;
-}
-.player-avatar-frame { overflow:visible; }
+.card.executive-edition .card-type-strip,
+.catalog-card-face.executive-edition .catalog-type-strip { color:#65430f; }
+.card.executive-edition .card-name,
+.catalog-card-face.executive-edition .catalog-name-row > strong,
+.hover-card-face.executive-edition .card-name { color:#2c2110; }
+.card.executive-edition .card-rules-mini,
+.catalog-card-face.executive-edition .catalog-rules { background:rgba(255,249,222,.84); color:#342710; border-color:rgba(102,67,17,.28); }
+.card.executive-edition .card-art-stage,
+.catalog-card-face.executive-edition .catalog-art-stage { border-color:rgba(103,66,12,.48); }
+.card-finish-badge { justify-self:end; padding:2px 4px; border:1px solid rgba(87,54,9,.34); border-radius:3px; background:linear-gradient(180deg,#fff0ab,#c18a28); color:#4d3308; font-size:5px; line-height:1; font-style:normal; font-weight:950; letter-spacing:.08em; white-space:nowrap; }
+.card-art-stage .executive-art-foil,
+.catalog-art-stage .executive-art-foil { position:absolute; inset:0; z-index:6; pointer-events:none; opacity:.23; background:linear-gradient(112deg,transparent 22%,rgba(255,91,202,.28) 36%,rgba(255,250,173,.48) 49%,rgba(104,234,255,.25) 61%,transparent 78%),repeating-linear-gradient(102deg,rgba(255,255,255,.15) 0 1px,transparent 1px 13px); background-size:220% 220%,100% 100%; background-position:var(--foil-x,32%) var(--foil-y,48%),center; mix-blend-mode:screen; transition:opacity .16s ease,background-position .16s ease; }
+.card.executive-edition:hover .executive-art-foil,
+.card.executive-edition:focus-visible .executive-art-foil,
+.catalog-card-face.executive-edition:hover .executive-art-foil,
+.hover-card-face.executive-edition:hover .executive-art-foil { opacity:.52; }
+.card-variant-picker { display:flex; gap:3px; margin:0 1px 2px; }
+.card-variant-picker button { flex:1 1 0; min-width:0; padding:3px 4px; border:1px solid #c8bca7; border-radius:3px; background:#f7f2e8; color:#6b6256; font-size:6px; font-weight:900; letter-spacing:.05em; }
+.card-variant-picker button.selected { border-color:#8d6b2d; background:#e7d2a0; color:#34280f; }
+.card-variant-picker button.gold.selected { background:linear-gradient(180deg,#ffeaa0,#c79332); color:#4b3209; }
+@media (prefers-reduced-motion: reduce) { .card-art-stage .executive-art-foil,.catalog-art-stage .executive-art-foil { transition:none; } }

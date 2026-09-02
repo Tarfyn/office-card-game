@@ -114,7 +114,10 @@ function projectCard(state: GameState, viewerId: PlayerId, instanceId: string): 
     faceUp: card.faceUp,
     slot: card.slot
   };
-  if (visible) view.definitionId = card.definitionId;
+  if (visible) {
+    view.definitionId = card.definitionId;
+    view.variantId = card.variantId ?? null;
+  }
   if (card.zone === "EMPLOYEE_FIELD" && visible) {
     view.onboarding = card.onboarding;
     view.attacksUsed = card.attacksUsed;

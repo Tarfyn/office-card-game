@@ -1,4 +1,5 @@
 import { validateDeck } from "./engine.js";
+import { isExecutiveEditionEligible, normalizeCardVariantId } from "./card-variants.js";
 import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
 
 export type PlayerDeckSource = "player" | "browser_migration" | "starter" | "import";
@@ -19,7 +20,7 @@ export interface PlayerDeck {
 export interface PlayerDeckValidation {
   state: PlayerDeckValidationState;
   errors: string[];
-  missingCards: Array<{ definitionId: string; missing: number }>;
+  missingCards: Array<{ definitionId: string; missing: number; variantId?: string | null }>;
 }
 
 export type PlayerDeckView = PlayerDeck & { validation: PlayerDeckValidation };
@@ -36,15 +37,19 @@ function cleanId(value: unknown, fallback: string): string {
 
 function normalizeCards(value: unknown): DeckEntry[] {
   if (!Array.isArray(value)) return [];
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { definitionId: string; variantId: string | null; copies: number }>();
   for (const raw of value) {
     if (!raw || typeof raw !== "object") continue;
     const definitionId = String((raw as { definitionId?: unknown }).definitionId ?? "").trim();
+    const variantId = normalizeCardVariantId(definitionId, (raw as { variantId?: unknown }).variantId);
     const copies = Number((raw as { copies?: unknown }).copies ?? 0);
     if (!definitionId || !Number.isInteger(copies) || copies <= 0) continue;
-    counts.set(definitionId, (counts.get(definitionId) ?? 0) + copies);
+    const key = `${definitionId}\u0000${variantId ?? ""}`;
+    const current = counts.get(key) ?? { definitionId, variantId, copies: 0 };
+    current.copies += copies;
+    counts.set(key, current);
   }
-  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([definitionId, copies]) => ({ definitionId, copies }));
+  return [...counts.values()].sort((a, b) => a.definitionId.localeCompare(b.definitionId) || (a.variantId ?? "").localeCompare(b.variantId ?? "")).map(({ definitionId, variantId, copies }) => ({ definitionId, copies, ...(variantId ? { variantId } : {}) }));
 }
 
 export function deckFingerprint(name: string, cards: DeckEntry[]): string {
@@ -78,15 +83,17 @@ export function validatePlayerDeck(
   deck: Pick<PlayerDeck, "cards">,
   definitions: Record<string, CardDefinition>,
   format: DeckFormat,
-  ownedCards?: Record<string, number>
+  ownedCards?: Record<string, number>,
+  ownedCardVariants?: Record<string, number>
 ): PlayerDeckValidation {
   const formatResult = validateDeck(deck.cards, definitions, format);
   const errors = [...formatResult.errors];
-  const missingCards: Array<{ definitionId: string; missing: number }> = [];
+  const missingCards: Array<{ definitionId: string; missing: number; variantId?: string | null }> = [];
   if (ownedCards) {
     for (const entry of deck.cards) {
-      const missing = Math.max(0, entry.copies - Number(ownedCards[entry.definitionId] ?? 0));
-      if (missing) missingCards.push({ definitionId: entry.definitionId, missing });
+      const owned = entry.variantId ? Number(ownedCardVariants?.[entry.variantId] ?? 0) : Number(ownedCards[entry.definitionId] ?? 0);
+      const missing = Math.max(0, entry.copies - owned);
+      if (missing) missingCards.push({ definitionId: entry.definitionId, missing, ...(entry.variantId ? { variantId: entry.variantId } : {}) });
     }
   }
   return {
@@ -101,6 +108,7 @@ export function assertDeckInput(deck: Pick<PlayerDeck, "cards">, definitions: Re
   for (const entry of deck.cards) {
     if (!entry || typeof entry !== "object") throw new Error("DECK_MALFORMED");
     if (!definitions[entry.definitionId]) throw new Error("DECK_UNKNOWN_CARD");
+    if (entry.variantId && (!isExecutiveEditionEligible(definitions[entry.definitionId]) || normalizeCardVariantId(entry.definitionId, entry.variantId) !== entry.variantId)) throw new Error("DECK_UNKNOWN_VARIANT");
     if (!Number.isInteger(entry.copies) || entry.copies <= 0) throw new Error("DECK_MALFORMED");
     counts.set(entry.definitionId, (counts.get(entry.definitionId) ?? 0) + entry.copies);
   }

@@ -77,6 +77,7 @@
         "name": "Office Alpha Pack",
         "cardCount": 5,
         "price": 100,
+        "executiveEditionChancePerPack": 0.0075,
         "rarityDistribution": {
           "guaranteed": [
             "T0",
@@ -91,6 +92,15 @@
           }
         },
         "status": "TEST_SANDBOX"
+      },
+      {
+        "id": "EXECUTIVE_EDITION_PACK",
+        "name": "Executive Edition Pack",
+        "cardCount": 1,
+        "price": 0,
+        "guaranteedPremium": "EXECUTIVE",
+        "pool": "ALL_ELIGIBLE_COLLECTIBLE_CARDS",
+        "status": "REWARD_ONLY"
       }
     ],
     "sandboxEnabled": true,

@@ -924,7 +924,7 @@ export class RoomService {
     if (!selection || typeof selection.id !== "string" || !selection.id || typeof selection.name !== "string" || !Array.isArray(selection.cards)) {
       throw new RoomError("INVALID_DECK", "Custom deck payload is invalid.");
     }
-    const cards = selection.cards.map((entry) => ({ definitionId: String(entry.definitionId), copies: Number(entry.copies) }));
+    const cards = selection.cards.map((entry) => ({ definitionId: String(entry.definitionId), copies: Number(entry.copies), ...(entry.variantId ? { variantId:String(entry.variantId) } : {}) }));
     const validation = validateDeck(cards, this.definitions, ALPHA_FORMAT);
     if (!validation.valid) throw new RoomError("INVALID_DECK", validation.errors.join(" "));
     return { id: selection.id, name: selection.name.slice(0, 80) || "Custom Deck", department: this.deckDepartment(cards), cards };

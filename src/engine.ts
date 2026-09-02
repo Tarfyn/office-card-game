@@ -140,6 +140,7 @@ function expandDeck(
       cards[instanceId] = {
         instanceId,
         definitionId: entry.definitionId,
+        variantId: entry.variantId ?? null,
         ownerId: playerId,
         controllerId: playerId,
         zone: "DECK",

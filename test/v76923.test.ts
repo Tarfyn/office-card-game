@@ -15,8 +15,8 @@ const de = root("public/locales/de.js");
 
 test("cosmetic ownership starts with grants and hides unowned catalog items", () => {
   const profile = createAlphaMetaProfile();
-  assert.deepEqual(profile.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-AVA-001", "COS-BACK-001", "COS-FRAME-002"]);
-  assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-AVA-002"), false);
+  assert.deepEqual(profile.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-AVA-001", "COS-AVA-002", "COS-BACK-001", "COS-FRAME-002"]);
+  assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-AVA-002"), true);
   assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-AVA-003"), false);
   assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-FRAME-003"), false);
   assert.equal(COSMETIC_CATALOG["COS-AVA-002"].kind, "AVATAR");
@@ -24,22 +24,22 @@ test("cosmetic ownership starts with grants and hides unowned catalog items", ()
 
 test("shop availability is explicit and purchase is authoritative and atomic", () => {
   const profile = createAlphaMetaProfile();
-  profile.balances.OFFICE_CREDITS = 200;
+  profile.balances.OFFICE_CREDITS = 300;
   assert.deepEqual(COSMETIC_SHOP_CATALOG.map((item) => item.cosmeticId), ["COS-AVA-002", "COS-AVA-003", "COS-AVA-004", "COS-AVA-005", "COS-AVA-006", "COS-FRAME-002"]);
-  const purchased = applyCosmeticPurchase(profile, "COS-AVA-002", 123);
-  assert.equal(purchased.balances.OFFICE_CREDITS, 20);
+  const purchased = applyCosmeticPurchase(profile, "COS-AVA-003", 123);
+  assert.equal(purchased.balances.OFFICE_CREDITS, 60);
   assert.equal(purchased.cosmetics.owned.at(-1)?.source, "shop");
-  assert.throws(() => applyCosmeticPurchase(purchased, "COS-AVA-002"), /COSMETIC_ALREADY_OWNED/);
+  assert.throws(() => applyCosmeticPurchase(purchased, "COS-AVA-003"), /COSMETIC_ALREADY_OWNED/);
   const poor = createAlphaMetaProfile();
-  assert.throws(() => applyCosmeticPurchase(poor, "COS-AVA-002"), /COSMETIC_INSUFFICIENT_CREDITS/);
+  assert.throws(() => applyCosmeticPurchase(poor, "COS-AVA-003"), /COSMETIC_INSUFFICIENT_CREDITS/);
 });
 
 test("equip validates ownership and slot compatibility, including optional unequip", () => {
   const profile = createAlphaMetaProfile();
-  assert.throws(() => applyCosmeticEquip(profile, "avatarId", "COS-AVA-002"), /COSMETIC_NOT_OWNED/);
+  assert.throws(() => applyCosmeticEquip(profile, "avatarId", "COS-AVA-003"), /COSMETIC_NOT_OWNED/);
   assert.throws(() => applyCosmeticEquip(profile, "boardSkinId", "COS-AVA-001"), /COSMETIC_WRONG_SLOT/);
-  const equipped = applyCosmeticEquip(profile, "avatarId", "COS-AVA-001");
-  assert.equal(equipped.cosmetics.loadout.avatarId, "COS-AVA-001");
+  const equipped = applyCosmeticEquip(profile, "avatarId", "COS-AVA-002");
+  assert.equal(equipped.cosmetics.loadout.avatarId, "COS-AVA-002");
   const optional = applyCosmeticEquip(equipped, "titleId", null);
   assert.equal(optional.cosmetics.loadout.titleId, null);
   assert.equal(normalizePlayerCosmetics(undefined).loadout.cardBackId, "COS-BACK-001");

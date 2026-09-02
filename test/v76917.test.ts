@@ -14,9 +14,9 @@ const cosmetics=root("src/cosmetics.ts");
 const polish=css.slice(css.lastIndexOf("/* v7.69.17 — cosmetic loadout foundation + root visual fixes */"));
 
 test("v7.69.17 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.29");
+  assert.equal(pkg.version,"7.69.30");
   assert.match(pkg.scripts.test,/dist\/test\/v76917\.test\.js/);
-  assert.match(root("server/server.mjs"),/version: "7\.69\.29"/);
+  assert.match(root("server/server.mjs"),/version: "7\.69\.30"/);
 });
 
 test("cosmetic loadout uses stable IDs and independent slots",()=>{

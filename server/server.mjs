@@ -85,9 +85,11 @@ import { alphaDefinitions } from "../dist/src/cards.js";
 import { alphaDeckPresets } from "../dist/src/decks.js";
 import { ALPHA_FORMAT } from "../dist/src/formats.js";
 import { validateDeck } from "../dist/src/engine.js";
-import { applyCraft, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection } from "../dist/src/economy.js";
+import { applyCraft, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openExecutiveEditionPack, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection } from "../dist/src/economy.js";
+import { executiveEditionVariantId, isExecutiveEditionEligible } from "../dist/src/card-variants.js";
 import { COSMETIC_CATALOG, COSMETIC_SHOP_CATALOG } from "../dist/src/cosmetics.js";
 import { PlayerProfileService } from "../dist/src/profile.js";
+import { assertDeckInput } from "../dist/src/player-decks.js";
 import { MatchmakingQueue } from "../dist/src/matchmaking.js";
 import { normalizeRankedConfig, ratingWindowForWait } from "../dist/src/ranked.js";
 import { aggregatePlaytestAnalytics, filterPlaytestRecords, normalizePlaytestFilter, playtestAnalyticsDimensions, playtestRecordsCsv, playtestCardActivityCsv } from "../dist/src/playtest-analytics.js";
@@ -163,7 +165,8 @@ const profiles = new PlayerProfileService({
   startingOfficeCredits: Number(economyConfig.sandbox?.startingOfficeCredits ?? 0),
   deckDefinitions: alphaDefinitions,
   deckFormat: ALPHA_FORMAT,
-  builtInDeckIds: Object.keys(alphaDeckPresets)
+  builtInDeckIds: Object.keys(alphaDeckPresets),
+  alphaPlaytest: true
 });
 const matchmaking = new MatchmakingQueue({
   ticketIdFactory: () => `mm-${randomBytes(6).toString("hex")}`,
@@ -355,7 +358,7 @@ function adminOpsSnapshot() {
   };
   return {
     generatedAt: now,
-    version: "7.69.29",
+    version: "7.69.30",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
     counts,
@@ -472,6 +475,8 @@ function publicCatalog() {
     rarityTier: card.rarityTier ?? sandboxRarityTier(card),
     scrapValue: card.scrapValue ?? economyConfig.rarityTiers.find((tier) => tier.id === sandboxRarityTier(card))?.scrapValue ?? null,
     craftCost: card.craftCost ?? economyConfig.rarityTiers.find((tier) => tier.id === sandboxRarityTier(card))?.craftCost ?? null
+    ,executiveEditionEligible: isExecutiveEditionEligible(card)
+    ,executiveEditionVariantId: isExecutiveEditionEligible(card) ? executiveEditionVariantId(card.id) : null
   }));
 }
 
@@ -480,7 +485,7 @@ function deckSelectionFromBody(body) {
     return {
       id: String(body.deck.id ?? `custom-${Date.now()}`),
       name: String(body.deck.name ?? "Custom Deck"),
-      cards: body.deck.cards.map((entry) => ({ definitionId: String(entry.definitionId ?? ""), copies: Number(entry.copies ?? 0) }))
+      cards: body.deck.cards.map((entry) => ({ definitionId: String(entry.definitionId ?? ""), copies: Number(entry.copies ?? 0), ...(entry.variantId ? { variantId:String(entry.variantId) } : {}) }))
     };
   }
   return String(body?.deckId ?? "");
@@ -499,6 +504,7 @@ function validateQueuedDeck(selection) {
     if (!alphaDeckPresets[selection]) throw new RoomError("INVALID_DECK", `Unknown deck preset: ${selection}`);
     return selection;
   }
+  assertDeckInput(selection, alphaDefinitions, ALPHA_FORMAT);
   const result = validateDeck(selection.cards, alphaDefinitions, ALPHA_FORMAT);
   if (!result.valid) throw new RoomError("INVALID_DECK", result.errors.join(" "));
   return selection;
@@ -508,8 +514,16 @@ function validateOwnedDeck(profile, selection) {
   if (!profile || profile.meta?.collectionMode !== "OWNED_COPIES") return;
   const deck = typeof selection === "string" ? alphaDeckPresets[selection] : selection;
   if (!deck) throw new RoomError("INVALID_DECK", "Unknown deck preset.");
+  const baseTotals = new Map();
+  for (const entry of deck.cards ?? []) baseTotals.set(entry.definitionId, (baseTotals.get(entry.definitionId) ?? 0) + Number(entry.copies ?? 0));
+  for (const [definitionId, copies] of baseTotals) {
+    const limit = ALPHA_FORMAT.cardLimits?.[definitionId] ?? ALPHA_FORMAT.defaultCopyLimit;
+    if (copies > limit) throw new RoomError("DECK_COPY_LIMIT", `Too many copies for ${definitionId}.`);
+  }
   for (const entry of deck.cards ?? []) {
-    const owned = Number(profile.meta.ownedCards?.[entry.definitionId] ?? 0);
+    const owned = entry.variantId
+      ? Number(profile.meta.ownedCardVariants?.[entry.variantId] ?? 0)
+      : Number(profile.meta.ownedCards?.[entry.definitionId] ?? 0);
     if (owned < Number(entry.copies ?? 0)) throw new RoomError("DECK_NOT_OWNED", `Not enough owned copies for ${entry.definitionId}.`);
   }
 }
@@ -555,8 +569,8 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.29", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.29", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.30", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.30", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
       return json(res, 200, { ops:adminOpsSnapshot() });
@@ -810,8 +824,20 @@ const server = createServer(async (req, res) => {
         price: Number(pack.price),
         cardCount: Number(pack.cardCount),
         guaranteedTiers: pack.rarityDistribution?.guaranteed ?? [],
-        flexSlotWeights: pack.rarityDistribution?.flexSlotWeights ?? {}
+        flexSlotWeights: pack.rarityDistribution?.flexSlotWeights ?? {},
+        executiveEditionChancePerPack: Number(pack.executiveEditionChancePerPack ?? 0),
+        executiveEditionPool: Object.values(alphaDefinitions)
       }, randomInt(1, 0x7fffffff));
+      const committed = commitMetaContext(context, result.profile);
+      return json(res, 200, { ...result, ...committed, packId: pack.id });
+    }
+
+    if (req.method === "POST" && path === "/api/economy/pack/open") {
+      const body = await readJson(req);
+      const pack = economyConfig.boosters?.packs?.find((item) => item.id === body?.packId);
+      if (!pack || pack.id !== "EXECUTIVE_EDITION_PACK" || pack.status !== "REWARD_ONLY") return json(res, 400, { error:{ code:"PACK_NOT_AVAILABLE", message:"This reward pack is not available." } });
+      const context = metaContext(body);
+      const result = openExecutiveEditionPack(context.meta, Object.values(alphaDefinitions), pack.id, randomInt(1, 0x7fffffff));
       const committed = commitMetaContext(context, result.profile);
       return json(res, 200, { ...result, ...committed, packId: pack.id });
     }
@@ -825,12 +851,18 @@ const server = createServer(async (req, res) => {
       if (tierConfig?.scrapValue == null) return json(res, 400, { error:{ code:"SCRAP_NOT_AVAILABLE", message:"No sandbox scrap value for this card." } });
       const context = metaContext(body);
       const copies = Number(body?.copies ?? 1);
-      const eligibility = scrapEligibility(context.meta, card.id, copies, alphaScrapRules);
+      const variantId = body?.variantId ? String(body.variantId) : null;
+      if (variantId && variantId !== executiveEditionVariantId(card.id)) return json(res, 400, { error:{ code:"CARD_VARIANT_INVALID", message:"This card finish is not valid." } });
+      const eligibility = variantId
+        ? scrapEligibility(context.meta, card.id, copies, alphaScrapRules, variantId)
+        : scrapEligibility(context.meta, card.id, copies, alphaScrapRules);
       if (!eligibility.allowed) return json(res, 400, { error:{ code:"COLLECTION_FLOOR", message:eligibility.reason }, eligibility });
-      const remainingOwned = Number(context.meta.ownedCards?.[card.id] ?? 0) - copies;
-      const affectedDecks = context.serverProfile?.decks?.filter((deck) => deck.cards.some((entry) => entry.definitionId === card.id && entry.copies > remainingOwned)).map((deck) => ({ id:deck.id, name:deck.name })) ?? [];
+      const remainingOwned = variantId
+        ? Number(context.meta.ownedCardVariants?.[variantId] ?? 0) - copies
+        : Number(context.meta.ownedCards?.[card.id] ?? 0) - copies;
+      const affectedDecks = context.serverProfile?.decks?.filter((deck) => deck.cards.some((entry) => entry.definitionId === card.id && (entry.variantId ? entry.variantId === variantId && entry.copies > remainingOwned : !variantId && entry.copies > remainingOwned))).map((deck) => ({ id:deck.id, name:deck.name })) ?? [];
       if (affectedDecks.length && body?.confirmDeckImpact !== true) return json(res, 409, { error:{ code:"DECKS_AFFECTED_BY_SCRAP", message:"Recycling this card will make saved decks invalid." }, affectedDecks, eligibility });
-      const profile = applyScrap(context.meta, card.id, copies, Number(tierConfig.scrapValue), alphaScrapRules);
+      const profile = applyScrap(context.meta, card.id, copies, Number(tierConfig.scrapValue), alphaScrapRules, variantId);
       const committed = commitMetaContext(context, profile);
       return json(res, 200, { ...committed, definitionId:card.id, tier, scrapValueEach:tierConfig.scrapValue, eligibility, affectedDecks });
     }
@@ -843,6 +875,7 @@ const server = createServer(async (req, res) => {
       const tierConfig = economyConfig.rarityTiers.find((item) => item.id === tier);
       if (tierConfig?.craftCost == null) return json(res, 400, { error:{ code:"CRAFT_NOT_AVAILABLE", message:"No sandbox craft cost for this card." } });
       const context = metaContext(body);
+      if (body?.variantId) return json(res, 400, { error:{ code:"PREMIUM_VARIANT_NOT_CRAFTABLE", message:"Executive Edition variants cannot be crafted." } });
       const profile = applyCraft(context.meta, card.id, Number(body?.copies ?? 1), Number(tierConfig.craftCost));
       const committed = commitMetaContext(context, profile);
       return json(res, 200, { ...committed, definitionId:card.id, tier, craftCostEach:tierConfig.craftCost });
@@ -1064,7 +1097,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.29 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.30 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

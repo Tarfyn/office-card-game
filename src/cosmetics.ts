@@ -3,7 +3,7 @@ import type { PlayerMetaProfile } from "./economy.js";
 
 export type CosmeticSlotId = string | null;
 export type CosmeticKind = "BOARD" | "AVATAR" | "AVATAR_FRAME" | "AVATAR_DECORATION" | "CARD_BACK" | "BADGE" | "TITLE";
-export type CosmeticSource = "starter" | "shop" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin";
+export type CosmeticSource = "starter" | "shop" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "alpha_playtest";
 export type CosmeticSlotKey = keyof CosmeticLoadout;
 
 export interface CosmeticDefinition {
@@ -109,6 +109,7 @@ export function defaultCosmeticOwnership(now = Date.now()): CosmeticOwnershipGra
   return [
     COSMETIC_IDS.classicOfficeBoard,
     COSMETIC_IDS.overworkedSysadminAvatar,
+    COSMETIC_IDS.hrOracleAvatar,
     COSMETIC_IDS.defaultCorporateCardBack,
     COSMETIC_IDS.defaultBlueSilverFrame
   ].map((cosmeticId) => ({ cosmeticId, acquiredAt:now, source:"starter", sourceRef:null }));

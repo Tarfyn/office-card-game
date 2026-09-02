@@ -159,6 +159,7 @@ const state = {
   preferredDeckValue: null,
   lobbyShowcaseDeckValue: null,
   lobbyShowcaseCardIds: [],
+  lobbyShowcaseVariantIds: [],
   deckBuilderMessage: null,
   collectionSearch: '',
   collectionDepartment: 'ALL',
@@ -171,6 +172,7 @@ const state = {
   collectionCost: 'ALL',
   collectionPackFilter: 'ALL',
   collectionPreviewId: null,
+  collectionVariantSelection: {},
   deckSwapSourceId: null,
   deckEditBaselines: {},
   deckEditHistory: {},
@@ -475,14 +477,40 @@ async function enterCosmeticSurface(mode) {
   try { await loadCosmeticViews(); } catch (error) { state.cosmeticMessage = cosmeticErrorMessage(error); }
   render();
 }
+function avatarFrameMaskClass(frameAsset) {
+  const file = String(frameAsset ?? '').split('/').pop();
+  return ({
+    'default-blue-silver.webp':'avatar-frame-mask-blue-silver',
+    'bronze-ranked-s01.webp':'avatar-frame-mask-bronze',
+    'gold-ranked-s01.webp':'avatar-frame-mask-gold',
+    'diamond-ranked-s01.webp':'avatar-frame-mask-diamond'
+  })[file] ?? '';
+}
+function renderAvatarComposition({ avatarAsset = null, frameAsset = null, decorationAsset = null, avatarAlt = '', frameAlt = '', fallbackText = '', className = '' } = {}) {
+  const classes = ['avatar-composition', 'player-avatar-frame', frameAsset ? 'has-avatar-frame' : '', decorationAsset ? 'has-avatar-decoration' : '', className].filter(Boolean).join(' ');
+  const face = avatarAsset
+    ? `<img class="avatar-composition-image player-avatar-image" src="${esc(avatarAsset)}" alt="${esc(avatarAlt)}" />`
+    : `<span class="avatar-composition-fallback">${esc(fallbackText)}</span>`;
+  const portrait = frameAsset ? `<div class="avatar-portrait-mask ${avatarFrameMaskClass(frameAsset)}">${face}</div>` : face;
+  const frame = frameAsset ? `<img class="avatar-composition-frame player-avatar-frame-image" src="${esc(frameAsset)}" alt="${esc(frameAlt)}" />` : '';
+  const decoration = decorationAsset ? `<img class="avatar-composition-decoration" src="${esc(decorationAsset)}" alt="" />` : '';
+  return `<div class="${classes}">${portrait}${decoration}${frame}</div>`;
+}
 function renderCosmeticPreview(item, kind) {
   const def = item.definition;
   if (kind === 'BOARD') return def.assetPath ? `<div class="cosmetic-board-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : '<div class="cosmetic-board-preview fallback">OFFICE</div>';
-  if (kind === 'AVATAR') return def.assetPath ? `<div class="cosmetic-avatar-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : `<div class="cosmetic-avatar-preview layered"><span>${esc(state.serverProfile?.displayName?.slice(0,1) ?? 'O')}</span></div>`;
+  if (kind === 'AVATAR') return renderAvatarComposition({ avatarAsset:def.assetPath ?? null, avatarAlt:cosmeticText(def,'name'), fallbackText:state.serverProfile?.displayName?.slice(0,1) ?? 'O', className:'cosmetic-avatar-preview' });
   if (kind === 'AVATAR_FRAME' || kind === 'AVATAR_DECORATION') {
     const avatarId = state.cosmeticPersonnel?.loadout?.avatarId ?? 'COS-AVA-001';
     const avatarAsset = COSMETIC_UI_CATALOG.avatars[String(avatarId)]?.asset;
-    return `<div class="cosmetic-avatar-preview layered"><img class="cosmetic-avatar-base" src="${esc(avatarAsset ?? '/cosmetics/avatars/overworked-sysadmin.webp')}" alt="" />${def.assetPath ? `<img class="cosmetic-avatar-layer" src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" />` : ''}</div>`;
+    const equippedFrame = cosmeticFrameAsset(state.cosmeticPersonnel?.loadout?.avatarFrameId);
+    return renderAvatarComposition({
+      avatarAsset:avatarAsset ?? '/cosmetics/avatars/overworked-sysadmin.webp',
+      frameAsset:kind === 'AVATAR_FRAME' ? def.assetPath : equippedFrame,
+      decorationAsset:kind === 'AVATAR_DECORATION' ? def.assetPath : null,
+      frameAlt:kind === 'AVATAR_FRAME' ? cosmeticText(def,'name') : '',
+      className:'cosmetic-avatar-preview layered'
+    });
   }
   if (kind === 'CARD_BACK') return `<div class="cosmetic-cardback-preview"><span>OFFICE</span><b>ALPHA</b></div>`;
   if (kind === 'BADGE') return '<div class="cosmetic-badge-preview">★</div>';
@@ -549,6 +577,14 @@ function ownedCopies(definitionId) {
   return Number(state.metaProfile?.ownedCards?.[definitionId] ?? 0);
 }
 
+function executiveEditionVariantId(definitionId) { return `${definitionId}-EXEC`; }
+function isExecutiveEditionVariant(variantId) { return typeof variantId === 'string' && variantId.endsWith('-EXEC'); }
+function ownedExecutiveEditionCopies(definitionId, variantId = executiveEditionVariantId(definitionId)) {
+  return Number(state.metaProfile?.ownedCardVariants?.[variantId] ?? 0);
+}
+function ownedTotalCopies(definitionId) { return ownedCopies(definitionId) + ownedExecutiveEditionCopies(definitionId); }
+function finishClass(variantId) { return isExecutiveEditionVariant(variantId) ? 'executive-edition' : ''; }
+
 function economyTierConfig(def) {
   const tier = sandboxRarityTier(def);
   return state.economyConfig?.rarityTiers?.find((item) => item.id === tier) ?? null;
@@ -598,7 +634,7 @@ function deckEditSnapshot(deck) {
   if (!deck) return null;
   return {
     name:String(deck.name ?? 'Custom Deck'),
-    cards:(deck.cards ?? []).map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0) })),
+    cards:(deck.cards ?? []).map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0), ...(entry.variantId ? { variantId:entry.variantId } : {}) })),
     sourcePresetId:deck.sourcePresetId,
     description:deck.description
   };
@@ -607,15 +643,15 @@ function deckEditSnapshot(deck) {
 function deckEditSignature(snapshot) {
   if (!snapshot) return '';
   const cards = [...(snapshot.cards ?? [])]
-    .map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0) }))
-    .sort((a,b) => a.definitionId.localeCompare(b.definitionId));
+    .map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0), ...(entry.variantId ? { variantId:entry.variantId } : {}) }))
+    .sort((a,b) => a.definitionId.localeCompare(b.definitionId) || String(a.variantId ?? '').localeCompare(String(b.variantId ?? '')));
   return JSON.stringify({ name:String(snapshot.name ?? 'Custom Deck'), cards });
 }
 
 function applyDeckEditSnapshot(deck, snapshot) {
   if (!deck || !snapshot) return;
   deck.name = String(snapshot.name ?? 'Custom Deck');
-  deck.cards = (snapshot.cards ?? []).map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0) }));
+  deck.cards = (snapshot.cards ?? []).map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0), ...(entry.variantId ? { variantId:entry.variantId } : {}) }));
   if (snapshot.sourcePresetId !== undefined) deck.sourcePresetId = snapshot.sourcePresetId;
   if (snapshot.description !== undefined) deck.description = snapshot.description;
 }
@@ -715,7 +751,7 @@ function ownedDeckMode() {
 
 function deckCopyCeiling(definitionId) {
   const formatLimit = cardCopyLimit(definitionId);
-  return ownedDeckMode() ? Math.min(formatLimit, ownedCopies(definitionId)) : formatLimit;
+  return ownedDeckMode() ? Math.min(formatLimit, ownedTotalCopies(definitionId)) : formatLimit;
 }
 
 async function setCollectionMode(mode) {
@@ -733,7 +769,7 @@ async function setCollectionMode(mode) {
 function collectionPlayableCapacity(adjustDefinitionId = null, copyDelta = 0) {
   let total = 0;
   for (const def of state.catalog.values()) {
-    let owned = ownedCopies(def.id);
+    let owned = ownedTotalCopies(def.id);
     if (def.id === adjustDefinitionId) owned += Number(copyDelta || 0);
     const limit = Math.max(0, cardCopyLimit(def.id));
     total += Math.min(Math.max(0, owned), limit);
@@ -1642,7 +1678,7 @@ function catalogCardDetailBits(def) {
   return [def.rank, def.promotion?.required ? `PROMOTION ${def.promotion.required}` : ''].filter(Boolean);
 }
 
-function renderCatalogCardFace(def, { tier = null, compact = false, isNew = false, artReady = false, owned = null } = {}) {
+function renderCatalogCardFace(def, { tier = null, compact = false, isNew = false, artReady = false, owned = null, variantId = null } = {}) {
   if (!def) return '<div class="catalog-card-face missing">Unknown card</div>';
   const costParts = cardCostParts(def);
   const detailBits = catalogCardDetailBits(def);
@@ -1650,10 +1686,11 @@ function renderCatalogCardFace(def, { tier = null, compact = false, isNew = fals
   const tags = (def.tags ?? []).slice(0, compact ? 1 : 2);
   const longName = def.name.length >= 22;
   const power = def.cardType === 'EMPLOYEE' && def.power != null ? Number(def.power) : null;
-  return `<div class="catalog-card-face type-${esc(def.cardType.toLowerCase())} tier-${esc(rarity.toLowerCase())} ${compact ? 'compact' : ''} ${power != null ? 'has-power' : ''}">
-    <div class="catalog-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(departmentCode(def.department))}</b>${raritySignal(def, rarity, true)}</div>
+  const premium = isExecutiveEditionVariant(variantId);
+  return `<div class="catalog-card-face type-${esc(def.cardType.toLowerCase())} tier-${esc(rarity.toLowerCase())} ${compact ? 'compact' : ''} ${power != null ? 'has-power' : ''} ${premium ? 'executive-edition' : ''}">
+    <div class="catalog-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(departmentCode(def.department))}</b>${raritySignal(def, rarity, true)}${premium ? `<i class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</i>` : ''}</div>
     <div class="catalog-name-row"><strong class="${longName ? 'long-name' : ''}">${esc(def.name)}</strong>${costParts ? `<span class="card-cost-badge catalog-cost"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></span>` : ''}</div>
-    <div class="catalog-art-stage">${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}</div>
+    <div class="catalog-art-stage">${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}</div>
     <div class="catalog-detail-row">${detailBits.length ? detailBits.map((bit)=>`<span>${esc(bit)}</span>`).join('') : `<span>${esc(sandboxRarityLabel(def))}</span>`}${owned != null ? `<b>OWNED ${esc(owned)}</b>` : ''}</div>
     ${compact ? '' : `<div class="catalog-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>`}
     ${compact ? '' : `<div class="catalog-tags">${tags.length ? tags.map((tag)=>`<span>${esc(tag)}</span>`).join('') : '<span>OFFICE</span>'}</div>`}
@@ -2922,10 +2959,11 @@ function hoverCardHtml(cardRef) {
   const costParts = cardCostParts(def);
   const power = cardPowerState(card, def);
   const details = [def.rank].filter(Boolean);
-  return `<div class="hover-card-face type-${esc(def.cardType.toLowerCase())} ${power ? 'has-power' : ''} ${power?.delta ? 'power-changed' : ''}">
+  const premium = isExecutiveEditionVariant(card.variantId);
+  return `<div class="hover-card-face type-${esc(def.cardType.toLowerCase())} ${power ? 'has-power' : ''} ${power?.delta ? 'power-changed' : ''} ${premium ? 'executive-edition' : ''}">
     <div class="hover-type"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(def.department.replaceAll('_',' '))}</b></div>
     <div class="card-name-row"><div class="card-name hover-name">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
-    ${renderArtwork(def)}
+    ${premium ? `<span class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</span>` : ''}${renderArtwork(def)}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}
     ${details.length ? `<div class="hover-meta">${esc(details.join(' · '))}</div>` : ''}
     <div class="hover-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>
     ${def.tags?.length ? `<div class="hover-tags">${def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('')}</div>` : ''}
@@ -3043,6 +3081,7 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const def = cardDef(card.definitionId);
   const hidden = !def;
   const finishTier = hidden ? 'T0' : String(sandboxRarityTier(def) ?? 'T0');
+  const premium = !hidden && isExecutiveEditionVariant(card.variantId);
   const selected = state.selectedHand.has(card.instanceId);
   const match = state.view?.match;
   const selectionRole = card.zone === 'HAND' ? handSelectionRole(match, card.instanceId) : null;
@@ -3094,7 +3133,7 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   // Regression compatibility marker for v5.7 source: hidden && faceDownSupport ? hiddenSupportBack() : ''
   const supportBack = hidden && concealedFaceDownSupport ? hiddenSupportBack() : '';
   const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
-  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${surface ? `card-surface-${surface}` : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
+  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${premium ? 'executive-edition' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${surface ? `card-surface-${surface}` : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
   const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
   if (concealedFaceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
     ${cardBackMarkup()}
@@ -3105,11 +3144,11 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   return `<div class="${cardClassName}" ${cardAttributes}>
     ${prototype}
     ${mulliganReplaceMarker}
-    ${def ? `<div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b></div>` : faceDownSupport ? '<div class="card-type-strip hidden-support-strip"><span>INCIDENT</span><b>SET</b></div>' : ''}
+    ${def ? `<div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b>${premium ? `<i class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</i>` : ''}</div>` : faceDownSupport ? '<div class="card-type-strip hidden-support-strip"><span>INCIDENT</span><b>SET</b></div>' : ''}
     <button class="card-info" type="button" data-card-info-button="${esc(card.instanceId)}" aria-label="Inspect card" title="Inspect card">i</button>
     ${ability ? `<button class="card-ability" type="button" data-card-ability="${esc(card.instanceId)}" aria-label="Activate ability">ACT</button>` : ''}
     <div class="card-name-row"><div class="card-name ${longName ? 'long-name' : ''}">${esc(def?.name ?? 'Face-down Incident')}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
-    <div class="card-art-stage">${def ? renderArtwork(def) : supportBack}${handActionLabel ? `<span class="card-play-hint ${handActionLabel === 'SET' ? 'set' : 'play'}">${esc(handActionLabel)}</span>` : ''}${def ? handCardContextBadge(card, def) : ''}${combinedFieldBadges ? `<div class="card-runtime-row field-state-row">${combinedFieldBadges}</div>` : ''}</div>
+    <div class="card-art-stage">${def ? renderArtwork(def) : supportBack}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}${handActionLabel ? `<span class="card-play-hint ${handActionLabel === 'SET' ? 'set' : 'play'}">${esc(handActionLabel)}</span>` : ''}${def ? handCardContextBadge(card, def) : ''}${combinedFieldBadges ? `<div class="card-runtime-row field-state-row">${combinedFieldBadges}</div>` : ''}</div>
     <div class="card-detail-row">${detailBits.length ? detailBits.map((bit) => `<span>${esc(bit)}</span>`).join('') : '<span class="detail-spacer"></span>'}</div>
     ${def?.rulesText ? `<div class="card-rules-mini ${rulesDensityClass(def.rulesText)}" title="${esc(def.rulesText)}">${esc(def.rulesText)}</div>` : '<div class="card-rules-mini empty"></div>'}
     ${def ? `<div class="card-tags ${def.tags?.length ? '' : 'empty'}">${def.tags?.length ? def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('') : ''}</div>` : ''}
@@ -3126,10 +3165,11 @@ function renderModalCardFace(card, def) {
   const focusMeta = boardActionFocusMeta(card.instanceId);
   const runtimeBadges = fieldCardStateBadges(card, def, { attackReady:Boolean(attackMeta), ability:Boolean(legalAbilityOption(card.instanceId)), attackMeta, focusMeta });
   const power = cardPowerState(card, def);
-  return `<div class="card modal-card-face ${power ? 'has-power' : ''} ${power?.delta ? 'power-changed' : ''} dept-${esc(def.department.toLowerCase())} type-${esc(def.cardType.toLowerCase())} tier-${esc(finishTier.toLowerCase())}">
-    <div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b></div>
+  const premium = isExecutiveEditionVariant(card.variantId);
+  return `<div class="card modal-card-face ${premium ? 'executive-edition' : ''} ${power ? 'has-power' : ''} ${power?.delta ? 'power-changed' : ''} dept-${esc(def.department.toLowerCase())} type-${esc(def.cardType.toLowerCase())} tier-${esc(finishTier.toLowerCase())}">
+    <div class="card-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b title="${esc(def.department.replaceAll('_',' '))}">${esc(departmentCode(def.department))}</b>${premium ? `<i class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</i>` : ''}</div>
     <div class="card-name-row"><div class="card-name ${longName ? 'long-name' : ''}">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
-    <div class="card-art-stage">${renderArtwork(def)}${runtimeBadges ? `<div class="card-runtime-row">${runtimeBadges}</div>` : ''}</div>
+    <div class="card-art-stage">${renderArtwork(def)}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}${runtimeBadges ? `<div class="card-runtime-row">${runtimeBadges}</div>` : ''}</div>
     <div class="card-detail-row">${detailBits.length ? detailBits.map((bit) => `<span>${esc(bit)}</span>`).join('') : '<span class="detail-spacer"></span>'}</div>
     <div class="card-rules-mini modal-rules-box ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>
     <div class="card-tags ${def.tags?.length ? '' : 'empty'}">${def.tags?.length ? def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('') : ''}</div>
@@ -3730,7 +3770,7 @@ function lobbyDeckSummary(value = state.preferredDeckValue) {
     ? state.customDecks.find((deck) => deck.id === resolved.slice('custom:'.length))
     : state.presets.find((preset) => preset.id === resolved);
   if (!source) return null;
-  const deck = { cards:(source.cards ?? []).map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0) })) };
+  const deck = { cards:(source.cards ?? []).map((entry) => ({ definitionId:entry.definitionId, copies:Number(entry.copies || 0), ...(entry.variantId ? { variantId:entry.variantId } : {}) })) };
   const total = deckCardCount(deck);
   const formatErrors = deckFormatErrors(deck);
   const owned = deckOwnedReadiness(deck);
@@ -3776,7 +3816,8 @@ function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
   if (!deck) return [];
   const candidates = deck.entries.map((entry) => ({
     def:cardDef(entry.definitionId),
-    copies:Number(entry.copies || 0)
+    copies:Number(entry.copies || 0),
+    variantId:entry.variantId ?? null
   })).filter((entry) => entry.def && entry.copies > 0);
   if (!candidates.length) return [];
 
@@ -3791,14 +3832,15 @@ function lobbyDeckPreviewCards(value = state.preferredDeckValue) {
   const chosen = weightedLobbyShowcaseSample(pool, Math.min(3, pool.length));
   state.lobbyShowcaseDeckValue = deck.value;
   state.lobbyShowcaseCardIds = chosen.map((entry) => entry.def.id);
+  state.lobbyShowcaseVariantIds = chosen.map((entry) => entry.variantId ?? null);
   return chosen;
 }
 
-function renderLobbyLiveCardFace(def) {
+function renderLobbyLiveCardFace(def, variantId = null) {
   if (!def) return '<div class="catalog-card-face missing">Unknown card</div>';
   // The lobby showcase deliberately reuses the exact Deckbuilder card face.
   // This keeps type strips, frame treatment, art window, rules, tags, rarity and Power visually identical.
-  return renderCatalogCardFace(def,{ artReady:Boolean(def.artId) });
+  return renderCatalogCardFace(def,{ artReady:Boolean(def.artId), variantId });
 }
 
 function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
@@ -3823,7 +3865,7 @@ function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
       <small>${esc(typeLine)}</small>
     </div>
     <div class="desk-card-fan" aria-label="${esc(lobbyCopy('Rotating cards from selected deck','Wechselnde Karten aus dem ausgewählten Deck'))}">
-      ${preview.length ? preview.map((entry,index)=>`<div class="desk-card-fan-item fan-${index+1}" title="${esc(entry.def.name)} · ${esc(entry.copies)}×">${renderLobbyLiveCardFace(entry.def)}<i>${esc(entry.copies)}×</i></div>`).join('') : `<div class="desk-card-fan-empty">${lobbyCopy('Add cards to preview this deck.','Füge Karten hinzu, um dieses Deck anzuzeigen.')}</div>`}
+      ${preview.length ? preview.map((entry,index)=>`<div class="desk-card-fan-item fan-${index+1}" title="${esc(entry.def.name)} · ${esc(entry.copies)}×">${renderLobbyLiveCardFace(entry.def,entry.variantId)}<i>${esc(entry.copies)}×</i></div>`).join('') : `<div class="desk-card-fan-empty">${lobbyCopy('Add cards to preview this deck.','Füge Karten hinzu, um dieses Deck anzuzeigen.')}</div>`}
     </div>
   </section>`;
 }
@@ -3893,7 +3935,11 @@ function catalogArt(def) {
 }
 
 function deckCopies(deck, definitionId) {
-  return deck?.cards?.find((entry) => entry.definitionId === definitionId)?.copies ?? 0;
+  return (deck?.cards ?? []).filter((entry) => entry.definitionId === definitionId).reduce((sum, entry) => sum + Number(entry.copies || 0), 0);
+}
+
+function deckVariantCopies(deck, definitionId, variantId = null) {
+  return deck?.cards?.find((entry) => entry.definitionId === definitionId && (entry.variantId ?? null) === (variantId ?? null))?.copies ?? 0;
 }
 
 function writeDeckCopies(deck, definitionId, copies) {
@@ -3903,6 +3949,15 @@ function writeDeckCopies(deck, definitionId, copies) {
   if (next === 0) deck.cards = deck.cards.filter((item) => item.definitionId !== definitionId);
   else if (entry) entry.copies = next;
   else deck.cards.push({ definitionId, copies: next });
+}
+
+function writeDeckVariantCopies(deck, definitionId, variantId, copies) {
+  const max = deckCopyCeiling(definitionId);
+  const next = Math.max(0, Math.min(max, Number(copies) || 0));
+  const entry = deck.cards.find((item) => item.definitionId === definitionId && (item.variantId ?? null) === (variantId ?? null));
+  if (next === 0) deck.cards = deck.cards.filter((item) => !(item.definitionId === definitionId && (item.variantId ?? null) === (variantId ?? null)));
+  else if (entry) entry.copies = next;
+  else deck.cards.push({ definitionId, copies: next, ...(variantId ? { variantId } : {}) });
 }
 
 function sortDeckEntries(deck) {
@@ -3916,6 +3971,18 @@ function setDeckCopies(deck, definitionId, copies) {
   if (before === next) return;
   recordDeckEdit(deck, () => {
     writeDeckCopies(deck, definitionId, next);
+    sortDeckEntries(deck);
+  });
+}
+
+function setDeckVariantCopies(deck, definitionId, variantId, copies) {
+  const before = deckVariantCopies(deck, definitionId, variantId);
+  const totalBefore = deckCopies(deck, definitionId);
+  const max = deckCopyCeiling(definitionId);
+  const next = Math.max(0, Math.min(Math.max(0, max - (totalBefore - before)), Number(copies) || 0));
+  if (before === next) return;
+  recordDeckEdit(deck, () => {
+    writeDeckVariantCopies(deck, definitionId, variantId, next);
     sortDeckEntries(deck);
   });
 }
@@ -3976,9 +4043,11 @@ function deckFormatErrors(deck) {
   const errors = [];
   const total = deckCardCount(deck);
   if (total !== Number(state.format.deckSize ?? 40)) errors.push(`Deck must contain exactly ${state.format.deckSize ?? 40} cards (${total} now).`);
-  for (const entry of deck.cards) {
-    const limit = cardCopyLimit(entry.definitionId);
-    if (entry.copies > limit) errors.push(`${cardDef(entry.definitionId)?.name ?? entry.definitionId}: max ${limit}.`);
+  const totals = new Map();
+  for (const entry of deck.cards) totals.set(entry.definitionId, (totals.get(entry.definitionId) ?? 0) + Number(entry.copies || 0));
+  for (const [definitionId, copies] of totals) {
+    const limit = cardCopyLimit(definitionId);
+    if (copies > limit) errors.push(`${cardDef(definitionId)?.name ?? definitionId}: max ${limit}.`);
   }
   return errors;
 }
@@ -3986,7 +4055,7 @@ function deckFormatErrors(deck) {
 function deckOwnedGaps(deck) {
   const gaps = [];
   for (const entry of deck?.cards ?? []) {
-    const owned = ownedCopies(entry.definitionId);
+    const owned = entry.variantId ? ownedExecutiveEditionCopies(entry.definitionId, entry.variantId) : ownedCopies(entry.definitionId);
     const copies = Number(entry.copies || 0);
     if (copies > owned) gaps.push({ definitionId:entry.definitionId, missing:copies-owned, owned, copies });
   }
@@ -4475,7 +4544,7 @@ function renderCollectionPreview(def, deck) {
   const copies = deckCopies(deck, def.id);
   const limit = cardCopyLimit(def.id);
   const deckCeiling = deckCopyCeiling(def.id);
-  const owned = ownedCopies(def.id);
+  const owned = ownedTotalCopies(def.id);
   const tier = economyTierConfig(def);
   const craft = cardCraftStatus(def.id, deck);
   const scrap = scrapCollectionStatus(def.id, 1);
@@ -4526,13 +4595,17 @@ function renderCollectionCard(def, deck) {
   const limit = cardCopyLimit(def.id);
   const deckCeiling = deckCopyCeiling(def.id);
   const tier = sandboxRarityTier(def);
-  const owned = ownedCopies(def.id);
+  const owned = ownedTotalCopies(def.id);
+  const executiveId = executiveEditionVariantId(def.id);
+  const executiveOwned = ownedExecutiveEditionCopies(def.id, executiveId);
+  const selectedVariant = state.collectionVariantSelection?.[def.id] === 'EXECUTIVE' && executiveOwned > 0 ? executiveId : null;
   const selected = state.collectionPreviewId === def.id;
   const isNew = state.newCollectionCards.has(def.id);
   const swapSource = deckSwapSource(deck);
   const swapStatus = swapSource ? deckSwapTargetStatus(deck, def.id) : null;
-  return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
-    ${renderCatalogCardFace(def, { tier, isNew, artReady:Boolean(def.artId), owned })}
+  return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${finishClass(selectedVariant)} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
+    ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, isNew, artReady:Boolean(def.artId), owned })}
+    ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))}</button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))}</button></div>` : ''}
     ${swapSource ? `<div class="collection-swap-control"><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-swap-target="${esc(def.id)}" ${swapStatus?.allowed ? '' : 'disabled'} title="${esc(swapStatus?.reason ?? 'Swap in this card')}">${swapSource.id===def.id ? 'SWAP SOURCE' : 'SWAP IN'}</button></div>` : `<div class="collection-copy-control"><button data-deck-minus="${esc(def.id)}" ${copies <= 0 ? 'disabled' : ''}>−</button><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-plus="${esc(def.id)}" ${copies >= deckCeiling || deckCardCount(deck) >= state.format.deckSize ? 'disabled' : ''}>+</button></div>`}
   </article>`;
 }
@@ -4578,8 +4651,9 @@ function renderBoosterReveal() {
     const isCollectionNew=newCardIds.has(id) && appearedEarlier === 0;
     const isFreshPackPull=true;
     if (!isRevealed) return `<button class="booster-hit booster-facedown tier-${esc(String(tier).toLowerCase())} ${isNext ? 'next-reveal' : 'locked-reveal'}" ${isNext ? `data-booster-reveal="${index}"` : 'disabled'}><div class="booster-card-back"><span>OFFICE</span><b>ALPHA</b><small>${isNext ? esc(collectionCopy('tapToReveal')) : esc(collectionCopy('locked'))}</small></div></button>`;
+    const variantId=state.lastBooster.variantIds?.[index] ?? null;
     const deckUses=savedDeckCardUse(id).filter((item)=>item.copies>0).length;
-    return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${isCollectionNew ? 'collection-new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, isNew:isFreshPackPull, artReady:Boolean(def.artId), owned:ownedCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">${esc(collectionCopy('inspect'))}</i>${deckUses ? `<i class="booster-deck-use">${esc(collectionCopy('usedInDeck', { count:deckUses, suffix:deckUses === 1 ? '' : 'S' }))}</i>` : ''}</button>`;
+    return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${finishClass(variantId)} ${isCollectionNew ? 'collection-new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, variantId, isNew:isFreshPackPull, artReady:Boolean(def.artId), owned:variantId ? ownedExecutiveEditionCopies(id, variantId) : ownedTotalCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">${esc(collectionCopy('inspect'))}</i>${deckUses ? `<i class="booster-deck-use">${esc(collectionCopy('usedInDeck', { count:deckUses, suffix:deckUses === 1 ? '' : 'S' }))}</i>` : ''}</button>`;
   }).join('')}</div>${complete ? `<div class="booster-deck-bridge"><div><span>${esc(collectionCopy('packToDeck'))}</span><strong>${esc(collectionCopy('deckBridge', { opportunity:deckFlow.opportunityPulls, unique:deckFlow.uniquePulls }))}</strong><small>${esc(collectionCopy('deckBridgeHint'))}</small></div><button data-view-last-booster>${esc(collectionCopy('browsePack'))}</button></div>` : ''}</div>`;
 }
 
@@ -4591,6 +4665,8 @@ function revealBoosterThrough(index) {
 function renderEconomyLab() {
   const economy = state.economyConfig ?? {};
   const pack = economy.boosters?.packs?.[0];
+  const executivePack = economy.boosters?.packs?.find((item) => item.id === 'EXECUTIVE_EDITION_PACK');
+  const executivePackCount = Number(state.metaProfile?.ownedPacks?.EXECUTIVE_EDITION_PACK ?? 0);
   const credits = Number(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0);
   const scraps = Number(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0);
   const progression = state.metaProfile?.progression ?? {};
@@ -4602,6 +4678,7 @@ function renderEconomyLab() {
     <div class="economy-lab-head"><div><span>${esc(collectionCopy('economyLab'))}</span><strong>${esc(collectionCopy('economyHeadline'))}</strong><small>${esc(collectionCopy('economyNote'))}</small></div><div class="wallet"><span>${esc(collectionCopy('officeCredits'))} <b>${credits}</b></span><span>${esc(collectionCopy('scrap'))} <b>${scraps}</b></span></div></div>
     <div class="economy-loop" aria-label="${esc(collectionCopy('economyLoop'))}"><span><b>1</b>${esc(collectionCopy('economyLoopOpen'))}</span><i>→</i><span><b>2</b>${esc(collectionCopy('economyLoopBuild'))}</span><i>→</i><span><b>3</b>${esc(collectionCopy('economyLoopShred'))}</span><i>→</i><span><b>4</b>${esc(collectionCopy('economyLoopCraft'))}</span></div>
     <div class="economy-lab-grid">
+      <article class="booster-station premium-pack-station"><div><span>${esc(collectionCopy('executiveEditionPack'))}</span><strong>${esc(executivePack?.name ?? collectionCopy('executiveEditionPack'))}</strong><p>${esc(collectionCopy('executivePackDescription'))}</p></div><div class="economy-actions"><button class="primary" id="openExecutiveEditionPack" ${executivePackCount < 1 || state.economyBusy ? 'disabled' : ''}>${esc(collectionCopy('openExecutivePack'))}</button></div></article>
       <article class="booster-station"><div><span>${esc(collectionCopy('boosterLabel'))}</span><strong>${esc(pack?.name ?? 'Office Alpha Pack')}</strong><p>${esc(pack?.cardCount ?? 5)} ${esc(t('common.cards'))} · ${esc(pack?.price ?? '—')} ${esc(collectionCopy('officeCredits'))}</p><small>${esc(collectionCopy('boosterSlots'))}</small></div><div class="economy-actions">${!hasSandboxWallet || needsStarterFloor ? `<button class="primary" id="startEconomySandbox" ${state.economyBusy?'disabled':''}>${hasSandboxWallet ? esc(collectionCopy('restartStarter')) : esc(collectionCopy('startSandbox', { credits:economy.sandbox?.startingOfficeCredits ?? 500 }))}</button>` : `<button class="primary" id="openBooster" ${credits < Number(pack?.price ?? Infinity) || state.economyBusy ? 'disabled' : ''}>${esc(collectionCopy('openPack', { price:pack?.price ?? '—' }))}</button><button id="refillEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('refillWallet'))}</button>`}<button class="ghost" id="resetEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('reset'))}</button></div></article>
       <article class="shredder-station"><span>${esc(collectionCopy('shredderLabel'))}</span><strong>${esc(collectionCopy('shredderHeadline'))}</strong><p>${esc(collectionCopy('shredderDescription', { deckSize:state.format?.deckSize ?? 40 }))}</p><small>${esc(collectionCopy('playableCapacity', { current:playableCapacity, minimum:collectionFloor }))} · ${(economy.rarityTiers ?? []).map((tier) => `${tier.id}: +${tier.scrapValue}/−${tier.craftCost}`).join(' · ')}</small><div class="economy-shortcuts"><button data-economy-filter="DECK_GAPS">${esc(collectionCopy('missingDeckCards'))}</button><button data-economy-filter="SHREDDABLE">${esc(collectionCopy('shredCandidates'))}</button></div></article>
     </div>
@@ -4655,13 +4732,24 @@ async function resetEconomySandbox() {
 
 async function openEconomyBooster() {
   const pack = state.economyConfig?.boosters?.packs?.[0];
-  const ownedBefore = new Map([...state.catalog.keys()].map((id) => [id, ownedCopies(id)]));
+  const ownedBefore = new Map([...state.catalog.keys()].map((id) => [id, ownedTotalCopies(id)]));
   const result = await applyEconomyResponse('/api/economy/booster/open', metaRequest({ packId:pack?.id }), (data) => collectionCopy('boosterOpened', { count:data.cardIds?.length ?? 0 }));
   if (result) {
-    const newCardIds = [...new Set((result.cardIds ?? []).filter((id) => Number(ownedBefore.get(id) ?? 0) === 0 && ownedCopies(id) > 0))];
+    const newCardIds = [...new Set((result.cardIds ?? []).filter((id) => Number(ownedBefore.get(id) ?? 0) === 0 && ownedTotalCopies(id) > 0))];
     markCollectionCardsNew(newCardIds);
     state.lastBooster = { ...result, newCardIds };
     state.boosterRevealCount = 0;
+    renderCollection();
+  }
+}
+
+async function openExecutiveEditionPack() {
+  const result = await applyEconomyResponse('/api/economy/pack/open', metaRequest({ packId:'EXECUTIVE_EDITION_PACK' }), () => collectionCopy('executivePackOpened'));
+  if (result) {
+    const def = cardDef(result.cardId);
+    state.lastBooster = { cardIds:[result.cardId], variantIds:[result.variantId], tiers:[def ? sandboxRarityTier(def) : 'T0'], newCardIds:[result.cardId] };
+    state.boosterRevealCount = 0;
+    markCollectionCardsNew([result.cardId]);
     renderCollection();
   }
 }
@@ -5043,6 +5131,7 @@ function renderCollection() {
   document.querySelector('#markAllCardsSeen')?.addEventListener('click', markAllCollectionCardsSeen);
   document.querySelectorAll('[data-clone-starter]').forEach((button) => button.addEventListener('click', () => { cloneStarterDeck(button.dataset.cloneStarter); renderCollection(); }));
   document.querySelector('#openBooster')?.addEventListener('click', openEconomyBooster);
+  document.querySelector('#openExecutiveEditionPack')?.addEventListener('click', openExecutiveEditionPack);
   document.querySelector('[data-booster-reveal]')?.addEventListener('click', (event) => revealBoosterThrough(event.currentTarget.dataset.boosterReveal));
   document.querySelector('#revealAllBooster')?.addEventListener('click', () => { state.boosterRevealCount = state.lastBooster?.cardIds?.length ?? 0; renderCollection(); });
   document.querySelectorAll('[data-view-last-booster]').forEach((button) => button.addEventListener('click', () => focusLastBoosterCollection('ALL')));
@@ -5111,8 +5200,15 @@ function renderCollection() {
   }));
   document.querySelector('#playBuiltDeck')?.addEventListener('click', async () => { if (deckHasUnsavedChanges(deck)) await saveDeckEdits(deck); const pendingCreate = pendingDeckCreates.get(deck.id); if (pendingCreate) await pendingCreate; if (!deckHasUnsavedChanges(deck) && !pendingDeckCreates.has(deck.id)) playDeckFromBuilder(deck); renderCollection(); });
   document.querySelector('#clearBuiltDeck')?.addEventListener('click', () => { if (!confirm('Clear all cards from this deck?')) return; cancelDeckSwap(); recordDeckEdit(deck, () => { deck.cards=[]; }); state.deckBuilderMessage='Deck cleared. Save to keep this change.'; renderCollection(); });
-  document.querySelectorAll('[data-deck-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckPlus,deckCopies(deck,button.dataset.deckPlus)+1); renderCollection(); });
-  document.querySelectorAll('[data-deck-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckMinus,deckCopies(deck,button.dataset.deckMinus)-1); renderCollection(); });
+  document.querySelectorAll('[data-card-variant]').forEach((button) => button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const id = button.dataset.cardVariant;
+     state.collectionVariantSelection[id] = button.dataset.cardVariantValue === 'EXECUTIVE' ? 'EXECUTIVE' : 'STANDARD';
+    state.collectionPreviewId = id;
+    renderCollection();
+  }));
+   document.querySelectorAll('[data-deck-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; const id=button.dataset.deckPlus; const variant=state.collectionVariantSelection?.[id] === 'EXECUTIVE' ? executiveEditionVariantId(id) : null; setDeckVariantCopies(deck,id,variant,deckVariantCopies(deck,id,variant)+1); renderCollection(); });
+   document.querySelectorAll('[data-deck-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; const id=button.dataset.deckMinus; const variant=state.collectionVariantSelection?.[id] === 'EXECUTIVE' ? executiveEditionVariantId(id) : null; setDeckVariantCopies(deck,id,variant,deckVariantCopies(deck,id,variant)-1); renderCollection(); });
   document.querySelectorAll('[data-deck-list-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckListPlus,deckCopies(deck,button.dataset.deckListPlus)+1); renderCollection(); });
   document.querySelectorAll('[data-deck-list-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckListMinus,deckCopies(deck,button.dataset.deckListMinus)-1); renderCollection(); });
   document.querySelectorAll('[data-deck-entry-preview]').forEach((row) => row.onclick = (event) => { if (event.target.closest('button')) return; state.collectionPreviewId=row.dataset.deckEntryPreview; markCollectionCardSeen(row.dataset.deckEntryPreview); renderCollection(); });
@@ -5144,8 +5240,7 @@ function renderLobbyProfileAvatar() {
   const avatarId = loadout.avatarId ?? 'COS-AVA-001';
   const avatarAsset = cosmeticAvatarAsset(avatarId);
   const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
-  const face = avatarAsset ? `<img class="player-avatar-image" src="${esc(avatarAsset)}" alt="" />` : `<span>${esc(playerInitials(state.serverProfile?.displayName))}</span>`;
-  return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}"><div class="player-avatar-frame">${face}${frameAsset ? `<img class="player-avatar-frame-image" src="${esc(frameAsset)}" alt="" />` : ''}</div></div>`;
+  return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}">${renderAvatarComposition({ avatarAsset, frameAsset, fallbackText:playerInitials(state.serverProfile?.displayName) })}</div>`;
 }
 
 function renderProfileStrip() {
@@ -5698,7 +5793,7 @@ let foilTrackedElement=null;
 function installFoilPointerTracking() {
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
   document.addEventListener('pointermove',(event)=>{
-    const face=event.target.closest?.('.card.tier-t2,.card.tier-t3,.catalog-card-face.tier-t2,.catalog-card-face.tier-t3');
+     const face=event.target.closest?.('.card.tier-t2,.card.tier-t3,.catalog-card-face.tier-t2,.catalog-card-face.tier-t3,.card.executive-edition,.catalog-card-face.executive-edition,.hover-card-face.executive-edition');
     if (!face) return;
     if (foilTrackedElement && foilTrackedElement!==face) { foilTrackedElement.style.removeProperty('--foil-x'); foilTrackedElement.style.removeProperty('--foil-y'); }
     foilTrackedElement=face;
@@ -6287,11 +6382,8 @@ function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}
   const meta = roomDeckMeta(playerId);
   const loadout = roomCosmeticLoadout(playerId);
   const avatarAsset = cosmeticAvatarAsset(loadout.avatarId);
-  const avatarFace = avatarAsset
-    ? `<img class="player-avatar-image" src="${esc(avatarAsset)}" alt="" />`
-    : `<span>${esc(playerInitials(meta.playerName))}</span>`;
   const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
-  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}"><div class="player-avatar-frame">${avatarFace}${frameAsset ? `<img class="player-avatar-frame-image" src="${esc(frameAsset)}" alt="" />` : ''}</div>${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
+  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}">${renderAvatarComposition({ avatarAsset, frameAsset, fallbackText:playerInitials(meta.playerName) })}${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
 }
 
 function renderDeckStackVisual(deckCount) {

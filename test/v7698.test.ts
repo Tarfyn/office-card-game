@@ -23,10 +23,10 @@ function sliceBetween(source:string,start:string,end:string){
 const polish=css.slice(css.lastIndexOf("/* v7.69.8 — board geometry, inspect affordance + readable combat resolution */"));
 
 test("v7.69.8 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.29");
-  assert.match(server,/version: "7\.69\.29"/);
-  assert.match(server,/version:"7\.69\.29"/);
-  assert.match(server,/Office Card Game v7\.69\.29 server/);
+  assert.equal(pkg.version,"7.69.30");
+  assert.match(server,/version: "7\.69\.30"/);
+  assert.match(server,/version:"7\.69\.30"/);
+  assert.match(server,/Office Card Game v7\.69\.30 server/);
   assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.8 — Board Geometry \+ Combat Readability/);
   assert.match(pkg.scripts.test,/dist\/test\/v7698\.test\.js/);
@@ -62,7 +62,7 @@ test("v7.69.8 keeps the battlefield visually clean and reserves identity space f
   const player=sliceBetween(app,"function playerInitials", "function actionButton");
   assert.match(player,/function renderPlayerAvatar/);
   assert.match(player,/player-avatar-slot/);
-  assert.match(player,/player-avatar-frame/);
+  assert.match(player,/renderAvatarComposition\(/);
   assert.match(player,/renderPlayerAvatar\(player\.id, own\)/);
   assert.match(polish,/Player identity is now a dedicated cosmetic-ready zone/);
 });

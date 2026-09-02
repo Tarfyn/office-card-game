@@ -293,6 +293,8 @@ export interface DirectDamageRider {
 export interface CardInstance {
   instanceId: string;
   definitionId: string;
+  /** Optional collectible finish; gameplay always resolves from definitionId. */
+  variantId?: string | null;
   ownerId: PlayerId;
   controllerId: PlayerId;
   zone: Zone;
@@ -664,6 +666,8 @@ export interface ClientLiveCardStatus {
 export interface ClientCardView {
   instanceId: string;
   definitionId?: string;
+  /** Visible collectible finish; omitted for hidden information. */
+  variantId?: string | null;
   ownerId: PlayerId;
   controllerId: PlayerId;
   zone: Zone;
@@ -885,4 +889,6 @@ export interface MatchSnapshot {
 export interface DeckEntry {
   definitionId: string;
   copies: number;
+  /** Optional collectible finish selected for these copies. */
+  variantId?: string | null;
 }

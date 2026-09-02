@@ -1,8 +1,9 @@
 import { COSMETIC_CATALOG, defaultCosmeticLoadout, defaultCosmeticOwnership, normalizePlayerCosmetics, type PlayerCosmeticState } from "./cosmetics.js";
+import { executiveEditionVariantId, isExecutiveEditionEligible, normalizeCardVariantId, variantOwnershipKey } from "./card-variants.js";
 
 export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
 export type CollectionMode = "SANDBOX_ALL_AVAILABLE" | "OWNED_COPIES";
-export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop";
+export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop" | "alpha_playtest";
 
 export interface PlayerProgression {
   level: number;
@@ -17,6 +18,8 @@ export interface PlayerMetaProfile {
   profileVersion: number;
   balances: Record<CurrencyId, number>;
   ownedCards: Record<string, number>;
+  /** Executive Edition collectible quantities, keyed by deterministic variant id. */
+  ownedCardVariants: Record<string, number>;
   /** Entitled but unopened booster packs, keyed by stable pack id. */
   ownedPacks: Record<string, number>;
   collectionMode: CollectionMode;
@@ -29,6 +32,7 @@ export interface PlayerMetaProfile {
 export interface RewardGrantItem {
   cardId: string;
   quantity: number;
+  variantId?: string | null;
 }
 
 export interface RewardGrant {
@@ -63,6 +67,7 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
       SHREDDER_SCRAPS: 0
     },
     ownedCards: {},
+    ownedCardVariants: {},
     ownedPacks: {},
     collectionMode: "SANDBOX_ALL_AVAILABLE",
     claimedRewardRooms: [],
@@ -114,6 +119,10 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
     const count = Math.max(0, Math.floor(Number(quantity) || 0));
     return id && count > 0 ? [[String(id), count]] : [];
   }));
+  next.ownedCardVariants = Object.fromEntries(Object.entries(next.ownedCardVariants ?? {}).flatMap(([id, quantity]) => {
+    const count = Math.max(0, Math.floor(Number(quantity) || 0));
+    return id && count > 0 ? [[String(id), count]] : [];
+  }));
   next.ownedPacks = Object.fromEntries(Object.entries(next.ownedPacks ?? {}).flatMap(([id, quantity]) => {
     const count = Math.max(0, Math.floor(Number(quantity) || 0));
     return id && count > 0 ? [[String(id), count]] : [];
@@ -122,7 +131,7 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
   next.rewardGrants = Array.isArray(next.rewardGrants) ? next.rewardGrants.filter(Boolean).map((grant) => ({
     source: grant.source ?? "admin",
     sourceRef: grant.sourceRef == null ? null : String(grant.sourceRef),
-    cards: Array.isArray(grant.cards) ? grant.cards.filter((item) => item && item.cardId && Number(item.quantity) > 0).map((item) => ({ cardId:String(item.cardId), quantity:Math.floor(Number(item.quantity)) })) : [],
+    cards: Array.isArray(grant.cards) ? grant.cards.filter((item) => item && item.cardId && Number(item.quantity) > 0).map((item) => ({ cardId:String(item.cardId), quantity:Math.floor(Number(item.quantity)), variantId:item.variantId == null ? null : String(item.variantId) })) : [],
     officeCredits: Math.max(0, Math.floor(Number(grant.officeCredits) || 0)),
     scrap: Math.max(0, Math.floor(Number(grant.scrap) || 0)),
     cosmetics: Array.isArray(grant.cosmetics) ? grant.cosmetics.map(String).filter((id) => COSMETIC_CATALOG[id]) : [],
@@ -146,7 +155,9 @@ export function applyRewardGrant(profile: PlayerMetaProfile, grant: RewardGrant,
   for (const item of grant.cards ?? []) {
     const quantity = Math.floor(Number(item.quantity));
     if (!item.cardId || quantity <= 0) continue;
-    next.ownedCards[String(item.cardId)] = (next.ownedCards[String(item.cardId)] ?? 0) + quantity;
+    const key = item.variantId ? String(item.variantId) : String(item.cardId);
+    if (item.variantId) next.ownedCardVariants[key] = (next.ownedCardVariants[key] ?? 0) + quantity;
+    else next.ownedCards[key] = (next.ownedCards[key] ?? 0) + quantity;
   }
   next.balances.OFFICE_CREDITS += Math.max(0, Math.floor(Number(grant.officeCredits) || 0));
   next.balances.SHREDDER_SCRAPS += Math.max(0, Math.floor(Number(grant.scrap) || 0));
@@ -260,6 +271,15 @@ export function seedOwnedCollection(profile: PlayerMetaProfile, cards: OwnedDeck
   return next;
 }
 
+export function applyAlphaPlaytestCosmeticGrant(profile: PlayerMetaProfile, now = Date.now()): PlayerMetaProfile {
+  return applyRewardGrant(profile, {
+    source: "alpha_playtest",
+    sourceRef: "alpha-playtest:ranked-frames:v1",
+    cards: [], officeCredits: 0, scrap: 0,
+    cosmetics: ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"], packs: [], grantedAt: now
+  }, now).profile;
+}
+
 function copyLimitFor(definitionId: string, rules: ScrapCollectionRules): number {
   const limit = rules.cardLimits?.[definitionId] ?? rules.defaultCopyLimit;
   return Math.max(0, Number.isFinite(limit) ? Math.floor(limit) : 0);
@@ -269,7 +289,8 @@ export function collectionPlayableCapacity(profile: PlayerMetaProfile, rules: Sc
   const ids = rules.legalDefinitionIds ?? Object.keys(profile.ownedCards);
   let total = 0;
   for (const definitionId of ids) {
-    const owned = Math.max(0, Math.floor(Number(profile.ownedCards[definitionId] ?? 0)));
+    const owned = Math.max(0, Math.floor(Number(profile.ownedCards[definitionId] ?? 0))) +
+      Object.entries(profile.ownedCardVariants ?? {}).filter(([id]) => id.startsWith(`${definitionId}-`)).reduce((sum, [, value]) => sum + Math.max(0, Math.floor(Number(value) || 0)), 0);
     total += Math.min(owned, copyLimitFor(definitionId, rules));
   }
   return total;
@@ -283,15 +304,18 @@ export function scrapEligibility(
   profile: PlayerMetaProfile,
   definitionId: string,
   copies: number,
-  rules?: ScrapCollectionRules
+  rules?: ScrapCollectionRules,
+  variantId?: string | null
 ): ScrapEligibility {
   const fallbackCapacity = rules ? collectionPlayableCapacity(profile, rules) : Object.values(profile.ownedCards).reduce((sum, value) => sum + Math.max(0, Number(value ?? 0)), 0);
   if (!Number.isInteger(copies) || copies <= 0) return { allowed:false, reason:"Scrap copies must be a positive integer.", playableCapacityBefore:fallbackCapacity, playableCapacityAfter:fallbackCapacity };
-  const owned = Math.max(0, Math.floor(Number(profile.ownedCards[definitionId] ?? 0)));
+  const ownershipKey = variantOwnershipKey(definitionId, variantId);
+  const owned = variantId ? Math.max(0, Math.floor(Number(profile.ownedCardVariants?.[ownershipKey] ?? 0))) : Math.max(0, Math.floor(Number(profile.ownedCards[definitionId] ?? 0)));
   if (copies > owned) return { allowed:false, reason:"You do not own enough copies to shred.", playableCapacityBefore:fallbackCapacity, playableCapacityAfter:fallbackCapacity };
   if (!rules) return { allowed:true, reason:null, playableCapacityBefore:fallbackCapacity, playableCapacityAfter:fallbackCapacity - copies };
   const next = structuredClone(profile);
-  next.ownedCards[definitionId] = owned - copies;
+  if (variantId) next.ownedCardVariants[ownershipKey] = owned - copies;
+  else next.ownedCards[definitionId] = owned - copies;
   const after = collectionPlayableCapacity(next, rules);
   const deckSize = Math.max(0, Math.floor(rules.deckSize));
   if (after < deckSize) return { allowed:false, reason:`Keep enough cards to build one legal ${deckSize}-card deck.`, playableCapacityBefore:fallbackCapacity, playableCapacityAfter:after };
@@ -307,20 +331,28 @@ export function applyScrap(
   definitionId: string,
   copies: number,
   scrapValueEach: number,
-  rules?: ScrapCollectionRules
+  rules?: ScrapCollectionRules,
+  variantId?: string | null
 ): PlayerMetaProfile {
   if (!Number.isFinite(scrapValueEach) || scrapValueEach < 0) throw new Error("Invalid scrap value.");
-  const eligibility = scrapEligibility(profile, definitionId, copies, rules);
+  const eligibility = scrapEligibility(profile, definitionId, copies, rules, variantId);
   if (!eligibility.allowed) throw new Error(eligibility.reason ?? "Card cannot be shredded.");
   const next = structuredClone(profile);
-  next.ownedCards[definitionId] -= copies;
-  if (next.ownedCards[definitionId] <= 0) delete next.ownedCards[definitionId];
+  const ownershipKey = variantOwnershipKey(definitionId, variantId);
+  if (variantId) {
+    next.ownedCardVariants[ownershipKey] -= copies;
+    if (next.ownedCardVariants[ownershipKey] <= 0) delete next.ownedCardVariants[ownershipKey];
+  } else {
+    next.ownedCards[definitionId] -= copies;
+    if (next.ownedCards[definitionId] <= 0) delete next.ownedCards[definitionId];
+  }
   next.balances.SHREDDER_SCRAPS += scrapValueEach * copies;
   next.progression.cardsScrapped += copies;
   return next;
 }
 
-export function applyCraft(profile: PlayerMetaProfile, definitionId: string, copies: number, craftCostEach: number): PlayerMetaProfile {
+export function applyCraft(profile: PlayerMetaProfile, definitionId: string, copies: number, craftCostEach: number, variantId?: string | null): PlayerMetaProfile {
+  if (variantId) throw new Error("Executive Edition variants cannot be crafted.");
   if (!Number.isInteger(copies) || copies <= 0) throw new Error("Craft copies must be a positive integer.");
   if (!Number.isFinite(craftCostEach) || craftCostEach < 0) throw new Error("Invalid craft cost.");
   const total = copies * craftCostEach;
@@ -338,12 +370,16 @@ export interface BoosterSandboxConfig {
   cardCount: number;
   guaranteedTiers: RarityTier[];
   flexSlotWeights: Partial<Record<RarityTier, number>>;
+  /** Provisional per-pack chance, not a gameplay rarity. */
+  executiveEditionChancePerPack?: number;
+  executiveEditionPool?: CardDefinition[];
 }
 
 export interface BoosterOpenResult {
   profile: PlayerMetaProfile;
   cardIds: string[];
   tiers: RarityTier[];
+  variantIds: Array<string | null>;
   spentCredits: number;
 }
 
@@ -393,10 +429,48 @@ export function openSandboxBooster(
   while (tiers.length < Math.min(config.cardCount, config.guaranteedTiers.length)) tiers.push(config.guaranteedTiers[tiers.length]);
   while (tiers.length < config.cardCount) tiers.push(weightedTier(config.flexSlotWeights, rng));
   const cardIds = tiers.map((tier) => randomCardFromTier(cards, tier, rng).id);
-  for (const id of cardIds) next.ownedCards[id] = (next.ownedCards[id] ?? 0) + 1;
+  const variantIds = cardIds.map(() => null as string | null);
+  const premiumChance = Math.min(1, Math.max(0, Number(config.executiveEditionChancePerPack ?? 0)));
+  if (premiumChance > 0 && rng() < premiumChance) {
+    const pool = (config.executiveEditionPool ?? cards).filter(isExecutiveEditionEligible);
+    if (pool.length) {
+      const premiumIndex = Math.floor(rng() * cardIds.length);
+      const base = pool[Math.floor(rng() * pool.length)];
+      cardIds[premiumIndex] = base.id;
+      variantIds[premiumIndex] = executiveEditionVariantId(base.id);
+    }
+  }
+  for (const [index, id] of cardIds.entries()) {
+    const variantId = variantIds[index];
+    if (variantId) next.ownedCardVariants[variantId] = (next.ownedCardVariants[variantId] ?? 0) + 1;
+    else next.ownedCards[id] = (next.ownedCards[id] ?? 0) + 1;
+  }
   next.progression.boostersOpened += 1;
-  next.rewardGrants.push({ source:"booster", sourceRef:null, cards:cardIds.map((cardId) => ({ cardId, quantity:1 })), officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:Date.now() });
-  return { profile: next, cardIds, tiers, spentCredits: config.price };
+  next.rewardGrants.push({ source:"booster", sourceRef:null, cards:cardIds.map((cardId, index) => ({ cardId, quantity:1, variantId:variantIds[index] })), officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:Date.now() });
+  return { profile: next, cardIds, tiers, variantIds, spentCredits: config.price };
+}
+
+export interface ExecutiveEditionPackOpenResult {
+  profile: PlayerMetaProfile;
+  cardId: string;
+  variantId: string;
+  spentPacks: number;
+}
+
+export function openExecutiveEditionPack(profile: PlayerMetaProfile, cards: CardDefinition[], packId: string, seed: number): ExecutiveEditionPackOpenResult {
+  if ((profile.ownedPacks?.[packId] ?? 0) < 1) throw new Error("Executive Edition Pack is not owned.");
+  const pool = cards.filter(isExecutiveEditionEligible);
+  if (!pool.length) throw new Error("Cannot open an Executive Edition Pack from an empty card pool.");
+  const rng = mulberry32(seed);
+  const card = pool[Math.floor(rng() * pool.length)];
+  const variantId = executiveEditionVariantId(card.id);
+  const next = structuredClone(profile);
+  next.ownedPacks[packId] -= 1;
+  if (next.ownedPacks[packId] <= 0) delete next.ownedPacks[packId];
+  next.ownedCardVariants[variantId] = (next.ownedCardVariants[variantId] ?? 0) + 1;
+  next.progression.boostersOpened += 1;
+  next.rewardGrants.push({ source:"booster", sourceRef:null, cards:[{ cardId:card.id, quantity:1, variantId }], officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:Date.now() });
+  return { profile:next, cardId:card.id, variantId, spentPacks:1 };
 }
 
 export function createEconomySandboxProfile(startingCredits = 500): PlayerMetaProfile {

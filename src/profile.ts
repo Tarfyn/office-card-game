@@ -1,4 +1,4 @@
-import { applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type OwnedDeckEntry, type PlayerMetaProfile } from "./economy.js";
+import { applyAlphaPlaytestCosmeticGrant, applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type OwnedDeckEntry, type PlayerMetaProfile } from "./economy.js";
 import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, type CosmeticSlotKey } from "./cosmetics.js";
 import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedProfile, rankedK, ratingDelta, type PlayerRankedProfile, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
@@ -108,6 +108,8 @@ export interface PlayerProfileServiceOptions {
   deckFormat?: DeckFormat;
   deckIdFactory?: () => string;
   builtInDeckIds?: Iterable<string>;
+  /** Explicit alpha-only grant path for reward-only cosmetics. */
+  alphaPlaytest?: boolean;
 }
 
 function defaultId(): string {
@@ -189,6 +191,7 @@ export class PlayerProfileService {
   private readonly deckFormat: DeckFormat;
   private readonly deckIdFactory: () => string;
   private readonly builtInDeckIds: Set<string>;
+  private readonly alphaPlaytest: boolean;
   private migratedLegacyStore = false;
 
   constructor(options: PlayerProfileServiceOptions = {}) {
@@ -206,6 +209,7 @@ export class PlayerProfileService {
     this.deckFormat = options.deckFormat ?? { id:"default", deckSize:40, defaultCopyLimit:3 };
     this.deckIdFactory = options.deckIdFactory ?? (() => `deck-${this.nowFactory().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
     this.builtInDeckIds = new Set(options.builtInDeckIds ?? []);
+    this.alphaPlaytest = options.alphaPlaytest === true;
     this.restore();
   }
 
@@ -237,11 +241,13 @@ export class PlayerProfileService {
     while (this.credentialsByToken.has(profileToken)) profileToken = this.tokenFactory();
     const now = this.nowFactory();
     const suffix = playerId.replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase() || "0001";
+    let meta = normalizePlayerMetaProfile(initialMeta ?? createPlayerMetaProfile(this.starterCards, this.startingOfficeCredits, now), now);
+    if (this.alphaPlaytest) meta = applyAlphaPlaytestCosmeticGrant(meta, now);
     const profile: ServerPlayerProfile = {
       playerId,
       profileId: playerId,
       displayName: cleanName(requestedName, `Employee ${suffix}`),
-      meta: normalizePlayerMetaProfile(initialMeta ?? createPlayerMetaProfile(this.starterCards, this.startingOfficeCredits, now), now),
+      meta,
       stats: emptyStats(),
       ranked: createRankedProfile(this.rankedConfig),
       matchHistory: [],
@@ -310,7 +316,7 @@ export class PlayerProfileService {
     const profile = this.requireByToken(profileToken);
     const owned = profile.meta.collectionMode === "OWNED_COPIES" ? profile.meta.ownedCards : undefined;
     return {
-      decks: profile.decks.map((deck) => ({ ...structuredClone(deck), validation:validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned) })),
+      decks: profile.decks.map((deck) => ({ ...structuredClone(deck), validation:validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned, profile.meta.ownedCardVariants) })),
       selectedDeckId: profile.selectedDeckId
     };
   }
@@ -360,7 +366,7 @@ export class PlayerProfileService {
     const deck = profile.decks.find((item) => item.id === deckId);
     if (!deck) throw new Error("DECK_NOT_FOUND");
     const owned = profile.meta.collectionMode === "OWNED_COPIES" ? profile.meta.ownedCards : undefined;
-    const validation = validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned);
+    const validation = validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned, profile.meta.ownedCardVariants);
     if (validation.state !== "VALID") throw new Error("DECK_NOT_VALID");
     profile.selectedDeckId = deckId;
     profile.updatedAt = this.nowFactory();
@@ -560,7 +566,8 @@ export class PlayerProfileService {
     for (const record of snapshot.records) {
       if (!record?.profileToken || !record.profile?.profileId) continue;
        const normalized = normalizeProfile(record.profile, this.rankedConfig);
-       const profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
+       let profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
+       if (this.alphaPlaytest) profile = { ...profile, meta: applyAlphaPlaytestCosmeticGrant(profile.meta, this.nowFactory()) };
        migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length;
       if (!profile.playerId) continue;
       this.playersById.set(profile.playerId, profile);
