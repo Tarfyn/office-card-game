@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.32
+# Office Card Game - Codex Handover v7.69.33
 
 ## Baseline
 
-- Version: `v7.69.32`
-- Commit: final release commit resolved by immutable annotated tag `v7.69.32`
+- Version: `v7.69.33`
+- Commit: final release commit resolved by immutable annotated tag `v7.69.33`
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.32 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.33 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership and the Bot/Training/
 Tutorial foundation.
@@ -189,9 +189,12 @@ while Decks, ownership and renderers preserve the selected variant for presentat
 Executive Edition copies share the base card's copy limit, and Executive Edition ownership is tracked
 separately from standard card quantities.
 
-Executive Edition uses the premium gold material and restrained artwork foil treatment. The finish is
+Executive Edition uses a rich metallic gold material with darker brass depth, polished highlights and
+a persistent diagonal spectral stripe foil concentrated in the artwork region. The finish is
 selectable in the Deckbuilder and propagates through Decks, Hand, Board, Archive, hover, Inspector,
-notifications and Lobby showcase rendering without changing card rules or stats. Executive Edition
+notifications and Lobby showcase rendering without changing card rules or stats. Its static foil remains
+visible on coarse-pointer/mobile surfaces, while fine pointers can enhance the reflection on interaction.
+Executive Edition
 variants cannot be crafted; recycling one uses the underlying card tier's normal Scrap value. The
 provisional Alpha Booster premium roll is centralized at `0.75%` per pack. `EXECUTIVE_EDITION_PACK`
 is a reward-only, one-card guaranteed Executive Edition pack that can be granted through RewardGrant.

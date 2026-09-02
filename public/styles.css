@@ -12717,12 +12717,12 @@ body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.activ
 .card.executive-edition,
 .catalog-card-face.executive-edition,
 .hover-card-face.executive-edition {
-  --gold-light:#f7e1a0;
-  --gold-mid:#c89532;
-  --gold-deep:#70430f;
-  --exec-foil-opacity:.46;
-  --exec-foil-background:linear-gradient(112deg,transparent 3%,rgba(255,74,190,.28) 20%,rgba(255,237,129,.50) 35%,rgba(83,225,255,.34) 51%,rgba(173,110,255,.30) 68%,transparent 91%),repeating-linear-gradient(103deg,rgba(255,255,255,.24) 0 1px,transparent 1px 10px),radial-gradient(circle at 23% 27%,rgba(255,255,255,.34) 0 1px,transparent 2px),radial-gradient(circle at 76% 71%,rgba(255,246,190,.26) 0 1px,transparent 2px);
-  --exec-card-background:linear-gradient(126deg,rgba(255,247,203,.52),transparent 16% 64%,rgba(64,34,6,.20)),repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px),linear-gradient(145deg,#6f430e 0%,#b4771e 16%,#e0ad45 31%,#f4d37c 45%,#a76b17 61%,#d4a03a 78%,#6c3f0c 100%);
+  --gold-light:#f5dc91;
+  --gold-mid:#b8791f;
+  --gold-deep:#5a3009;
+  --exec-foil-opacity:.56;
+  --exec-foil-background:repeating-linear-gradient(104deg,transparent 0 12px,rgba(255,82,181,.26) 12px 15px,rgba(255,229,98,.24) 15px 18px,rgba(92,239,214,.24) 18px 21px,rgba(91,167,255,.25) 21px 24px,rgba(191,103,255,.24) 24px 27px,transparent 27px 42px),repeating-linear-gradient(104deg,transparent 0 31px,rgba(255,255,255,.42) 31px 33px,transparent 33px 50px),linear-gradient(112deg,transparent 3%,rgba(255,74,190,.22) 20%,rgba(255,237,129,.28) 35%,rgba(83,225,255,.22) 51%,rgba(173,110,255,.22) 68%,transparent 91%),radial-gradient(circle at 23% 27%,rgba(255,255,255,.34) 0 1px,transparent 2px),radial-gradient(circle at 76% 71%,rgba(255,246,190,.26) 0 1px,transparent 2px);
+  --exec-card-background:linear-gradient(122deg,rgba(255,233,158,.34),transparent 18% 62%,rgba(49,24,3,.27)),repeating-linear-gradient(0deg,rgba(255,250,219,.045) 0 1px,transparent 1px 3px),linear-gradient(145deg,#512807 0%,#8a4f0e 14%,#c17f20 28%,#efc35d 43%,#a45f10 58%,#d39a2c 75%,#572b06 100%);
   border-color:#845316;
   background:var(--exec-card-background);
   background-blend-mode:screen,soft-light,normal;
@@ -12739,9 +12739,9 @@ body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.activ
 .catalog-card-face.executive-edition .catalog-art-stage { border-color:rgba(103,66,12,.48); }
 .card-finish-badge { justify-self:end; padding:2px 4px; border:1px solid rgba(74,43,7,.58); border-radius:3px; background:linear-gradient(145deg,#ffe9a0,#c38a25 58%,#75460d); color:#3b2709; box-shadow:inset 0 1px rgba(255,246,190,.70),0 1px 3px rgba(66,37,5,.22); font-size:5px; line-height:1; font-style:normal; font-weight:950; letter-spacing:.08em; white-space:nowrap; }
 .card-art-stage .executive-art-foil,
-.catalog-art-stage .executive-art-foil { position:absolute; inset:0; z-index:6; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:180% 180%,100% 100%,100% 100%,100% 100%; background-position:var(--foil-x,32%) var(--foil-y,48%),center,center,center; mix-blend-mode:screen; filter:saturate(1.12) contrast(1.03); transition:opacity .16s ease,background-position .16s ease; }
+.catalog-art-stage .executive-art-foil { position:absolute; inset:0; z-index:6; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:150% 150%,100% 100%,180% 180%,100% 100%,100% 100%; background-position:center,center,var(--foil-x,32%) var(--foil-y,48%),center,center; mix-blend-mode:screen; filter:saturate(1.28) contrast(1.08); transition:opacity .16s ease,background-position .16s ease; }
 .hover-card-face.executive-edition .card-art-window { position:relative; overflow:hidden; }
-.hover-card-face.executive-edition .card-art-window::after { content:''; position:absolute; inset:0; z-index:2; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:180% 180%,100% 100%,100% 100%,100% 100%; background-position:var(--foil-x,32%) var(--foil-y,48%),center,center,center; mix-blend-mode:screen; filter:saturate(1.12) contrast(1.03); transition:opacity .16s ease,background-position .16s ease; }
+.hover-card-face.executive-edition .card-art-window::after { content:''; position:absolute; inset:0; z-index:2; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:150% 150%,100% 100%,180% 180%,100% 100%,100% 100%; background-position:center,center,var(--foil-x,32%) var(--foil-y,48%),center,center; mix-blend-mode:screen; filter:saturate(1.28) contrast(1.08); transition:opacity .16s ease,background-position .16s ease; }
 .hover-card-face.executive-edition > .executive-art-foil { display:none; }
 body.match-mode .hover-card-face.executive-edition { border-color:#845316; background:var(--exec-card-background); box-shadow:inset 0 0 0 1px rgba(255,246,193,.92),inset 0 0 0 3px rgba(82,43,7,.42),inset 0 7px 14px rgba(255,239,167,.18),0 9px 22px rgba(66,38,7,.28); }
 .card.executive-edition:hover .executive-art-foil,
@@ -12761,5 +12761,5 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
 @media (hover:none), (pointer:coarse) {
   .card.executive-edition,
   .catalog-card-face.executive-edition,
-  .hover-card-face.executive-edition { --exec-foil-opacity:.52; }
+  .hover-card-face.executive-edition { --exec-foil-opacity:.64; }
 }
