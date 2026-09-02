@@ -14,8 +14,8 @@ const styles = root("public/styles.css");
 const app = root("public/app.js");
 const packageJson = JSON.parse(root("package.json"));
 
-test("v7.69.35 release version is current", () => {
-  assert.equal(packageJson.version, "7.69.35");
+test("v7.69.36 release version is current", () => {
+  assert.equal(packageJson.version, "7.69.36");
 });
 
 function service(firstPlayerId: "P1" | "P2" = "P1"): RoomService {
@@ -105,4 +105,4 @@ function roomServiceSubmit(
   return roomService.submitIntent(room.roomId, room.token, { intentId, expectedStateVersion, intent });
 }
 
-console.log(`\n${passed}/${passed} v7.69.35 Tutorial progression tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.36 Tutorial progression tests passed.`);

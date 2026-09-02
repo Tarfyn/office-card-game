@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.35
+# Office Card Game - Codex Handover v7.69.36
 
 ## Baseline
 
-- Version: `v7.69.35`
-- Commit: final release commit resolved by immutable annotated tag `v7.69.35`
+- Version: `v7.69.36`
+- Commit: final release commit resolved by immutable annotated tag `v7.69.36`
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.35 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.36 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership and the Bot/Training/
 Tutorial foundation.

@@ -26,7 +26,7 @@ test("v7.0 introduces one reusable static card face for collection and booster s
 });
 
 test("v7.0 collection cards reuse Cost, Power, Department and rarity vocabulary from live cards", () => {
-  assert.match(app,/renderCollectionCard[\s\S]*renderCatalogCardFace\(def, \{ tier, variantId:selectedVariant, isNew, artReady:Boolean\(def\.artId\), owned \}\)/);
+  assert.match(app,/renderCollectionCard[\s\S]*renderCatalogCardFace\(def, \{ tier, variantId:selectedVariant, finishBadgePlacement:'artwork', isNew, artReady:Boolean\(def\.artId\), owned \}\)/);
   assert.match(app,/card-cost-badge catalog-cost/);
   assert.match(app,/catalog-power-badge[\s\S]*POWER/);
   assert.match(app,/raritySignal\(def, rarity, true\)/);

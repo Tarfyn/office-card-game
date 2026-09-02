@@ -1679,7 +1679,7 @@ function catalogCardDetailBits(def) {
   return [def.rank, def.promotion?.required ? `PROMOTION ${def.promotion.required}` : ''].filter(Boolean);
 }
 
-function renderCatalogCardFace(def, { tier = null, compact = false, isNew = false, artReady = false, owned = null, variantId = null } = {}) {
+function renderCatalogCardFace(def, { tier = null, compact = false, isNew = false, artReady = false, owned = null, variantId = null, finishBadgePlacement = 'type-strip' } = {}) {
   if (!def) return '<div class="catalog-card-face missing">Unknown card</div>';
   const costParts = cardCostParts(def);
   const detailBits = catalogCardDetailBits(def);
@@ -1688,10 +1688,11 @@ function renderCatalogCardFace(def, { tier = null, compact = false, isNew = fals
   const longName = def.name.length >= 22;
   const power = def.cardType === 'EMPLOYEE' && def.power != null ? Number(def.power) : null;
   const premium = isExecutiveEditionVariant(variantId);
+  const finishBadge = premium ? `<i class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</i>` : '';
   return `<div class="catalog-card-face type-${esc(def.cardType.toLowerCase())} tier-${esc(rarity.toLowerCase())} ${compact ? 'compact' : ''} ${power != null ? 'has-power' : ''} ${premium ? 'executive-edition' : ''}">
-    <div class="catalog-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(departmentCode(def.department))}</b>${raritySignal(def, rarity, true)}${premium ? `<i class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</i>` : ''}</div>
+    <div class="catalog-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(departmentCode(def.department))}</b>${raritySignal(def, rarity, true)}${finishBadgePlacement === 'type-strip' ? finishBadge : ''}</div>
     <div class="catalog-name-row"><strong class="${longName ? 'long-name' : ''}">${esc(def.name)}</strong>${costParts ? `<span class="card-cost-badge catalog-cost"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></span>` : ''}</div>
-    <div class="catalog-art-stage">${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}</div>
+    <div class="catalog-art-stage">${finishBadgePlacement === 'artwork' ? finishBadge : ''}${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}</div>
     <div class="catalog-detail-row">${detailBits.length ? detailBits.map((bit)=>`<span>${esc(bit)}</span>`).join('') : `<span>${esc(sandboxRarityLabel(def))}</span>`}${owned != null ? `<b>OWNED ${esc(owned)}</b>` : ''}</div>
     ${compact ? '' : `<div class="catalog-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>`}
     ${compact ? '' : `<div class="catalog-tags">${tags.length ? tags.map((tag)=>`<span>${esc(tag)}</span>`).join('') : '<span>OFFICE</span>'}</div>`}
@@ -4625,7 +4626,7 @@ function renderCollectionCard(def, deck) {
   const swapSource = deckSwapSource(deck);
   const swapStatus = swapSource ? deckSwapTargetStatus(deck, def.id) : null;
   return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${finishClass(selectedVariant)} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
-    ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, isNew, artReady:Boolean(def.artId), owned })}
+    ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, finishBadgePlacement:'artwork', isNew, artReady:Boolean(def.artId), owned })}
     ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))} <small>${esc(ownedCopies(def.id))}</small></button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))} <small>${esc(executiveOwned)}</small></button></div>` : ''}
     ${finishSwapTarget ? `<button class="collection-finish-swap" data-deck-finish-swap="${esc(def.id)}" data-deck-finish-to="${esc(finishSwapTarget)}">${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}</button>` : ''}
     ${swapSource ? `<div class="collection-swap-control"><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-swap-target="${esc(def.id)}" ${swapStatus?.allowed ? '' : 'disabled'} title="${esc(swapStatus?.reason ?? 'Swap in this card')}">${swapSource.id===def.id ? 'SWAP SOURCE' : 'SWAP IN'}</button></div>` : `<div class="collection-copy-control"><button data-deck-minus="${esc(def.id)}" ${copies <= 0 ? 'disabled' : ''}>−</button><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-plus="${esc(def.id)}" ${copies >= deckCeiling || deckCardCount(deck) >= state.format.deckSize ? 'disabled' : ''}>+</button></div>`}

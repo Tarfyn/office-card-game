@@ -11,7 +11,7 @@ const css=root("public/styles.css");
 const app=root("public/app.js");
 const polish=css.slice(css.lastIndexOf("/* v7.69.15 — board-skin clarity, resource rail balance + lobby large-card finish */"));
 
-  test("v7.69.15 version is current",()=>assert.equal(pkg.version,"7.69.35"));
+  test("v7.69.15 version is current",()=>assert.equal(pkg.version,"7.69.36"));
 test("board skin lanes become transparent while slots remain available",()=>{
   assert.match(polish,/player-board\[class\*="board-skin-"\] \.board-lane[\s\S]*background:transparent !important/);
   assert.match(polish,/board-lane::before \{ display:none !important; \}/);
