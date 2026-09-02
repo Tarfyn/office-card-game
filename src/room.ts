@@ -1,6 +1,6 @@
 import { alphaDefinitions } from "./cards.js";
 import { alphaDeckPresets, type DeckPreset } from "./decks.js";
-import { createMatch, resign, validateDeck } from "./engine.js";
+import { createMatch, resign, validateDeck, type MatchQaSetup } from "./engine.js";
 import { ALPHA_FORMAT } from "./formats.js";
 import { defaultCosmeticLoadout, normalizeCosmeticLoadout, type CosmeticLoadout } from "./cosmetics.js";
 import { executeHostedMatchIntent, executeMatchIntent } from "./intents.js";
@@ -479,15 +479,15 @@ export class RoomService {
     return { roomId, token, playerId: "P1", view: this.projectRoom(room, token, 0) };
   }
 
-  createBotRoom(deckSelection: DeckSelection, settingsSelection: RoomSettingsSelection = {}, identity: RoomSeatIdentity = {}, botDeckSelection: DeckSelection = "it-starter", botDisplayName = "Office Coach"): CreateRoomResult {
+  createBotRoom(deckSelection: DeckSelection, settingsSelection: RoomSettingsSelection = {}, identity: RoomSeatIdentity = {}, botDeckSelection: DeckSelection = "it-starter", botDisplayName = "Office Coach", qaSetup?: MatchQaSetup): CreateRoomResult {
     const created = this.createRoom(deckSelection, { ...settingsSelection, bot:true, rewardEligible:false }, identity);
-    this.joinRoom(created.roomId, botDeckSelection, { displayName:botDisplayName, isBot:true });
+    this.joinRoom(created.roomId, botDeckSelection, { displayName:botDisplayName, isBot:true }, qaSetup);
     const room = this.getRoom(created.roomId);
     this.runBot(room);
     return { ...created, view:this.projectRoom(room, created.token, 0) };
   }
 
-  joinRoom(roomId: string, deckSelection: DeckSelection, identity: RoomSeatIdentity = {}): JoinRoomResult {
+  joinRoom(roomId: string, deckSelection: DeckSelection, identity: RoomSeatIdentity = {}, qaSetup?: MatchQaSetup): JoinRoomResult {
     const deck = this.resolveDeck(deckSelection);
     const room = this.getRoom(roomId);
     if (room.guest) throw new RoomError("ROOM_FULL", "Room already has two players.");
@@ -500,7 +500,8 @@ export class RoomService {
       definitions: this.definitions,
       p1Deck: room.host.cards,
       p2Deck: deck.cards,
-      format: ALPHA_FORMAT
+      format: ALPHA_FORMAT,
+      qaSetup
     });
     const now = this.nowFactory();
     room.lifecycle.matchStartedAt = now;

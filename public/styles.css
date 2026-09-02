@@ -12746,4 +12746,6 @@ body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.activ
 .card-variant-picker button { flex:1 1 0; min-width:0; padding:3px 4px; border:1px solid #c8bca7; border-radius:3px; background:#f7f2e8; color:#6b6256; font-size:6px; font-weight:900; letter-spacing:.05em; }
 .card-variant-picker button.selected { border-color:#8d6b2d; background:#e7d2a0; color:#34280f; }
 .card-variant-picker button.gold.selected { background:linear-gradient(180deg,#ffeaa0,#c79332); color:#4b3209; }
+.card-variant-picker button small { margin-left:2px; font-size:5px; opacity:.75; }
+.collection-finish-swap { width:100%; margin:0 1px 2px; padding:3px 4px; border:1px solid #a17a2b; border-radius:3px; background:linear-gradient(180deg,#fff0b3,#d6a642); color:#4b3209; font-size:6px; font-weight:950; letter-spacing:.04em; }
 @media (prefers-reduced-motion: reduce) { .card-art-stage .executive-art-foil,.catalog-art-stage .executive-art-foil { transition:none; } }

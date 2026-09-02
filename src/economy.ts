@@ -5,6 +5,9 @@ export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
 export type CollectionMode = "SANDBOX_ALL_AVAILABLE" | "OWNED_COPIES";
 export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop" | "alpha_playtest";
 
+/** Deterministic Alpha fixture used to exercise the complete Executive Edition card path. */
+export const ALPHA_EXECUTIVE_TEST_CARD_ID = "CS-001";
+
 export interface PlayerProgression {
   level: number;
   xp: number;
@@ -272,11 +275,17 @@ export function seedOwnedCollection(profile: PlayerMetaProfile, cards: OwnedDeck
 }
 
 export function applyAlphaPlaytestCosmeticGrant(profile: PlayerMetaProfile, now = Date.now()): PlayerMetaProfile {
-  return applyRewardGrant(profile, {
+  const withRankedFrames = applyRewardGrant(profile, {
     source: "alpha_playtest",
     sourceRef: "alpha-playtest:ranked-frames:v1",
     cards: [], officeCredits: 0, scrap: 0,
     cosmetics: ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"], packs: [], grantedAt: now
+  }, now).profile;
+  return applyRewardGrant(withRankedFrames, {
+    source: "alpha_playtest",
+    sourceRef: "alpha-playtest:executive-card:v1",
+    cards: [{ cardId: ALPHA_EXECUTIVE_TEST_CARD_ID, quantity: 1, variantId: executiveEditionVariantId(ALPHA_EXECUTIVE_TEST_CARD_ID) }],
+    officeCredits: 0, scrap: 0, cosmetics: [], packs: [], grantedAt: now
   }, now).profile;
 }
 

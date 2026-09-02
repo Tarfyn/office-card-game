@@ -71,6 +71,11 @@ export function assertLegalDeck(entries: DeckEntry[], definitions: Record<string
   if (!result.valid) throw new RulesError(result.errors.join(" "));
 }
 
+/** Local Alpha QA only; the server must gate this before passing it to createMatch. */
+export interface MatchQaSetup {
+  forceOpeningHandVariantId?: string;
+}
+
 function opponentOf(playerId: PlayerId): PlayerId {
   return playerId === "P1" ? "P2" : "P1";
 }
@@ -168,6 +173,14 @@ function expandDeck(
   return ids;
 }
 
+function forceVariantToTop(deck: string[], cards: Record<string, CardInstance>, variantId: string): void {
+  const index = deck.findIndex((instanceId) => cards[instanceId]?.variantId === variantId);
+  if (index < 0) throw new RulesError(`QA setup card variant not found in the selected deck: ${variantId}.`);
+  const [instanceId] = deck.splice(index, 1);
+  // drawCards consumes the top of the stack with pop().
+  deck.push(instanceId);
+}
+
 export function createMatch(args: {
   matchId: string;
   seed: number;
@@ -176,6 +189,7 @@ export function createMatch(args: {
   p1Deck: DeckEntry[];
   p2Deck: DeckEntry[];
   format?: DeckFormat;
+  qaSetup?: MatchQaSetup;
 }): GameState {
   if (args.format) {
     assertLegalDeck(args.p1Deck, args.definitions, args.format);
@@ -188,6 +202,9 @@ export function createMatch(args: {
 
   p1.deck = shuffle(expandDeck("P1", args.p1Deck, args.definitions, cards), rng);
   p2.deck = shuffle(expandDeck("P2", args.p2Deck, args.definitions, cards), rng);
+  if (args.qaSetup?.forceOpeningHandVariantId) {
+    forceVariantToTop(p1.deck, cards, args.qaSetup.forceOpeningHandVariantId);
+  }
 
   const state: GameState = {
     matchId: args.matchId,

@@ -540,7 +540,8 @@ export class PlayerProfileService {
       for (const raw of playerSnapshot.players) {
         if (!raw?.profileId && !raw?.playerId) continue;
         const normalized = normalizeProfile(raw, this.rankedConfig);
-        const profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
+        let profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
+        if (this.alphaPlaytest) profile = { ...profile, meta: applyAlphaPlaytestCosmeticGrant(profile.meta, this.nowFactory()) };
         migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length;
         if (!profile.playerId) continue;
         this.playersById.set(profile.playerId, profile);

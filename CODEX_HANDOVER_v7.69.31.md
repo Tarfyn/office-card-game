@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.30
+# Office Card Game - Codex Handover v7.69.31
 
 ## Baseline
 
-- Version: `v7.69.30`
-- Commit: final release commit resolved by immutable annotated tag `v7.69.30`
+- Version: `v7.69.31`
+- Commit: final release commit resolved by immutable annotated tag `v7.69.31`
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.30 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.31 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership and the Bot/Training/
 Tutorial foundation.
@@ -197,6 +197,12 @@ provisional Alpha Booster premium roll is centralized at `0.75%` per pack. `EXEC
 is a reward-only, one-card guaranteed Executive Edition pack that can be granted through RewardGrant.
 No legacy `-H` or `Gold Holo` premium IDs remain in the current implementation.
 
+The Alpha/playtest profile grant includes exactly one deterministic `CS-001-EXEC` copy using the
+idempotent `alpha_playtest` source and `alpha-playtest:executive-card:v1` sourceRef. For local visual
+QA only, setting `OCG_ALPHA_QA_EXECUTIVE=1` while running in `LOCAL` mode forces that real persisted
+Executive Deck copy into the opening Hand of local `TRAINING` bot matches. The hook is not accepted
+from requests, is ignored in network mode, and does not alter normal shuffle/draw behavior.
+
 ## Reward and grant foundation
 
 The generic RewardGrant path is persistent and supports cards, Office Credits, Shredder Scraps,
@@ -256,5 +262,5 @@ Known review items:
 8. The local smoke profile is intentionally disposable; do not treat its wallet or collection as production data.
 
 Do not rebalance the economy, redesign the Match Board or change perspective strength without a new
-focused task. Do not commit, tag or deploy documentation or code changes until the current review
-explicitly requests it.
+focused task. The Executive Alpha grant and deterministic opening-Hand hook are temporary test
+infrastructure and must be removed or disabled when production acquisition/reward flows replace them.

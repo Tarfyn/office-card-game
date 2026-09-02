@@ -1,12 +1,17 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { alphaDefinitions } from "../src/cards.js";
+import { alphaDeckPresets } from "../src/decks.js";
 import { ALPHA_FORMAT } from "../src/formats.js";
+import { createMatch } from "../src/engine.js";
 import type { RarityTier } from "../src/types.js";
 import {
   applyAlphaPlaytestCosmeticGrant,
   applyCraft,
   applyRewardGrant,
   applyScrap,
+  ALPHA_EXECUTIVE_TEST_CARD_ID,
   createAlphaMetaProfile,
   createPlayerMetaProfile,
   openExecutiveEditionPack,
@@ -19,6 +24,9 @@ import {
   isExecutiveEditionEligible
 } from "../src/card-variants.js";
 import { assertDeckInput } from "../src/player-decks.js";
+import { PlayerProfileService, type GuestCredentialStoreSnapshot, type PlayerDataStoreSnapshot } from "../src/profile.js";
+
+const app = readFileSync(fileURLToPath(new URL("../../public/app.js", import.meta.url)), "utf8");
 
 const cards = Object.values(alphaDefinitions);
 const base = cards.find(isExecutiveEditionEligible)!;
@@ -101,5 +109,57 @@ for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) {
   assert.equal(cosmeticIsOwned(alpha.cosmetics, id), true);
 }
 assert.equal(COSMETIC_SHOP_CATALOG.some((entry) => ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"].includes(entry.cosmeticId)), false);
+const alphaExecutiveId = executiveEditionVariantId(ALPHA_EXECUTIVE_TEST_CARD_ID);
+assert.equal(alpha.ownedCardVariants[alphaExecutiveId], 1);
+assert.equal(applyAlphaPlaytestCosmeticGrant(alpha, 2).ownedCardVariants[alphaExecutiveId], 1);
+assert.equal(production.ownedCardVariants[alphaExecutiveId] ?? 0, 0);
 
-console.log("\n1/1 v7.69.33 Executive Edition tests passed.");
+assert.match(app, /id="collectionFinishFilter"/);
+assert.match(app, /data-card-variant/);
+assert.match(app, /data-deck-finish-swap/);
+
+let players: PlayerDataStoreSnapshot | null = null;
+let credentials: GuestCredentialStoreSnapshot | null = null;
+const stores = {
+  playerPersistence:{ storageLabel:"ALPHA_PLAYERS", load:() => players, save:(snapshot:PlayerDataStoreSnapshot) => { players = structuredClone(snapshot); } },
+  credentialPersistence:{ storageLabel:"ALPHA_CREDENTIALS", load:() => credentials, save:(snapshot:GuestCredentialStoreSnapshot) => { credentials = structuredClone(snapshot); } }
+};
+const preAlpha = new PlayerProfileService({ ...stores, idFactory:() => "existing-alpha", tokenFactory:() => "existing-alpha-token", alphaPlaytest:false });
+const existing = preAlpha.create();
+const alphaRestore = new PlayerProfileService({ ...stores, alphaPlaytest:true });
+const restored = alphaRestore.get(existing.profileToken);
+for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) assert.equal(cosmeticIsOwned(restored.meta.cosmetics, id), true);
+assert.equal(restored.meta.ownedCardVariants[alphaExecutiveId], 1);
+assert.equal(restored.meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frames:v1").length, 1);
+assert.equal(restored.meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:executive-card:v1").length, 1);
+const alphaRestart = new PlayerProfileService({ ...stores, alphaPlaytest:true });
+assert.equal(alphaRestart.get(existing.profileToken).meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frames:v1").length, 1);
+assert.equal(alphaRestart.get(existing.profileToken).meta.ownedCardVariants[alphaExecutiveId], 1);
+const freshAlpha = alphaRestart.create().profile;
+for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) assert.equal(cosmeticIsOwned(freshAlpha.meta.cosmetics, id), true);
+assert.equal(freshAlpha.meta.ownedCardVariants[alphaExecutiveId], 1);
+
+const qaDeck = alphaDeckPresets["customer-service-starter"].cards.flatMap((entry) => {
+  if (entry.definitionId !== ALPHA_EXECUTIVE_TEST_CARD_ID) return [{ ...entry }];
+  const standardCopies = Math.max(0, entry.copies - 1);
+  return [
+    ...(standardCopies ? [{ ...entry, copies: standardCopies }] : []),
+    { ...entry, copies: 1, variantId: alphaExecutiveId }
+  ];
+});
+const qaMatch = createMatch({
+  matchId: "alpha-executive-qa",
+  seed: 76934,
+  firstPlayerId: "P1",
+  definitions: alphaDefinitions,
+  p1Deck: qaDeck,
+  p2Deck: alphaDeckPresets["it-starter"].cards,
+  format: ALPHA_FORMAT,
+  qaSetup: { forceOpeningHandVariantId: alphaExecutiveId }
+});
+assert.ok(qaMatch.players.P1.hand.some((instanceId) => qaMatch.cards[instanceId]?.variantId === alphaExecutiveId));
+const server = readFileSync(fileURLToPath(new URL("../../server/server.mjs", import.meta.url)), "utf8");
+assert.match(server, /SERVER_MODE === "LOCAL" && process\.env\.OCG_ALPHA_QA_EXECUTIVE === "1"/);
+assert.match(server, /forceOpeningHandVariantId: executiveEditionVariantId\("CS-001"\)/);
+
+console.log("\nExecutive Edition and Alpha ranked-frame regression tests passed.");

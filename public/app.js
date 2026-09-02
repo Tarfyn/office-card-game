@@ -166,6 +166,7 @@ const state = {
   collectionType: 'ALL',
   collectionSort: 'DEPARTMENT',
   collectionOwnedFilter: 'ALL',
+  collectionFinishFilter: 'ALL',
   collectionRarity: 'ALL',
   collectionTag: 'ALL',
   collectionDeckFilter: 'ALL',
@@ -4033,6 +4034,19 @@ function swapDeckCopy(deck, targetId) {
   return true;
 }
 
+function swapDeckFinish(deck, definitionId, fromVariant, toVariant) {
+  const fromCopies = deckVariantCopies(deck, definitionId, fromVariant);
+  const ownedTarget = toVariant ? ownedExecutiveEditionCopies(definitionId, toVariant) : ownedCopies(definitionId);
+  if (fromCopies <= 0 || ownedTarget <= 0) return false;
+  recordDeckEdit(deck, () => {
+    writeDeckVariantCopies(deck, definitionId, fromVariant, fromCopies - 1);
+    writeDeckVariantCopies(deck, definitionId, toVariant, deckVariantCopies(deck, definitionId, toVariant) + 1);
+    sortDeckEntries(deck);
+  });
+  state.collectionPreviewId = definitionId;
+  return true;
+}
+
 // v7.6 regression compatibility only; v7.7 now checkpoints edits before persistence.
 const V76_SWAP_SAVE_COMPAT = `sortDeckEntries(deck);
   saveCustomDecks();
@@ -4240,6 +4254,7 @@ function activeCollectionFilters() {
   if (state.collectionDepartment !== 'ALL') filters.push({ id:'DEPARTMENT', label:collectionDepartmentLabel(state.collectionDepartment) });
   if (state.collectionType !== 'ALL') filters.push({ id:'TYPE', label:state.collectionType });
   if (state.collectionOwnedFilter !== 'ALL') filters.push({ id:'OWNED', label:state.collectionOwnedFilter === 'MISSING' ? 'Missing' : state.collectionOwnedFilter === 'NEW' ? 'New' : state.collectionOwnedFilter === 'DECK_GAP' ? 'Missing for deck' : state.collectionOwnedFilter === 'SHREDDABLE' ? 'Shred candidates' : 'Owned' });
+  if (state.collectionFinishFilter !== 'ALL') filters.push({ id:'FINISH', label:state.collectionFinishFilter === 'EXECUTIVE' ? collectionCopy('executiveEdition') : collectionCopy('standard') });
   if (state.collectionRarity !== 'ALL') filters.push({ id:'RARITY', label:state.collectionRarity });
   if (state.collectionTag !== 'ALL') filters.push({ id:'TAG', label:`#${state.collectionTag}` });
   if (state.collectionDeckFilter !== 'ALL') filters.push({ id:'DECK', label:collectionDeckFilterLabel(state.collectionDeckFilter) });
@@ -4253,6 +4268,7 @@ function clearCollectionFilter(id) {
   if (id === 'DEPARTMENT') state.collectionDepartment = 'ALL';
   if (id === 'TYPE') state.collectionType = 'ALL';
   if (id === 'OWNED') state.collectionOwnedFilter = 'ALL';
+  if (id === 'FINISH') state.collectionFinishFilter = 'ALL';
   if (id === 'RARITY') state.collectionRarity = 'ALL';
   if (id === 'TAG') state.collectionTag = 'ALL';
   if (id === 'DECK') state.collectionDeckFilter = 'ALL';
@@ -4265,6 +4281,7 @@ function resetCollectionFilters() {
   state.collectionDepartment='ALL';
   state.collectionType='ALL';
   state.collectionOwnedFilter='ALL';
+  state.collectionFinishFilter='ALL';
   state.collectionRarity='ALL';
   state.collectionTag='ALL';
   state.collectionDeckFilter='ALL';
@@ -4598,14 +4615,19 @@ function renderCollectionCard(def, deck) {
   const owned = ownedTotalCopies(def.id);
   const executiveId = executiveEditionVariantId(def.id);
   const executiveOwned = ownedExecutiveEditionCopies(def.id, executiveId);
-  const selectedVariant = state.collectionVariantSelection?.[def.id] === 'EXECUTIVE' && executiveOwned > 0 ? executiveId : null;
+  const selectedFinish = state.collectionVariantSelection?.[def.id] ?? (state.collectionFinishFilter === 'EXECUTIVE' ? 'EXECUTIVE' : 'STANDARD');
+  const selectedVariant = selectedFinish === 'EXECUTIVE' && executiveOwned > 0 ? executiveId : null;
+  const standardDeckCopies = deckVariantCopies(deck, def.id, null);
+  const executiveDeckCopies = deckVariantCopies(deck, def.id, executiveId);
+  const finishSwapTarget = selectedFinish === 'EXECUTIVE' && standardDeckCopies > 0 && executiveOwned > 0 ? executiveId : selectedFinish === 'STANDARD' && executiveDeckCopies > 0 && ownedCopies(def.id) > 0 ? 'STANDARD' : null;
   const selected = state.collectionPreviewId === def.id;
   const isNew = state.newCollectionCards.has(def.id);
   const swapSource = deckSwapSource(deck);
   const swapStatus = swapSource ? deckSwapTargetStatus(deck, def.id) : null;
   return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${finishClass(selectedVariant)} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
     ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, isNew, artReady:Boolean(def.artId), owned })}
-    ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))}</button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))}</button></div>` : ''}
+    ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))} <small>${esc(ownedCopies(def.id))}</small></button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))} <small>${esc(executiveOwned)}</small></button></div>` : ''}
+    ${finishSwapTarget ? `<button class="collection-finish-swap" data-deck-finish-swap="${esc(def.id)}" data-deck-finish-to="${esc(finishSwapTarget)}">${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}</button>` : ''}
     ${swapSource ? `<div class="collection-swap-control"><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-swap-target="${esc(def.id)}" ${swapStatus?.allowed ? '' : 'disabled'} title="${esc(swapStatus?.reason ?? 'Swap in this card')}">${swapSource.id===def.id ? 'SWAP SOURCE' : 'SWAP IN'}</button></div>` : `<div class="collection-copy-control"><button data-deck-minus="${esc(def.id)}" ${copies <= 0 ? 'disabled' : ''}>−</button><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-plus="${esc(def.id)}" ${copies >= deckCeiling || deckCardCount(deck) >= state.format.deckSize ? 'disabled' : ''}>+</button></div>`}
   </article>`;
 }
@@ -5052,10 +5074,14 @@ function renderCollection() {
     if (!matchesCollectionCost(def)) return false;
     if (state.collectionPackFilter === 'LAST_PACK' && !lastBoosterCardIds().has(def.id)) return false;
     if (state.collectionPackFilter === 'LAST_PACK_NEW' && !lastBoosterNewCardIds().has(def.id)) return false;
-    if (state.collectionOwnedFilter === 'OWNED' && ownedCopies(def.id) <= 0) return false;
-    if (state.collectionOwnedFilter === 'MISSING' && ownedCopies(def.id) > 0) return false;
+    const executiveOwned = ownedExecutiveEditionCopies(def.id);
+    const standardOwned = ownedCopies(def.id);
+    if (state.collectionFinishFilter === 'EXECUTIVE' && executiveOwned <= 0) return false;
+    if (state.collectionFinishFilter === 'STANDARD' && ownedDeckMode() && standardOwned <= 0) return false;
+    if (state.collectionOwnedFilter === 'OWNED' && ownedTotalCopies(def.id) <= 0) return false;
+    if (state.collectionOwnedFilter === 'MISSING' && ownedTotalCopies(def.id) > 0) return false;
     if (state.collectionOwnedFilter === 'NEW' && !state.newCollectionCards.has(def.id)) return false;
-    if (state.collectionOwnedFilter === 'DECK_GAP' && deckCopies(deck, def.id) <= ownedCopies(def.id)) return false;
+    if (state.collectionOwnedFilter === 'DECK_GAP' && deckCopies(deck, def.id) <= ownedTotalCopies(def.id)) return false;
     if (state.collectionOwnedFilter === 'SHREDDABLE' && !(ownedCopies(def.id) > 0 && deckCopies(deck, def.id) === 0 && scrapCollectionStatus(def.id, 1).allowed)) return false;
     if (state.collectionRarity !== 'ALL' && sandboxRarityTier(def) !== state.collectionRarity) return false;
     if (state.collectionTag !== 'ALL' && !(def.tags ?? []).includes(state.collectionTag)) return false;
@@ -5089,6 +5115,7 @@ function renderCollection() {
             <label><span>DEPARTMENT</span><select id="collectionDepartment">${departments.map((d) => `<option value="${esc(d)}" ${state.collectionDepartment===d?'selected':''}>${esc(collectionDepartmentLabel(d))}</option>`).join('')}</select></label>
             <label><span>TYPE</span><select id="collectionType">${types.map((t) => `<option value="${esc(t)}" ${state.collectionType===t?'selected':''}>${esc(t==='ALL'?'All types':t)}</option>`).join('')}</select></label>
             <label><span>OWNERSHIP</span><select id="collectionOwnedFilter"><option value="ALL" ${state.collectionOwnedFilter==='ALL'?'selected':''}>All ownership</option><option value="OWNED" ${state.collectionOwnedFilter==='OWNED'?'selected':''}>Owned</option><option value="MISSING" ${state.collectionOwnedFilter==='MISSING'?'selected':''}>Missing</option><option value="DECK_GAP" ${state.collectionOwnedFilter==='DECK_GAP'?'selected':''}>Missing for deck</option><option value="SHREDDABLE" ${state.collectionOwnedFilter==='SHREDDABLE'?'selected':''}>Shred candidates</option><option value="NEW" ${state.collectionOwnedFilter==='NEW'?'selected':''}>New</option></select></label>
+            <label><span>${esc(collectionCopy('finish'))}</span><select id="collectionFinishFilter"><option value="ALL" ${state.collectionFinishFilter==='ALL'?'selected':''}>${esc(lobbyCopy('All finishes','Alle Kartenfinishes'))}</option><option value="STANDARD" ${state.collectionFinishFilter==='STANDARD'?'selected':''}>${esc(collectionCopy('standard'))}</option><option value="EXECUTIVE" ${state.collectionFinishFilter==='EXECUTIVE'?'selected':''}>${esc(collectionCopy('executiveEdition'))}</option></select></label>
             <label><span>RARITY</span><select id="collectionRarity">${rarities.map((tier) => `<option value="${esc(tier)}" ${state.collectionRarity===tier?'selected':''}>${esc(tier==='ALL'?'All tiers':`${tier} · ${state.economyConfig?.rarityTiers?.find((item)=>item.id===tier)?.label ?? tier}`)}</option>`).join('')}</select></label>
             <label><span>ENGINE TAG</span><select id="collectionTag"><option value="ALL" ${state.collectionTag==='ALL'?'selected':''}>All tags</option>${tagEntries.map(([tag,count]) => `<option value="${esc(tag)}" ${state.collectionTag===tag?'selected':''}>${esc(tag)} · ${esc(count)}</option>`).join('')}</select></label>
             <label><span>DECK STATUS</span><select id="collectionDeckFilter"><option value="ALL" ${state.collectionDeckFilter==='ALL'?'selected':''}>All deck status</option><option value="IN_DECK" ${state.collectionDeckFilter==='IN_DECK'?'selected':''}>In current deck</option><option value="NOT_IN_DECK" ${state.collectionDeckFilter==='NOT_IN_DECK'?'selected':''}>Not in current deck</option><option value="BELOW_LIMIT" ${state.collectionDeckFilter==='BELOW_LIMIT'?'selected':''}>Below copy limit</option></select></label>
@@ -5148,6 +5175,7 @@ function renderCollection() {
   document.querySelector('#collectionDepartment').onchange = (e) => { state.collectionDepartment=e.target.value; renderCollection(); };
   document.querySelector('#collectionType').onchange = (e) => { state.collectionType=e.target.value; renderCollection(); };
   document.querySelector('#collectionOwnedFilter').onchange = (e) => { state.collectionOwnedFilter=e.target.value; renderCollection(); };
+  document.querySelector('#collectionFinishFilter').onchange = (e) => { state.collectionFinishFilter=e.target.value; renderCollection(); };
   document.querySelector('#collectionRarity').onchange = (e) => { state.collectionRarity=e.target.value; renderCollection(); };
   document.querySelector('#collectionTag').onchange = (e) => { state.collectionTag=e.target.value; renderCollection(); };
   document.querySelector('#collectionDeckFilter').onchange = (e) => { state.collectionDeckFilter=e.target.value; renderCollection(); };
@@ -5207,8 +5235,9 @@ function renderCollection() {
     state.collectionPreviewId = id;
     renderCollection();
   }));
-   document.querySelectorAll('[data-deck-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; const id=button.dataset.deckPlus; const variant=state.collectionVariantSelection?.[id] === 'EXECUTIVE' ? executiveEditionVariantId(id) : null; setDeckVariantCopies(deck,id,variant,deckVariantCopies(deck,id,variant)+1); renderCollection(); });
-   document.querySelectorAll('[data-deck-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; const id=button.dataset.deckMinus; const variant=state.collectionVariantSelection?.[id] === 'EXECUTIVE' ? executiveEditionVariantId(id) : null; setDeckVariantCopies(deck,id,variant,deckVariantCopies(deck,id,variant)-1); renderCollection(); });
+   document.querySelectorAll('[data-deck-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; const id=button.dataset.deckPlus; const finish=state.collectionVariantSelection?.[id] ?? (state.collectionFinishFilter === 'EXECUTIVE' ? 'EXECUTIVE' : 'STANDARD'); const variant=finish === 'EXECUTIVE' ? executiveEditionVariantId(id) : null; setDeckVariantCopies(deck,id,variant,deckVariantCopies(deck,id,variant)+1); renderCollection(); });
+   document.querySelectorAll('[data-deck-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; const id=button.dataset.deckMinus; const finish=state.collectionVariantSelection?.[id] ?? (state.collectionFinishFilter === 'EXECUTIVE' ? 'EXECUTIVE' : 'STANDARD'); const variant=finish === 'EXECUTIVE' ? executiveEditionVariantId(id) : null; setDeckVariantCopies(deck,id,variant,deckVariantCopies(deck,id,variant)-1); renderCollection(); });
+  document.querySelectorAll('[data-deck-finish-swap]').forEach((button) => button.onclick = () => { const id=button.dataset.deckFinishSwap; const to=button.dataset.deckFinishTo === 'STANDARD' ? null : button.dataset.deckFinishTo; const from=to ? null : executiveEditionVariantId(id); if (swapDeckFinish(deck,id,from,to)) { state.collectionVariantSelection[id]=to ? 'EXECUTIVE' : 'STANDARD'; state.deckBuilderMessage=to ? lobbyCopy('Deck copy changed to Executive Edition.','Deckkarte auf Executive Edition geändert.') : lobbyCopy('Deck copy changed to Standard.','Deckkarte auf Standard geändert.'); } renderCollection(); });
   document.querySelectorAll('[data-deck-list-plus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckListPlus,deckCopies(deck,button.dataset.deckListPlus)+1); renderCollection(); });
   document.querySelectorAll('[data-deck-list-minus]').forEach((button) => button.onclick = () => { state.deckBuilderMessage=null; setDeckCopies(deck,button.dataset.deckListMinus,deckCopies(deck,button.dataset.deckListMinus)-1); renderCollection(); });
   document.querySelectorAll('[data-deck-entry-preview]').forEach((row) => row.onclick = (event) => { if (event.target.closest('button')) return; state.collectionPreviewId=row.dataset.deckEntryPreview; markCollectionCardSeen(row.dataset.deckEntryPreview); renderCollection(); });
