@@ -79,6 +79,20 @@ export interface FinishedRankedRoomResult {
   reason: string;
   endedAt: number | null;
 }
+
+export interface MatchCompletionResult {
+  roomId: string;
+  matchId: string;
+  mode: RoomMatchMode;
+  winnerPlayerId: PlayerId | null;
+  reason: string;
+  endedAt: number | null;
+  seats: Record<PlayerId, {
+    profileId: string | null;
+    displayName: string | null;
+    deckName: string;
+  }>;
+}
 export type RoomErrorCode = "ROOM_NOT_FOUND" | "ROOM_FULL" | "INVALID_TOKEN" | "INVALID_DECK" | "MATCH_NOT_READY" | "REPLAY_NOT_AVAILABLE" | "PROFILE_NOT_IN_ROOM" | "SESSION_SUPERSEDED" | "REMATCH_NOT_READY" | "RATED_REMATCH_DISABLED";
 
 export class RoomError extends Error {
@@ -307,6 +321,7 @@ export interface RoomServiceOptions {
   nowFactory?: () => number;
   persistence?: RoomPersistence;
   timerProfiles?: TimerProfileConfig[] | Record<string, TimerProfileConfig>;
+  onMatchCompleted?: (result: MatchCompletionResult) => void;
 }
 
 function defaultRoomId(): string {
@@ -345,6 +360,7 @@ export class RoomService {
   private readonly nowFactory;
   private readonly persistence: RoomPersistence | null;
   private readonly timerProfiles: Record<string, TimerProfileConfig>;
+  private readonly onMatchCompleted: ((result: MatchCompletionResult) => void) | null;
 
   constructor(options: RoomServiceOptions = {}) {
     this.definitions = options.definitions ?? alphaDefinitions;
@@ -356,6 +372,7 @@ export class RoomService {
     this.nowFactory = options.nowFactory ?? (() => Date.now());
     this.persistence = options.persistence ?? null;
     this.timerProfiles = { ...DEFAULT_TIMER_PROFILES, ...timerProfilesById(options.timerProfiles) };
+    this.onMatchCompleted = options.onMatchCompleted ?? null;
     this.restore();
   }
 
@@ -790,6 +807,7 @@ export class RoomService {
       synchronizeTimerRuntime(room.timer, this.effectiveTimerProfile(room.settings), previousState, room.state, now);
       this.recordStateTransitionDiagnostics(room, previousState, room.state, now);
       synchronizeRoomTelemetry(room.telemetry, room.state, now);
+      this.emitMatchCompleted(room, previousState);
       room.roomVersion += 1;
       this.persist();
       this.notify(room);
@@ -967,6 +985,7 @@ export class RoomService {
       synchronizeTimerRuntime(room.timer, this.effectiveTimerProfile(room.settings), previous, room.state, now);
       this.recordStateTransitionDiagnostics(room, previous, room.state, now);
       synchronizeRoomTelemetry(room.telemetry, room.state, now);
+      this.emitMatchCompleted(room, previous);
       room.roomVersion += 1;
     }
     this.persist();
@@ -1125,6 +1144,7 @@ export class RoomService {
     addDiagnostic(room.telemetry, now, "TIMER_AUTO_PASS", playerId, { stateVersion: room.state.stateVersion });
     this.recordStateTransitionDiagnostics(room, previousState, room.state, now);
     synchronizeRoomTelemetry(room.telemetry, room.state, now);
+    this.emitMatchCompleted(room, previousState);
     room.roomVersion += 1;
     this.persist();
     this.notify(room);
@@ -1143,6 +1163,7 @@ export class RoomService {
     addDiagnostic(room.telemetry, now, "TIMEOUT", playerId, { reason });
     this.recordStateTransitionDiagnostics(room, previousState, room.state, now);
     synchronizeRoomTelemetry(room.telemetry, room.state, now);
+    this.emitMatchCompleted(room, previousState);
     clearReconnectDeadline(room.timer, "P1");
     clearReconnectDeadline(room.timer, "P2");
     room.roomVersion += 1;
@@ -1161,6 +1182,22 @@ export class RoomService {
     if (previousState.status !== "ENDED" && state.status === "ENDED") {
       addDiagnostic(room.telemetry, now, "MATCH_ENDED", state.winnerId ?? undefined, { reason: state.reason ?? null, turnNumber: state.turnNumber });
     }
+  }
+
+  private emitMatchCompleted(room: RoomRecord, previousState: GameState): void {
+    if (!this.onMatchCompleted || previousState.status === "ENDED" || !room.state || room.state.status !== "ENDED" || !room.guest) return;
+    this.onMatchCompleted({
+      roomId: room.id,
+      matchId: room.state.matchId,
+      mode: room.settings.mode,
+      winnerPlayerId: room.state.winnerId,
+      reason: String(room.state.reason ?? "UNKNOWN"),
+      endedAt: room.telemetry.endedAt,
+      seats: {
+        P1: { profileId: room.host.profileId, displayName: room.host.displayName, deckName: room.host.deckName },
+        P2: { profileId: room.guest.profileId, displayName: room.guest.displayName, deckName: room.guest.deckName }
+      }
+    });
   }
 
   private notify(room: RoomRecord): void {

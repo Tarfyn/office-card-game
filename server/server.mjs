@@ -85,13 +85,14 @@ import { alphaDefinitions } from "../dist/src/cards.js";
 import { alphaDeckPresets } from "../dist/src/decks.js";
 import { ALPHA_FORMAT } from "../dist/src/formats.js";
 import { validateDeck } from "../dist/src/engine.js";
-import { applyCraft, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openExecutiveEditionPack, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection } from "../dist/src/economy.js";
+import { applyCraft, applyLevelMilestoneRewards, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openExecutiveEditionPack, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection } from "../dist/src/economy.js";
 import { executiveEditionVariantId, isExecutiveEditionEligible } from "../dist/src/card-variants.js";
 import { COSMETIC_CATALOG, COSMETIC_SHOP_CATALOG } from "../dist/src/cosmetics.js";
 import { PlayerProfileService } from "../dist/src/profile.js";
 import { assertDeckInput } from "../dist/src/player-decks.js";
 import { MatchmakingQueue } from "../dist/src/matchmaking.js";
 import { normalizeRankedConfig, ratingWindowForWait } from "../dist/src/ranked.js";
+import { projectAchievements, normalizeProgressionConfig } from "../dist/src/progression.js";
 import { aggregatePlaytestAnalytics, filterPlaytestRecords, normalizePlaytestFilter, playtestAnalyticsDimensions, playtestRecordsCsv, playtestCardActivityCsv } from "../dist/src/playtest-analytics.js";
 import { localJsonPersistence } from "./storage/local-json.mjs";
 import { PlaytestFeedbackStore } from "../dist/src/playtest-feedback.js";
@@ -131,6 +132,10 @@ const dataDir = fileURLToPath(new URL("../data/", import.meta.url));
 const economyConfig = JSON.parse(await readFile(join(dataDir, "economy.json"), "utf8"));
 const matchSettings = JSON.parse(await readFile(join(dataDir, "match-settings.json"), "utf8"));
 const artworkConfig = JSON.parse(await readFile(join(dataDir, "artwork.json"), "utf8"));
+const achievementConfig = normalizeProgressionConfig({ ...JSON.parse(await readFile(join(dataDir, "achievements.json"), "utf8")), enabled:economyConfig.progression?.enabled !== false });
+const rankedRanksConfig = JSON.parse(await readFile(join(dataDir, "ranked", "ranks.json"), "utf8"));
+const rankedSeasonsConfig = JSON.parse(await readFile(join(dataDir, "ranked", "seasons.json"), "utf8"));
+const rankedContentConfig = { ranks:rankedRanksConfig.ranks ?? [], seasons:rankedSeasonsConfig.seasons ?? [] };
 const rankedConfig = normalizeRankedConfig(matchSettings.ranked ?? {});
 const alphaScrapRules = {
   deckSize: Number(ALPHA_FORMAT.deckSize),
@@ -169,6 +174,9 @@ const profiles = new PlayerProfileService({
   deckFormat: ALPHA_FORMAT,
   builtInDeckIds: Object.keys(alphaDeckPresets),
   alphaPlaytest: true
+  ,progressionConfig: achievementConfig
+  ,rankedContentConfig
+  ,levelMilestones:economyConfig.progression?.levelMilestones ?? []
 });
 const matchmaking = new MatchmakingQueue({
   ticketIdFactory: () => `mm-${randomBytes(6).toString("hex")}`,
@@ -214,6 +222,44 @@ function matchHistoryEntry(view, outcome) {
   };
 }
 
+function progressionEventsForMatch({ roomId, matchId, mode, playerId, outcome, finishedAt }, replay) {
+  const events = [
+    { id:`${roomId}:progress:${playerId}:completed`, type:"MATCH_COMPLETED", playerId, matchId, mode, timestamp:finishedAt, payload:{ outcome } },
+    { id:`${roomId}:progress:${playerId}:result`, type:outcome === "WIN" ? "MATCH_WON" : outcome === "DRAW" ? "MATCH_DRAW" : "MATCH_LOST", playerId, matchId, mode, timestamp:finishedAt, payload:{ outcome } }
+  ];
+  for (const event of replay?.events ?? []) {
+    if (event.type === "REPUTATION_CHANGED" && event.playerId !== playerId && event.data?.reason === "DIRECT_ATTACK") {
+      const amount = Math.abs(Number(event.data?.delta ?? 0));
+      if (amount > 0) events.push({ id:`${roomId}:progress:${playerId}:direct-rep:${event.seq}`, type:"DIRECT_REP_DAMAGE", playerId, matchId, mode, timestamp:finishedAt, payload:{ amount, targetPlayerId:event.playerId } });
+      continue;
+    }
+    if (event.playerId !== playerId || !["CARD_PLAYED","INCIDENT_SET"].includes(event.type) || !event.cardDefinitionId) continue;
+    const definition = alphaDefinitions[event.cardDefinitionId];
+    if (!definition) continue;
+    const payload = { cardId:definition.id, department:definition.department, cardType:definition.cardType, tier:sandboxRarityTier(definition), mode };
+    events.push({ id:`${roomId}:progress:${playerId}:card:${event.seq}`, type:"CARD_PLAYED", playerId, matchId, mode, timestamp:finishedAt, payload });
+    events.push({ id:`${roomId}:progress:${playerId}:department:${event.seq}`, type:"DEPARTMENT_CARD_PLAYED", playerId, matchId, mode, timestamp:finishedAt, payload });
+  }
+  return events;
+}
+
+function recordCompletedProfileMatches(completion) {
+  for (const playerId of ["P1", "P2"]) {
+    const seat = completion.seats[playerId];
+    if (!seat?.profileId) continue;
+    const opponent = completion.seats[playerId === "P1" ? "P2" : "P1"];
+    const outcome = !completion.winnerPlayerId ? "DRAW" : completion.winnerPlayerId === playerId ? "WIN" : completion.reason === "RESIGN" ? "RESIGN_LOSS" : "LOSS";
+    const finishedAt = Number(completion.endedAt ?? Date.now());
+    const replay = rooms.getReplayForProfile(completion.roomId, seat.profileId);
+    const entry = {
+      roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, outcome,
+      opponentName:opponent?.displayName ?? "Opponent", deckName:seat.deckName, opponentDeckName:opponent?.deckName ?? "Unknown Deck",
+      turns:Number(replay?.turns ?? 0), reason:completion.reason, finishedAt
+    };
+    profiles.recordMatchForPlayerId(seat.profileId, entry, progressionEventsForMatch({ roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, playerId, outcome, finishedAt }, replay));
+  }
+}
+
 function profileFromToken(profileToken) {
   if (!profileToken) return null;
   return profiles.get(String(profileToken));
@@ -257,7 +303,8 @@ const rooms = new RoomService({
   seedFactory: () => randomInt(1, 0x7fffffff),
   firstPlayerFactory: () => randomInt(2) === 0 ? "P1" : "P2",
   persistence: roomPersistence,
-  timerProfiles: matchSettings.timerProfiles ?? []
+  timerProfiles: matchSettings.timerProfiles ?? [],
+  onMatchCompleted: recordCompletedProfileMatches
 });
 
 const timerSweepInterval = setInterval(() => { rooms.tickTimers(); settleRankedRooms(); }, Number(matchSettings.timerRuntime?.sweepIntervalMs ?? 250));
@@ -360,7 +407,7 @@ function adminOpsSnapshot() {
   };
   return {
     generatedAt: now,
-    version: "7.69.37",
+    version: "7.69.38",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
     counts,
@@ -571,8 +618,8 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.37", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.37", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.38", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.38", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
       return json(res, 200, { ops:adminOpsSnapshot() });
@@ -581,6 +628,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/catalog") return json(res, 200, { cards: publicCatalog() });
     if (req.method === "GET" && path === "/api/format") return json(res, 200, { format: ALPHA_FORMAT });
     if (req.method === "GET" && path === "/api/economy-config") return json(res, 200, { economy: economyConfig });
+    if (req.method === "GET" && path === "/api/progression-config") return json(res, 200, { achievements:achievementConfig, ranked:rankedContentConfig });
     if (req.method === "GET" && path === "/api/match-settings") return json(res, 200, { settings: matchSettings });
     if (req.method === "GET" && path === "/api/meta-schema") return json(res, 200, { profile: createAlphaMetaProfile() });
 
@@ -656,6 +704,11 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/profiles/me") {
       const profile = profiles.get(profileTokenFrom(req, url));
       return json(res, 200, { profile, storage:profiles.playerStorageLabel, account:{ playerId:profile.playerId, authMode:profiles.authMode } });
+    }
+
+    if (req.method === "GET" && path === "/api/profiles/me/achievements") {
+      const profile = profiles.get(profileTokenFrom(req, url));
+      return json(res, 200, { achievements:projectAchievements(achievementConfig, profile.meta), profile:profile.meta.achievements, ranked:profile.ranked });
     }
 
     if (req.method === "GET" && path === "/api/profiles/me/decks") {
@@ -830,7 +883,11 @@ const server = createServer(async (req, res) => {
         executiveEditionChancePerPack: Number(pack.executiveEditionChancePerPack ?? 0),
         executiveEditionPool: Object.values(alphaDefinitions)
       }, randomInt(1, 0x7fffffff));
-      const committed = commitMetaContext(context, result.profile);
+      let committed = commitMetaContext(context, result.profile);
+      if (context.serverProfile) {
+        const serverProfile = profiles.recordProgressionEvents(String(body.profileToken), [{ id:`booster:${context.serverProfile.playerId}:${Date.now()}`, type:"BOOSTER_OPENED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ packId:pack.id, cardCount:result.cardIds?.length ?? 0 } }]);
+        committed = { profile:serverProfile.meta, serverProfile };
+      }
       return json(res, 200, { ...result, ...committed, packId: pack.id });
     }
 
@@ -865,7 +922,11 @@ const server = createServer(async (req, res) => {
       const affectedDecks = context.serverProfile?.decks?.filter((deck) => deck.cards.some((entry) => entry.definitionId === card.id && (entry.variantId ? entry.variantId === variantId && entry.copies > remainingOwned : !variantId && entry.copies > remainingOwned))).map((deck) => ({ id:deck.id, name:deck.name })) ?? [];
       if (affectedDecks.length && body?.confirmDeckImpact !== true) return json(res, 409, { error:{ code:"DECKS_AFFECTED_BY_SCRAP", message:"Recycling this card will make saved decks invalid." }, affectedDecks, eligibility });
       const profile = applyScrap(context.meta, card.id, copies, Number(tierConfig.scrapValue), alphaScrapRules, variantId);
-      const committed = commitMetaContext(context, profile);
+      let committed = commitMetaContext(context, profile);
+      if (context.serverProfile) {
+        const serverProfile = profiles.recordProgressionEvents(String(body.profileToken), [{ id:`scrap:${context.serverProfile.playerId}:${Date.now()}`, type:"CARD_RECYCLED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ cardId:card.id, department:card.department, tier, copies } }]);
+        committed = { profile:serverProfile.meta, serverProfile };
+      }
       return json(res, 200, { ...committed, definitionId:card.id, tier, scrapValueEach:tierConfig.scrapValue, eligibility, affectedDecks });
     }
 
@@ -879,7 +940,11 @@ const server = createServer(async (req, res) => {
       const context = metaContext(body);
       if (body?.variantId) return json(res, 400, { error:{ code:"PREMIUM_VARIANT_NOT_CRAFTABLE", message:"Executive Edition variants cannot be crafted." } });
       const profile = applyCraft(context.meta, card.id, Number(body?.copies ?? 1), Number(tierConfig.craftCost));
-      const committed = commitMetaContext(context, profile);
+      let committed = commitMetaContext(context, profile);
+      if (context.serverProfile) {
+        const serverProfile = profiles.recordProgressionEvents(String(body.profileToken), [{ id:`craft:${context.serverProfile.playerId}:${Date.now()}`, type:"CARD_CRAFTED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ cardId:card.id, department:card.department, tier, copies:Number(body?.copies ?? 1) } }]);
+        committed = { profile:serverProfile.meta, serverProfile };
+      }
       return json(res, 200, { ...committed, definitionId:card.id, tier, craftCostEach:tierConfig.craftCost });
     }
 
@@ -898,17 +963,21 @@ const server = createServer(async (req, res) => {
       const context = metaContext(body);
       const seatIdentity = rooms.getSeatIdentity(roomId, token);
       if (seatIdentity.profileId && context.serverProfile?.playerId !== seatIdentity.profileId) throw new Error("PROFILE_MISMATCH");
-      const preview = applyMatchReward(context.meta, outcome, rewardConfig, Number(economyConfig.progression?.levelXpStep ?? 100));
+      if (!profiles.progressionEnabled) return json(res, 409, { error:{ code:"PROGRESSION_DISABLED", message:"Progression is currently disabled." } });
+      const previewReward = applyMatchReward(context.meta, outcome, rewardConfig, Number(economyConfig.progression?.levelXpStep ?? 100));
       const alreadyClaimed = (context.meta.claimedRewardRooms ?? []).includes(roomId);
       if (alreadyClaimed) {
         let recordedProfile = context.serverProfile ?? null;
-        if (context.serverProfile) recordedProfile = profiles.recordMatch(String(body.profileToken), matchHistoryEntry(view, outcome));
-        return json(res, 200, { outcome:preview.outcome, officeCredits:preview.officeCredits, xp:preview.xp, profile:context.meta, serverProfile:recordedProfile, rankedResult:rankedResultForRoom(recordedProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:true });
+        if (context.serverProfile) recordedProfile = profiles.recordMatch(String(body.profileToken), matchHistoryEntry(view, outcome), []);
+        return json(res, 200, { outcome:previewReward.outcome, officeCredits:previewReward.officeCredits, xp:previewReward.xp, profile:context.meta, serverProfile:recordedProfile, rankedResult:rankedResultForRoom(recordedProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:true });
       }
+      let preview = previewReward;
+      const milestoneReceipt = applyLevelMilestoneRewards(previewReward.profile, economyConfig.progression?.levelMilestones ?? [], context.meta.progression?.level ?? 0, previewReward.profile.progression.level, Date.now());
+      preview = { ...previewReward, profile:milestoneReceipt.profile };
       preview.profile.claimedRewardRooms = [...new Set([...(preview.profile.claimedRewardRooms ?? []), roomId])];
       const committed = commitMetaContext(context, preview.profile);
       let recordedProfile = committed.serverProfile ?? null;
-      if (context.serverProfile) recordedProfile = profiles.recordMatch(String(body.profileToken), matchHistoryEntry(view, outcome));
+      if (context.serverProfile) recordedProfile = profiles.recordMatch(String(body.profileToken), matchHistoryEntry(view, outcome), []);
       const receipt = { ...preview, ...committed, serverProfile:recordedProfile ?? committed.serverProfile, rankedResult:rankedResultForRoom(recordedProfile ?? committed.serverProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:false };
       return json(res, 200, receipt);
     }
@@ -1100,7 +1169,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.37 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.38 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

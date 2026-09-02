@@ -109,9 +109,14 @@
     ]
   },
   "progression": {
-    "enabled": false,
+    "enabled": true,
     "profileLevels": true,
     "levelXpStep": 100,
+    "levelMilestones": [
+      {"level":25,"rewards":[{"type":"PACK","packId":"EXECUTIVE_EDITION_PACK","quantity":1}]},
+      {"level":50,"rewards":[{"type":"PACK","packId":"EXECUTIVE_EDITION_PACK","quantity":1}]},
+      {"level":100,"rewards":[{"type":"PACK","packId":"EXECUTIVE_EDITION_PACK","quantity":1}]}
+    ],
     "matchRewards": {
       "sandboxEnabled": true,
       "currency": "OFFICE_CREDITS",

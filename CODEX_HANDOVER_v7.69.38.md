@@ -1,16 +1,17 @@
-# Office Card Game - Codex Handover v7.69.37
+# Office Card Game - Codex Handover v7.69.38
 
 ## Baseline
 
-- Version: `v7.69.37`
-- Commit: final release commit resolved by immutable annotated tag `v7.69.37`
+- Version: `v7.69.38`
+- Commit: release commit for annotated tag v7.69.38
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.37 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.38 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
-phase visuals, cosmetic collection/shop surfaces, explicit card ownership and the Bot/Training/
+phase visuals, cosmetic collection/shop surfaces, explicit card ownership, configurable Achievement
+and Ranked progression, level milestone rewards, the Silver Ranked frame, and the Bot/Training/
 Tutorial foundation.
 
 ## Match Board
@@ -92,10 +93,10 @@ portrait pixels cannot appear through exterior transparency or below the decorat
 composition is used by Personnel File, Company Store, Lobby identity and Match HUD surfaces.
 
 Acquisition is explicit: COS-FRAME-002 is starter-owned and may remain shop-listed; COS-FRAME-003,
-COS-FRAME-004 and COS-FRAME-005 are ranked-reward-only and are neither starter-owned nor
-shop-listed. COS-AVA-003 through COS-AVA-006 are shop inventory and are not starter-owned. Legacy
-accidental starter grants for these IDs are normalized away. Ranked reward infrastructure itself is
-not active yet.
+COS-FRAME-004, COS-FRAME-005 and COS-FRAME-006 are ranked-reward-only and are neither
+starter-owned nor shop-listed. COS-AVA-003 through COS-AVA-006 are shop inventory and are not
+starter-owned. Legacy accidental starter grants for these IDs are normalized away. Ranked rewards
+are configuration-driven; Alpha test grants are a separate temporary visual-QA path.
 
 Current supplied assets include:
 
@@ -111,6 +112,7 @@ COS-FRAME-002 -> public/cosmetics/avatar-frames/default-blue-silver.webp
 COS-FRAME-003 -> public/cosmetics/avatar-frames/bronze-ranked-s01.webp
 COS-FRAME-004 -> public/cosmetics/avatar-frames/gold-ranked-s01.webp
 COS-FRAME-005 -> public/cosmetics/avatar-frames/diamond-ranked-s01.webp
+COS-FRAME-006 -> public/cosmetics/avatar-frames/silver-ranked-s01.webp
 ```
 
 Own boards render normally; opponent boards reuse the same asset with the established 180deg
@@ -200,7 +202,11 @@ provisional Alpha Booster premium roll is centralized at `0.75%` per pack. `EXEC
 is a reward-only, one-card guaranteed Executive Edition pack that can be granted through RewardGrant.
 No legacy `-H` or `Gold Holo` premium IDs remain in the current implementation.
 
-The Alpha/playtest profile grant includes exactly one deterministic `CS-001-EXEC` copy using the
+The Alpha/playtest profile grant includes Bronze, Silver, Gold and Diamond Ranked frames for
+visual testing. Existing Alpha profiles receive Silver through the idempotent
+`alpha-playtest:ranked-frame-silver:v1` backfill when needed; this temporary grant is separate from
+real Ranked RewardGrant source references and should be disabled once Ranked acquisition is
+sufficiently testable. It also includes exactly one deterministic `CS-001-EXEC` copy using the
 idempotent `alpha_playtest` source and `alpha-playtest:executive-card:v1` sourceRef. For local visual
 QA only, setting `OCG_ALPHA_QA_EXECUTIVE=1` while running in `LOCAL` mode forces that real persisted
 Executive Deck copy into the opening Hand of local `TRAINING` bot matches. The hook is not accepted
@@ -267,3 +273,41 @@ Known review items:
 Do not rebalance the economy, redesign the Match Board or change perspective strength without a new
 focused task. The Executive Alpha grant and deterministic opening-Hand hook are temporary test
 infrastructure and must be removed or disabled when production acquisition/reward flows replace them.
+
+## Achievement and Ranked progression foundation
+
+Progression is server-authoritative and data-driven. `src/progression.ts` defines the normalized
+`ProgressionEvent` contract, reusable COUNTER, ONE_SHOT, THRESHOLD and ALL conditions, default
+TRAINING/TUTORIAL exclusions, and RewardGrant-backed idempotent completion. The initial Alpha
+achievement catalog lives in `data/achievements.json`; adding ordinary achievement content does not
+require a new server handler. Progress is persisted in the existing player meta profile with a bounded
+processed-event receipt list, and `/api/profiles/me/achievements` returns hidden-safe projected data for
+the Lobby Achievements surface.
+
+The initial achievements cover eligible Friendly/Ranked matches, wins, department card play, direct REP
+damage, crafting and normal booster openings. Match completion/card-play/direct-REP events are derived
+from authoritative room history, while economy mutations emit their own server-side events. Training
+and Tutorial remain excluded by default and never receive normal progression rewards.
+
+Ranked content is centralized in `data/ranked/ranks.json` and `data/ranked/seasons.json`, with Bronze,
+Silver, Gold, Platinum and Diamond rating bands, configurable divisions and season/reward slots.
+`src/ranked.ts` derives the stored tier/division from rating; the existing preseason placement/MMR
+settlement remains authoritative, and tier changes/placement completion emit progression events and
+use RewardGrant source references for tier changes and placement completion. Ranked timer enforcement
+remains disabled. The current Alpha Preseason configuration is: Bronze `0-1199`, Silver `1200-1599`,
+Gold `1600-1999`, Platinum `2000-2399` and Diamond `2400+`; all tiers expose III/II/I, while
+Diamond uses III at 2400, II at 2600 and I at 2800. Placements require 5 games from 1000 MMR,
+with placement K 40, rated K 24, rating floor 100 and rating scale 400. Matchmaking starts at a
+200-point window, widens by 100 every 30 seconds up to 600. Bronze/Silver/Gold/Diamond map to
+COS-FRAME-003/006/004/005; Platinum has no frame reward.
+
+This is a foundation rather than a finished live-service progression design. Reward values, thresholds,
+rank bands and the Alpha Preseason content are provisional and should be rebalanced only through the
+central data files. Direct REP is currently supported; destruction, streak and other future metrics
+still need clean event projection before they are enabled as content triggers. The Achievements
+screen is intentionally a compact first surface and can be expanded without changing the persistence
+or reward architecture.
+
+Level milestones are centralized in `data/economy.json`. Levels 25, 50 and 100 each grant one
+non-purchasable `EXECUTIVE_EDITION_PACK` through RewardGrant source references `level:25`, `level:50`
+and `level:100`; crossing multiple milestones and restoring existing profiles are idempotent.

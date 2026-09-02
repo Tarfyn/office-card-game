@@ -192,6 +192,9 @@ const state = {
   botBusy: false,
   botDeckId: 'it-starter',
   botMessage: null,
+  achievementData: null,
+  achievementBusy: false,
+  achievementMessage: null,
   lobbyMatchMode: 'FRIENDLY',
   serverProfile: null,
   serverDecksReady: false,
@@ -424,6 +427,36 @@ async function refreshServerProfile() {
   return result.profile;
 }
 
+async function enterAchievements() {
+  state.mode = 'ACHIEVEMENTS';
+  state.achievementBusy = true;
+  state.achievementMessage = null;
+  render();
+  try {
+    state.achievementData = await api('/api/profiles/me/achievements', { headers:profileAuthHeaders() });
+  } catch (error) {
+    state.achievementMessage = error.message;
+  } finally {
+    state.achievementBusy = false;
+    render();
+  }
+}
+
+function renderAchievements() {
+  const items = state.achievementData?.achievements ?? [];
+  const grouped = new Map();
+  for (const item of items) grouped.set(item.category, [...(grouped.get(item.category) ?? []), item]);
+  return `<section class="achievement-shell"><header class="achievement-header"><div><span>${esc(t('achievements.kicker'))}</span><h1>${esc(t('achievements.title'))}</h1><p>${esc(t('achievements.description'))}</p></div><button class="ghost" id="achievementsBack">${esc(t('nav.backToLobby'))}</button></header>${state.achievementBusy ? `<div class="surface-loader"><i></i><i></i><i></i></div>` : state.achievementMessage ? `<div class="surface-empty-state"><strong>${esc(state.achievementMessage)}</strong><button id="retryAchievements">${esc(t('achievements.retry'))}</button></div>` : [...grouped.entries()].map(([category, entries]) => `<section class="achievement-category"><header><span>${esc(t(`achievements.categories.${category.toLowerCase()}`, {}, category))}</span><small>${entries.filter((item) => item.progress?.completedAt).length}/${entries.length} ${esc(t('achievements.completedCount'))}</small></header><div class="achievement-grid">${entries.map((item) => {
+    const value = Number(item.progress?.value ?? 0);
+    const target = Math.max(1, Number(item.target ?? 1));
+    const complete = Boolean(item.progress?.completedAt);
+    const title = item.titleKey ? t(item.titleKey) : t('achievements.hidden');
+    const description = item.descriptionKey ? t(item.descriptionKey) : t('achievements.hiddenDescription');
+    const reward = (item.rewards ?? []).map((reward) => `${reward.amount ?? reward.quantity ?? 1} ${reward.type === 'OFFICE_CREDITS' ? t('achievements.credits') : reward.type === 'SCRAP' ? t('achievements.scrap') : reward.type}`).join(' · ');
+    return `<article class="achievement-card ${complete ? 'is-complete' : ''} ${item.hidden ? 'is-hidden' : ''}"><div class="achievement-card-top"><span>${item.hidden ? t('achievements.hidden') : esc(item.id)}</span><b>${complete ? t('achievements.completed') : `${Math.min(value,target)}/${target}`}</b></div><h2>${esc(title)}</h2><p>${esc(description)}</p><div class="achievement-progress"><i style="width:${Math.min(100, value / target * 100)}%"></i></div><small>${complete ? t('achievements.rewardGranted') : reward ? `${t('achievements.reward')}: ${reward}` : t('achievements.inProgress')}</small></article>`;
+  }).join('')}</div></section>`).join('')}</section>`;
+}
+
 async function ensureServerProfile() {
   const savedToken = localStorage.getItem(SERVER_PROFILE_TOKEN_KEY);
   if (savedToken) {
@@ -484,7 +517,8 @@ function avatarFrameMaskClass(frameAsset) {
     'default-blue-silver.webp':'avatar-frame-mask-blue-silver',
     'bronze-ranked-s01.webp':'avatar-frame-mask-bronze',
     'gold-ranked-s01.webp':'avatar-frame-mask-gold',
-    'diamond-ranked-s01.webp':'avatar-frame-mask-diamond'
+    'diamond-ranked-s01.webp':'avatar-frame-mask-diamond',
+    'silver-ranked-s01.webp':'avatar-frame-mask-silver'
   })[file] ?? '';
 }
 function renderAvatarComposition({ avatarAsset = null, frameAsset = null, decorationAsset = null, avatarAlt = '', frameAlt = '', fallbackText = '', className = '' } = {}) {
@@ -5288,7 +5322,10 @@ function renderRankedStanding() {
   if (!ranked) return '';
   const recent = ranked.recentResults?.[0] ?? null;
   const placement = ranked.status !== 'RATED';
-  const standing = placement ? `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed}/${ranked.placementsRequired}` : `${ranked.rating} MMR`;
+  const tierKey = ranked.tierId ? String(ranked.tierId).toLowerCase() : null;
+  const tierName = tierKey ? t(`ranked.tiers.${tierKey}`, {}, ranked.tierId) : null;
+  const tier = tierName ? `${tierName}${ranked.division ? ` ${ranked.division}` : ''}` : null;
+  const standing = placement ? `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed}/${ranked.placementsRequired}` : `${tier ? `${tier} · ` : ''}${ranked.rating} MMR`;
   const lastMove = recent ? `${recent.ratingDelta >= 0 ? '+' : ''}${recent.ratingDelta} → ${recent.ratingAfter}` : lobbyCopy('No rated result yet','Noch kein gewertetes Ergebnis');
   const phaseLabel = String(ranked.phase ?? 'PRESEASON') === 'PRESEASON' ? lobbyCopy('PRESEASON','VORSAISON') : String(ranked.phase ?? 'PRESEASON');
   const standingDetail = placement
@@ -5911,6 +5948,7 @@ function renderLobby() {
            <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
           <button id="openPersonnel" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.ownedCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.personnel'))}</strong><small>${esc(t('cosmetics.equip'))}</small></button>
           <button id="openStore" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.shopCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.shop'))}</strong><small>${esc(t('cosmetics.buy'))}</small></button>
+          <button id="openAchievements" class="desk-file-button progression-nav-button" type="button"><span>${esc(t('achievements.kicker'))}</span><strong>${esc(t('achievements.title'))}</strong><small>${esc(t('achievements.shortDescription'))}</small></button>
           <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
           ${opsModeAvailable()?'<button id="openOps" class="desk-file-button" type="button"><span>ALPHA OPS</span><strong>Server tools</strong></button>':''}
           ${renderLobbyConnectionStatus()}
@@ -5997,6 +6035,7 @@ function renderLobby() {
   document.querySelector('#openCollection').onclick = async () => { await enterAlphaDeckbuilder(); };
   document.querySelector('#openPersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
   document.querySelector('#openStore')?.addEventListener('click',()=>enterCosmeticSurface('SHOP'));
+  document.querySelector('#openAchievements')?.addEventListener('click', enterAchievements);
   document.querySelector('#openOps')?.addEventListener('click',async()=>{ state.mode='ADMIN'; if(state.adminToken) await refreshAdminOps(); else renderOpsDashboard(); });
   document.querySelector('#saveProfileName')?.addEventListener('click', renamePlaytestProfile);
   document.querySelector('#profileDisplayName')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') renamePlaytestProfile(); });
@@ -6388,7 +6427,8 @@ const COSMETIC_UI_CATALOG = Object.freeze({
     'COS-FRAME-002': Object.freeze({ asset:'/cosmetics/avatar-frames/default-blue-silver.webp' }),
     'COS-FRAME-003': Object.freeze({ asset:'/cosmetics/avatar-frames/bronze-ranked-s01.webp' }),
     'COS-FRAME-004': Object.freeze({ asset:'/cosmetics/avatar-frames/gold-ranked-s01.webp' }),
-    'COS-FRAME-005': Object.freeze({ asset:'/cosmetics/avatar-frames/diamond-ranked-s01.webp' })
+    'COS-FRAME-005': Object.freeze({ asset:'/cosmetics/avatar-frames/diamond-ranked-s01.webp' }),
+    'COS-FRAME-006': Object.freeze({ asset:'/cosmetics/avatar-frames/silver-ranked-s01.webp' })
   })
 });
 
@@ -6944,17 +6984,20 @@ function render() {
   const collectionMode = Boolean(!state.session && state.mode === 'COLLECTION');
   const personnelMode = Boolean(!state.session && state.mode === 'PERSONNEL');
   const shopMode = Boolean(!state.session && state.mode === 'SHOP');
+  const achievementMode = Boolean(!state.session && state.mode === 'ACHIEVEMENTS');
   document.body.classList.toggle('match-mode', liveMatch);
   document.body.classList.toggle('match-ended', endedMatch);
   document.body.classList.toggle('match-viewport-locked', liveMatch && !endedMatch);
   document.body.classList.toggle('lobby-mode', lobbyMode);
   document.body.classList.toggle('collection-mode', collectionMode);
   document.body.classList.toggle('cosmetic-mode', personnelMode || shopMode);
+  document.body.classList.toggle('achievement-mode', achievementMode);
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
   if (!state.session && state.mode === 'PERSONNEL') { app.innerHTML=renderPersonnelFile(); bindCosmeticSurface(); return; }
   if (!state.session && state.mode === 'SHOP') { app.innerHTML=renderCompanyStore(); bindCosmeticSurface(); return; }
+  if (!state.session && state.mode === 'ACHIEVEMENTS') { app.innerHTML=renderAchievements(); document.querySelector('#achievementsBack')?.addEventListener('click',()=>{ state.mode='PLAY'; render(); }); document.querySelector('#retryAchievements')?.addEventListener('click',enterAchievements); return; }
   if (!state.session) return renderLobby();
   if (!state.view) {
     app.innerHTML = `<section class="connection-stage"><div class="surface-loader" aria-hidden="true"><i></i><i></i><i></i></div><span>CONNECTING TO OFFICE</span><strong>Restoring your desk…</strong><small>Syncing the authoritative room state and your seat.</small></section>`;

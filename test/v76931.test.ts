@@ -9,9 +9,10 @@ const root = (name: string) => readFileSync(fileURLToPath(new URL(`../../${name}
 const app = root("public/app.js");
 const en = root("public/locales/en.js");
 const de = root("public/locales/de.js");
+const rankedRanks = JSON.parse(root("data/ranked/ranks.json"));
 
 const avatarIds = ["COS-AVA-003", "COS-AVA-004", "COS-AVA-005", "COS-AVA-006"];
-const frameIds = ["COS-FRAME-002", "COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"];
+const frameIds = ["COS-FRAME-002", "COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"];
 
 test("new avatars and frames have stable catalog definitions and target assets", () => {
   for (const id of [...avatarIds, ...frameIds]) {
@@ -19,7 +20,8 @@ test("new avatars and frames have stable catalog definitions and target assets",
     assert.match(COSMETIC_CATALOG[id].assetPath ?? "", /^\/cosmetics\/(avatars|avatar-frames)\//);
   }
   assert.deepEqual(avatarIds.map((id) => COSMETIC_CATALOG[id].kind), ["AVATAR", "AVATAR", "AVATAR", "AVATAR"]);
-  assert.deepEqual(frameIds.map((id) => COSMETIC_CATALOG[id].slot), ["avatarFrameId", "avatarFrameId", "avatarFrameId", "avatarFrameId"]);
+  assert.deepEqual(frameIds.map((id) => COSMETIC_CATALOG[id].slot), ["avatarFrameId", "avatarFrameId", "avatarFrameId", "avatarFrameId", "avatarFrameId"]);
+  assert.ok(readFileSync(fileURLToPath(new URL("../../public/cosmetics/avatar-frames/silver-ranked-s01.webp", import.meta.url))).byteLength > 100);
 });
 
 test("standard cosmetics are starter-owned while new avatars remain shop inventory", () => {
@@ -79,12 +81,19 @@ test("identity rendering layers an equipped transparent frame over the avatar", 
 });
 
 test("new cosmetic names and descriptions are localized in English and German", () => {
-  for (const key of ["executiveDirectorName", "overloadedJuniorName", "confidentAnalystName", "customerCareVeteranName", "blueSilverFrameName", "bronzeRankedS01Name", "goldRankedS01Name", "diamondRankedS01Name"]) {
+  for (const key of ["executiveDirectorName", "overloadedJuniorName", "confidentAnalystName", "customerCareVeteranName", "blueSilverFrameName", "bronzeRankedS01Name", "goldRankedS01Name", "diamondRankedS01Name", "silverRankedS01Name"]) {
     assert.match(en, new RegExp(`${key}:`));
     assert.match(de, new RegExp(`${key}:`));
   }
   assert.match(de, /customerCareVeteranName: "Customer-Care-Veteranin"/);
   assert.match(de, /diamondRankedS01Description: "Ranked-Rahmen für hohe Platzierungen\."/);
+  assert.match(de, /silverRankedS01Description: "Ranked-Belohnungsrahmen für Silber\."/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.37 cosmetic asset tests passed.`);
+test("Silver is the Silver-tier reward and remains out of the Shop", () => {
+  const silver = rankedRanks.ranks.find((rank: { id?: string }) => rank.id === "SILVER");
+  assert.deepEqual(silver?.rewards, [{ type:"COSMETIC", cosmeticId:"COS-FRAME-006" }]);
+  assert.equal(COSMETIC_SHOP_CATALOG.some((entry) => String(entry.cosmeticId) === "COS-FRAME-006"), false);
+});
+
+console.log(`\n${passed}/${passed} v7.69.38 cosmetic asset tests passed.`);

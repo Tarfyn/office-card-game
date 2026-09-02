@@ -1,9 +1,9 @@
-import { COSMETIC_CATALOG, defaultCosmeticLoadout, defaultCosmeticOwnership, normalizePlayerCosmetics, type PlayerCosmeticState } from "./cosmetics.js";
+import { COSMETIC_CATALOG, cosmeticIsOwned, defaultCosmeticLoadout, defaultCosmeticOwnership, normalizePlayerCosmetics, type PlayerCosmeticState } from "./cosmetics.js";
 import { executiveEditionVariantId, isExecutiveEditionEligible, normalizeCardVariantId, variantOwnershipKey } from "./card-variants.js";
 
 export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
 export type CollectionMode = "SANDBOX_ALL_AVAILABLE" | "OWNED_COPIES";
-export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop" | "alpha_playtest";
+export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop" | "level" | "alpha_playtest";
 
 /** Deterministic Alpha fixture used to exercise the complete Executive Edition card path. */
 export const ALPHA_EXECUTIVE_TEST_CARD_ID = "CS-001";
@@ -15,6 +15,13 @@ export interface PlayerProgression {
   boostersOpened: number;
   cardsScrapped: number;
   cardsCrafted: number;
+}
+
+export interface AchievementProgressState {
+  value: number;
+  completedAt: number | null;
+  claimedAt: number | null;
+  children?: Record<string, AchievementProgressState>;
 }
 
 export interface PlayerMetaProfile {
@@ -29,6 +36,8 @@ export interface PlayerMetaProfile {
   claimedRewardRooms: string[];
   rewardGrants: RewardGrant[];
   progression: PlayerProgression;
+  achievements: Record<string, AchievementProgressState>;
+  processedProgressionEventIds: string[];
   cosmetics: PlayerCosmeticState;
 }
 
@@ -75,6 +84,8 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
     collectionMode: "SANDBOX_ALL_AVAILABLE",
     claimedRewardRooms: [],
     rewardGrants: [],
+    achievements: {},
+    processedProgressionEventIds: [],
     cosmetics: { owned:defaultCosmeticOwnership(), loadout:defaultCosmeticLoadout("P1") },
     progression: {
       level: 1,
@@ -141,6 +152,26 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
     packs: Array.isArray(grant.packs) ? grant.packs.filter((item) => item && item.packId && Number(item.quantity) > 0).map((item) => ({ packId:String(item.packId), quantity:Math.floor(Number(item.quantity)) })) : [],
     grantedAt: Number(grant.grantedAt) || now
   })) : [];
+  next.achievements = Object.fromEntries(Object.entries(next.achievements ?? {}).flatMap(([id, raw]) => {
+    if (!id || !raw || typeof raw !== "object") return [];
+    const item = raw as AchievementProgressState;
+    const children = item.children && typeof item.children === "object"
+      ? Object.fromEntries(Object.entries(item.children).map(([childId, child]) => [childId, {
+          value: Math.max(0, Math.floor(Number(child?.value) || 0)),
+          completedAt: Number(child?.completedAt) > 0 ? Number(child.completedAt) : null,
+          claimedAt: Number(child?.claimedAt) > 0 ? Number(child.claimedAt) : null
+        }]))
+      : undefined;
+    return [[String(id), {
+      value: Math.max(0, Math.floor(Number(item.value) || 0)),
+      completedAt: Number(item.completedAt) > 0 ? Number(item.completedAt) : null,
+      claimedAt: Number(item.claimedAt) > 0 ? Number(item.claimedAt) : null,
+      ...(children && Object.keys(children).length ? { children } : {})
+    } satisfies AchievementProgressState]];
+  }));
+  next.processedProgressionEventIds = Array.isArray(next.processedProgressionEventIds)
+    ? [...new Set(next.processedProgressionEventIds.map(String))].slice(-2000)
+    : [];
   next.progression = { ...base.progression, ...(next.progression ?? {}) };
   for (const key of Object.keys(base.progression) as Array<keyof PlayerProgression>) next.progression[key] = Math.max(0, Math.floor(Number(next.progression[key]) || 0));
   next.progression.level = Math.max(1, next.progression.level);
@@ -228,6 +259,32 @@ export interface MatchRewardReceipt {
   profile: PlayerMetaProfile;
 }
 
+export interface LevelMilestoneDefinition {
+  level: number;
+  rewards: unknown[];
+}
+
+export interface LevelMilestoneReceipt {
+  profile: PlayerMetaProfile;
+  appliedLevels: number[];
+  appliedGrants: RewardGrant[];
+}
+
+function levelMilestoneGrant(level: number, rewards: unknown[], now: number): RewardGrant {
+  const grant: RewardGrant = { source:"level", sourceRef:`level:${level}`, cards:[], officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:now };
+  for (const raw of rewards ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const reward = raw as { type?: string; amount?: number; quantity?: number; cardId?: string; variantId?: string | null; packId?: string; cosmeticId?: string };
+    const quantity = Math.max(1, Math.floor(Number(reward.quantity ?? reward.amount) || 1));
+    if (reward.type === "OFFICE_CREDITS") grant.officeCredits += quantity;
+    else if (reward.type === "SCRAP") grant.scrap += quantity;
+    else if (reward.type === "CARD" && reward.cardId) grant.cards.push({ cardId:reward.cardId, quantity, variantId:reward.variantId ?? null });
+    else if (reward.type === "PACK" && reward.packId) grant.packs.push({ packId:reward.packId, quantity });
+    else if (reward.type === "COSMETIC" && reward.cosmeticId) grant.cosmetics.push(reward.cosmeticId);
+  }
+  return grant;
+}
+
 export function applyMatchReward(
   profile: PlayerMetaProfile,
   outcome: MatchRewardOutcome,
@@ -244,6 +301,36 @@ export function applyMatchReward(
   const step = Math.max(1, Math.floor(Number(levelXpStep) || 100));
   next.progression.level = 1 + Math.floor(next.progression.xp / step);
   return { outcome, officeCredits, xp, profile: next };
+}
+
+/** Applies every crossed level milestone through the idempotent grant ledger. */
+export function applyLevelMilestoneRewards(
+  profile: PlayerMetaProfile,
+  milestones: LevelMilestoneDefinition[] = [],
+  previousLevel = 0,
+  currentLevel = profile.progression.level,
+  now = Date.now()
+): LevelMilestoneReceipt {
+  let next = normalizePlayerMetaProfile(profile, now);
+  const appliedLevels: number[] = [];
+  const appliedGrants: RewardGrant[] = [];
+  const lower = Math.max(0, Math.floor(Number(previousLevel) || 0));
+  const upper = Math.max(lower, Math.floor(Number(currentLevel) || 0));
+  const ordered = (milestones ?? [])
+    .filter((milestone) => milestone && Number.isInteger(Number(milestone.level)) && Number(milestone.level) > 0 && Array.isArray(milestone.rewards))
+    .map((milestone) => ({ level:Math.floor(Number(milestone.level)), rewards:structuredClone(milestone.rewards) }))
+    .sort((a, b) => a.level - b.level);
+  for (const milestone of ordered) {
+    if (milestone.level <= lower || milestone.level > upper) continue;
+    const grant = levelMilestoneGrant(milestone.level, milestone.rewards, now);
+    const receipt = applyRewardGrant(next, grant, now);
+    next = receipt.profile;
+    if (receipt.applied) {
+      appliedLevels.push(milestone.level);
+      appliedGrants.push(grant);
+    }
+  }
+  return { profile:next, appliedLevels, appliedGrants };
 }
 
 export interface ScrapCollectionRules {
@@ -279,9 +366,15 @@ export function applyAlphaPlaytestCosmeticGrant(profile: PlayerMetaProfile, now 
     source: "alpha_playtest",
     sourceRef: "alpha-playtest:ranked-frames:v1",
     cards: [], officeCredits: 0, scrap: 0,
-    cosmetics: ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"], packs: [], grantedAt: now
+    cosmetics: ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"], packs: [], grantedAt: now
   }, now).profile;
-  return applyRewardGrant(withRankedFrames, {
+  const withSilverRankedFrame = cosmeticIsOwned(withRankedFrames.cosmetics, "COS-FRAME-006") ? withRankedFrames : applyRewardGrant(withRankedFrames, {
+      source: "alpha_playtest",
+      sourceRef: "alpha-playtest:ranked-frame-silver:v1",
+      cards: [], officeCredits: 0, scrap: 0,
+      cosmetics: ["COS-FRAME-006"], packs: [], grantedAt: now
+    }, now).profile;
+  return applyRewardGrant(withSilverRankedFrame, {
     source: "alpha_playtest",
     sourceRef: "alpha-playtest:executive-card:v1",
     cards: [{ cardId: ALPHA_EXECUTIVE_TEST_CARD_ID, quantity: 1, variantId: executiveEditionVariantId(ALPHA_EXECUTIVE_TEST_CARD_ID) }],

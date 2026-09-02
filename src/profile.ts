@@ -1,7 +1,8 @@
-import { applyAlphaPlaytestCosmeticGrant, applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type OwnedDeckEntry, type PlayerMetaProfile } from "./economy.js";
+import { applyAlphaPlaytestCosmeticGrant, applyLevelMilestoneRewards, applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type LevelMilestoneDefinition, type OwnedDeckEntry, type PlayerMetaProfile } from "./economy.js";
 import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, type CosmeticSlotKey } from "./cosmetics.js";
 import type { SnapshotPersistence } from "./storage.js";
-import { createRankedProfile, normalizeRankedConfig, normalizeRankedProfile, rankedK, ratingDelta, type PlayerRankedProfile, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
+import { createRankedProfile, normalizeRankedConfig, normalizeRankedContentConfig, normalizeRankedProfile, rankedK, rankedStanding, ratingDelta, type PlayerRankedProfile, type RankedContentConfig, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
+import { normalizeProgressionConfig, processProgressionEvents, rewardGrantFromRewardItems, type ProgressionConfig, type ProgressionEvent } from "./progression.js";
 import { assertDeckInput, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
 import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
 
@@ -110,6 +111,9 @@ export interface PlayerProfileServiceOptions {
   builtInDeckIds?: Iterable<string>;
   /** Explicit alpha-only grant path for reward-only cosmetics. */
   alphaPlaytest?: boolean;
+  progressionConfig?: Partial<ProgressionConfig>;
+  rankedContentConfig?: Partial<RankedContentConfig>;
+  levelMilestones?: LevelMilestoneDefinition[];
 }
 
 function defaultId(): string {
@@ -192,6 +196,9 @@ export class PlayerProfileService {
   private readonly deckIdFactory: () => string;
   private readonly builtInDeckIds: Set<string>;
   private readonly alphaPlaytest: boolean;
+  private readonly progressionConfig: ProgressionConfig;
+  private readonly rankedContentConfig: RankedContentConfig;
+  private readonly levelMilestones: LevelMilestoneDefinition[];
   private migratedLegacyStore = false;
 
   constructor(options: PlayerProfileServiceOptions = {}) {
@@ -210,6 +217,9 @@ export class PlayerProfileService {
     this.deckIdFactory = options.deckIdFactory ?? (() => `deck-${this.nowFactory().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
     this.builtInDeckIds = new Set(options.builtInDeckIds ?? []);
     this.alphaPlaytest = options.alphaPlaytest === true;
+    this.progressionConfig = normalizeProgressionConfig(options.progressionConfig);
+    this.rankedContentConfig = normalizeRankedContentConfig(options.rankedContentConfig);
+    this.levelMilestones = structuredClone(options.levelMilestones ?? []);
     this.restore();
   }
 
@@ -234,6 +244,10 @@ export class PlayerProfileService {
     return this.migratedLegacyStore;
   }
 
+  get progressionEnabled(): boolean {
+    return this.progressionConfig.enabled !== false;
+  }
+
   create(initialMeta?: PlayerMetaProfile, requestedName?: string): CreateServerProfileResult {
     let playerId = this.playerIdFactory();
     while (this.playersById.has(playerId)) playerId = this.playerIdFactory();
@@ -243,6 +257,7 @@ export class PlayerProfileService {
     const suffix = playerId.replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase() || "0001";
     let meta = normalizePlayerMetaProfile(initialMeta ?? createPlayerMetaProfile(this.starterCards, this.startingOfficeCredits, now), now);
     if (this.alphaPlaytest) meta = applyAlphaPlaytestCosmeticGrant(meta, now);
+    meta = applyLevelMilestoneRewards(meta, this.levelMilestones, 0, meta.progression.level, now).profile;
     const profile: ServerPlayerProfile = {
       playerId,
       profileId: playerId,
@@ -256,6 +271,9 @@ export class PlayerProfileService {
       createdAt: now,
       updatedAt: now
     };
+    const initialStanding = rankedStanding(profile.ranked.rating, this.rankedContentConfig);
+    profile.ranked.tierId = initialStanding.tierId;
+    profile.ranked.division = initialStanding.division;
     const credential: GuestCredentialRecord = { kind:"GUEST_LOCAL", profileToken, playerId, createdAt:now, lastUsedAt:now };
     this.playersById.set(playerId, profile);
     this.credentialsByToken.set(profileToken, credential);
@@ -310,6 +328,20 @@ export class PlayerProfileService {
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
+  }
+
+  recordProgressionEvents(profileToken: string, events: ProgressionEvent[]): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const update = processProgressionEvents(profile.meta, events, this.progressionConfig, this.nowFactory());
+    profile.meta = update.profile;
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  listAchievements(profileToken: string) {
+    const profile = this.requireByToken(profileToken);
+    return { profile: structuredClone(profile), achievements: structuredClone(profile.meta.achievements) };
   }
 
   listDecks(profileToken: string): { decks: PlayerDeckView[]; selectedDeckId: string | null } {
@@ -424,8 +456,17 @@ export class PlayerProfileService {
     return { profileToken:nextToken, profile:structuredClone(profile) };
   }
 
-  recordMatch(profileToken: string, entry: PlayerMatchHistoryEntry): ServerPlayerProfile {
-    const profile = this.requireByToken(profileToken);
+  recordMatch(profileToken: string, entry: PlayerMatchHistoryEntry, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
+    return this.recordMatchForProfile(this.requireByToken(profileToken), entry, progressionEvents);
+  }
+
+  recordMatchForPlayerId(playerId: string, entry: PlayerMatchHistoryEntry, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
+    const profile = this.playersById.get(String(playerId));
+    if (!profile) throw new Error("PLAYER_NOT_FOUND");
+    return this.recordMatchForProfile(profile, entry, progressionEvents);
+  }
+
+  private recordMatchForProfile(profile: ServerPlayerProfile, entry: PlayerMatchHistoryEntry, progressionEvents: ProgressionEvent[]): ServerPlayerProfile {
     if (profile.matchHistory.some((existing) => existing.roomId === entry.roomId)) return structuredClone(profile);
     profile.matchHistory.unshift(structuredClone(entry));
     profile.matchHistory = profile.matchHistory.slice(0, this.maxHistoryEntries);
@@ -434,6 +475,7 @@ export class PlayerProfileService {
       this.persist();
       return structuredClone(profile);
     }
+    profile.meta = processProgressionEvents(profile.meta, progressionEvents, this.progressionConfig, this.nowFactory()).profile;
     profile.stats.matchesPlayed += 1;
     if (entry.outcome === "WIN") profile.stats.wins += 1;
     else if (entry.outcome === "DRAW") profile.stats.draws += 1;
@@ -450,6 +492,7 @@ export class PlayerProfileService {
     const p1 = this.playersById.get(result.p1PlayerId);
     const p2 = this.playersById.get(result.p2PlayerId);
     if (!p1 || !p2) throw new Error("PLAYER_NOT_FOUND");
+    if (!this.progressionEnabled) return { replayed:false, p1:structuredClone(p1.ranked), p2:structuredClone(p2.ranked) };
     const existing1 = p1.ranked.recentResults.find((item) => item.roomId === result.roomId);
     const existing2 = p2.ranked.recentResults.find((item) => item.roomId === result.roomId);
     if (existing1 && existing2) return { replayed:true, p1:structuredClone(p1.ranked), p2:structuredClone(p2.ranked) };
@@ -472,6 +515,8 @@ export class PlayerProfileService {
 
     const apply = (profile:ServerPlayerProfile, opponentBefore:number, before:number, after:number, outcome:RankedOutcome) => {
       const ranked = profile.ranked;
+      const previousStanding = { tierId:ranked.tierId, division:ranked.division };
+      const previousPlacements = ranked.placementsPlayed;
       ranked.seasonId = this.rankedConfig.currentSeasonId;
       ranked.phase = this.rankedConfig.phase;
       ranked.rating = after;
@@ -484,6 +529,31 @@ export class PlayerProfileService {
       else { ranked.losses += 1; if (outcome === "RESIGN_LOSS") ranked.resignLosses += 1; }
       ranked.recentResults.unshift({ roomId:result.roomId, seasonId:ranked.seasonId, outcome, ratingBefore:before, ratingAfter:after, ratingDelta:after-before, opponentRatingBefore:opponentBefore, settledAt });
       ranked.recentResults = ranked.recentResults.slice(0, 100);
+      const nextStanding = rankedStanding(after, this.rankedContentConfig);
+      ranked.tierId = nextStanding.tierId;
+      ranked.division = nextStanding.division;
+      const standingChanged = previousStanding.tierId !== nextStanding.tierId || previousStanding.division !== nextStanding.division;
+      if (standingChanged) ranked.lastRankChangedAt = settledAt;
+      const rankConfig = this.rankedContentConfig.ranks.find((item) => item.id === nextStanding.tierId);
+      if (previousStanding.tierId !== nextStanding.tierId && rankConfig?.rewards?.length) {
+        profile.meta = applyRewardGrant(profile.meta, rewardGrantFromRewardItems("ranked", `ranked:${ranked.seasonId}:tier:${nextStanding.tierId}`, rankConfig.rewards, settledAt), settledAt).profile;
+      }
+      if (previousPlacements < ranked.placementsRequired && ranked.placementsPlayed >= ranked.placementsRequired) {
+        const season = this.rankedContentConfig.seasons.find((item) => item.id === ranked.seasonId);
+        if (season?.rewards?.length) profile.meta = applyRewardGrant(profile.meta, rewardGrantFromRewardItems("ranked", `ranked:${ranked.seasonId}:placements`, season.rewards, settledAt), settledAt).profile;
+      }
+      const progressionEvents: ProgressionEvent[] = [];
+      if (standingChanged) progressionEvents.push({
+        id:`${result.roomId}:progress:${profile.playerId}:rank`, type:"RANK_CHANGED", playerId:profile.playerId,
+        matchId:result.roomId, mode:"RANKED", timestamp:settledAt,
+        payload:{ previousTierId:previousStanding.tierId, tierId:nextStanding.tierId, division:nextStanding.division, rating:after }
+      });
+      if (previousPlacements < ranked.placementsRequired && ranked.placementsPlayed >= ranked.placementsRequired) progressionEvents.push({
+        id:`${result.roomId}:progress:${profile.playerId}:placement`, type:"SEASON_PLACEMENT_COMPLETED", playerId:profile.playerId,
+        matchId:result.roomId, mode:"RANKED", timestamp:settledAt,
+        payload:{ seasonId:ranked.seasonId, placements:ranked.placementsPlayed }
+      });
+      if (progressionEvents.length) profile.meta = processProgressionEvents(profile.meta, progressionEvents, this.progressionConfig, settledAt).profile;
       profile.updatedAt = settledAt;
     };
     apply(p1, p2Before, p1Before, p1After, p1Outcome);
@@ -523,6 +593,13 @@ export class PlayerProfileService {
     return credential;
   }
 
+  private normalizeRankedStanding(profile: ServerPlayerProfile): ServerPlayerProfile {
+    const standing = rankedStanding(profile.ranked.rating, this.rankedContentConfig);
+    profile.ranked.tierId = standing.tierId;
+    profile.ranked.division = standing.division;
+    return profile;
+  }
+
   private requireByToken(profileToken: string): ServerPlayerProfile {
     const credential = this.requireCredential(profileToken);
     const profile = this.playersById.get(credential.playerId);
@@ -542,8 +619,11 @@ export class PlayerProfileService {
         const normalized = normalizeProfile(raw, this.rankedConfig);
         let profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
         if (this.alphaPlaytest) profile = { ...profile, meta: applyAlphaPlaytestCosmeticGrant(profile.meta, this.nowFactory()) };
-        migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length;
+        const grantsBeforeMilestones = profile.meta.rewardGrants.length;
+        profile = { ...profile, meta: applyLevelMilestoneRewards(profile.meta, this.levelMilestones, 0, profile.meta.progression.level, this.nowFactory()).profile };
+        migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length || profile.meta.rewardGrants.length !== grantsBeforeMilestones;
         if (!profile.playerId) continue;
+        this.normalizeRankedStanding(profile);
         this.playersById.set(profile.playerId, profile);
         restored = true;
       }
@@ -569,8 +649,11 @@ export class PlayerProfileService {
        const normalized = normalizeProfile(record.profile, this.rankedConfig);
        let profile = migrateLegacyCollection(normalized, this.starterCards, this.nowFactory());
        if (this.alphaPlaytest) profile = { ...profile, meta: applyAlphaPlaytestCosmeticGrant(profile.meta, this.nowFactory()) };
-       migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length;
+       const grantsBeforeMilestones = profile.meta.rewardGrants.length;
+       profile = { ...profile, meta: applyLevelMilestoneRewards(profile.meta, this.levelMilestones, 0, profile.meta.progression.level, this.nowFactory()).profile };
+       migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length || profile.meta.rewardGrants.length !== grantsBeforeMilestones;
       if (!profile.playerId) continue;
+      this.normalizeRankedStanding(profile);
       this.playersById.set(profile.playerId, profile);
       const now = Number(profile.updatedAt || profile.createdAt || this.nowFactory());
       this.credentialsByToken.set(record.profileToken, { kind:"GUEST_LOCAL", profileToken:record.profileToken, playerId:profile.playerId, createdAt:Number(profile.createdAt || now), lastUsedAt:now });

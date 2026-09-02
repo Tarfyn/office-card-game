@@ -17,10 +17,14 @@ function runTypeScript() {
 
 function copyData() {
   mkdirSync(join(dist, 'data', 'formats'), { recursive: true });
+  mkdirSync(join(dist, 'data', 'ranked'), { recursive: true });
   copyFileSync(join(root, 'data', 'cards.json'), join(dist, 'data', 'cards.json'));
   copyFileSync(join(root, 'data', 'decks.json'), join(dist, 'data', 'decks.json'));
   copyFileSync(join(root, 'data', 'economy.json'), join(dist, 'data', 'economy.json'));
   copyFileSync(join(root, 'data', 'match-settings.json'), join(dist, 'data', 'match-settings.json'));
+  copyFileSync(join(root, 'data', 'achievements.json'), join(dist, 'data', 'achievements.json'));
+  copyFileSync(join(root, 'data', 'ranked', 'ranks.json'), join(dist, 'data', 'ranked', 'ranks.json'));
+  copyFileSync(join(root, 'data', 'ranked', 'seasons.json'), join(dist, 'data', 'ranked', 'seasons.json'));
   copyFileSync(join(root, 'data', 'artwork.json'), join(dist, 'data', 'artwork.json'));
   for (const name of readdirSync(join(root, 'data', 'formats'))) {
     if (!name.endsWith('.json')) continue;

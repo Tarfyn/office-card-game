@@ -102,14 +102,19 @@ assert.equal(openedPack.profile.ownedCardVariants[openedPack.variantId], 1);
 assert.equal(openedPack.profile.ownedPacks.EXECUTIVE_EDITION_PACK, undefined);
 
 const production = createPlayerMetaProfile();
-for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) {
+for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"]) {
   assert.equal(cosmeticIsOwned(production.cosmetics, id), false);
 }
 const alpha = applyAlphaPlaytestCosmeticGrant(production, 1);
-for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) {
+for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"]) {
   assert.equal(cosmeticIsOwned(alpha.cosmetics, id), true);
 }
-assert.equal(COSMETIC_SHOP_CATALOG.some((entry) => ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"].includes(entry.cosmeticId)), false);
+assert.equal(COSMETIC_SHOP_CATALOG.some((entry) => ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"].includes(entry.cosmeticId)), false);
+const legacyAlpha = applyRewardGrant(createPlayerMetaProfile(), { source:"alpha_playtest", sourceRef:"alpha-playtest:ranked-frames:v1", cards:[], officeCredits:0, scrap:0, cosmetics:["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"], packs:[], grantedAt:1 }, 1).profile;
+const migratedLegacyAlpha = applyAlphaPlaytestCosmeticGrant(legacyAlpha, 2);
+assert.equal(cosmeticIsOwned(migratedLegacyAlpha.cosmetics, "COS-FRAME-006"), true);
+assert.equal(migratedLegacyAlpha.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frame-silver:v1").length, 1);
+assert.equal(applyAlphaPlaytestCosmeticGrant(migratedLegacyAlpha, 3).rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frame-silver:v1").length, 1);
 const alphaExecutiveId = executiveEditionVariantId(ALPHA_EXECUTIVE_TEST_CARD_ID);
 assert.equal(alpha.ownedCardVariants[alphaExecutiveId], 1);
 assert.equal(applyAlphaPlaytestCosmeticGrant(alpha, 2).ownedCardVariants[alphaExecutiveId], 1);
@@ -143,15 +148,17 @@ const preAlpha = new PlayerProfileService({ ...stores, idFactory:() => "existing
 const existing = preAlpha.create();
 const alphaRestore = new PlayerProfileService({ ...stores, alphaPlaytest:true });
 const restored = alphaRestore.get(existing.profileToken);
-for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) assert.equal(cosmeticIsOwned(restored.meta.cosmetics, id), true);
+for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"]) assert.equal(cosmeticIsOwned(restored.meta.cosmetics, id), true);
 assert.equal(restored.meta.ownedCardVariants[alphaExecutiveId], 1);
 assert.equal(restored.meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frames:v1").length, 1);
+assert.equal(restored.meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frame-silver:v1").length, 0);
 assert.equal(restored.meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:executive-card:v1").length, 1);
 const alphaRestart = new PlayerProfileService({ ...stores, alphaPlaytest:true });
 assert.equal(alphaRestart.get(existing.profileToken).meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frames:v1").length, 1);
+assert.equal(alphaRestart.get(existing.profileToken).meta.rewardGrants.filter((grant) => grant.sourceRef === "alpha-playtest:ranked-frame-silver:v1").length, 0);
 assert.equal(alphaRestart.get(existing.profileToken).meta.ownedCardVariants[alphaExecutiveId], 1);
 const freshAlpha = alphaRestart.create().profile;
-for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005"]) assert.equal(cosmeticIsOwned(freshAlpha.meta.cosmetics, id), true);
+for (const id of ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"]) assert.equal(cosmeticIsOwned(freshAlpha.meta.cosmetics, id), true);
 assert.equal(freshAlpha.meta.ownedCardVariants[alphaExecutiveId], 1);
 
 const qaDeck = alphaDeckPresets["customer-service-starter"].cards.flatMap((entry) => {

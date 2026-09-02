@@ -11818,6 +11818,10 @@ body.match-mode .own-hand .hand-fan-card:focus-within { z-index:60 !important; }
   -webkit-mask-image:url('/cosmetics/avatar-frames/masks/diamond-ranked-s01.png');
   mask-image:url('/cosmetics/avatar-frames/masks/diamond-ranked-s01.png');
 }
+.avatar-composition .avatar-portrait-mask.avatar-frame-mask-silver {
+  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/silver-ranked-s01.png');
+  mask-image:url('/cosmetics/avatar-frames/masks/silver-ranked-s01.png');
+}
 .avatar-composition .avatar-composition-fallback {
   position:absolute;
   inset:0;
@@ -12790,6 +12794,34 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
   .card.executive-edition,
   .catalog-card-face.executive-edition,
   .hover-card-face.executive-edition { --exec-foil-opacity:.70; }
+}
+
+/* Progression surface: a compact office record, not an admin table. */
+.achievement-shell { width:min(1180px,100%); margin:24px auto; padding:0 14px 34px; color:#2d2924; }
+.achievement-header { display:flex; align-items:end; justify-content:space-between; gap:18px; margin-bottom:18px; padding:18px 20px; border:1px solid #cfc3b2; border-radius:12px; background:linear-gradient(135deg,#fffdf7,#f2eadc); box-shadow:0 12px 28px rgba(52,39,22,.08); }
+.achievement-header > div { display:grid; gap:4px; }
+.achievement-header span { color:#846d44; font-size:9px; font-weight:950; letter-spacing:.16em; }
+.achievement-header h1 { margin:0; font-size:clamp(24px,3vw,34px); line-height:1; }
+.achievement-header p { margin:3px 0 0; color:#756c61; font-size:11px; }
+.achievement-category { margin-top:16px; }
+.achievement-category > header { display:flex; align-items:baseline; justify-content:space-between; margin:0 2px 8px; color:#7d6a4d; }
+.achievement-category > header span { font-size:9px; font-weight:950; letter-spacing:.15em; }
+.achievement-category > header small { color:#8a8175; font-size:9px; }
+.achievement-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:9px; }
+.achievement-card { min-height:152px; display:grid; align-content:start; gap:7px; padding:13px; border:1px solid #d9d0c2; border-radius:8px; background:#fffdfa; box-shadow:0 5px 14px rgba(49,38,23,.05); }
+.achievement-card.is-complete { border-color:#c8a65f; background:linear-gradient(145deg,#fffdf8,#faf1dc); }
+.achievement-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#8b806f; font-size:8px; font-weight:950; letter-spacing:.08em; }
+.achievement-card-top b { color:#856a34; }
+.achievement-card h2 { margin:0; font-size:15px; line-height:1.1; }
+.achievement-card p { min-height:32px; margin:0; color:#70685e; font-size:10px; line-height:1.35; }
+.achievement-progress { height:5px; overflow:hidden; border-radius:99px; background:#e8e0d4; }
+.achievement-progress i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#9f7a35,#d9b96d); }
+.achievement-card > small { color:#887c6c; font-size:9px; line-height:1.25; }
+@media (max-width:700px) {
+  .achievement-shell { margin-top:12px; padding:0 8px 24px; }
+  .achievement-header { align-items:stretch; flex-direction:column; padding:14px; }
+  .achievement-header button { width:100%; }
+  .achievement-grid { grid-template-columns:1fr; }
 }
 
 /* Keep 1K Deckbuilder names clear of finish and cost badges without changing live-card typography. */

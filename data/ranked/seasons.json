@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "seasons": [
+    {"id":"ALPHA_PRESEASON","nameKey":"ranked.seasons.alphaPreseason","phase":"PRESEASON","placementsRequired":5,"rewards":[],"active":true}
+  ]
+}

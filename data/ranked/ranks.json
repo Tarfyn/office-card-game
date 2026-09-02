@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "ranks": [
+    {"id":"BRONZE","order":1,"displayKey":"ranked.tiers.bronze","mmrMin":0,"mmrMax":1199,"divisions":["III","II","I"],"rewards":[{"type":"COSMETIC","cosmeticId":"COS-FRAME-003"}]},
+    {"id":"SILVER","order":2,"displayKey":"ranked.tiers.silver","mmrMin":1200,"mmrMax":1599,"divisions":["III","II","I"],"rewards":[{"type":"COSMETIC","cosmeticId":"COS-FRAME-006"}]},
+    {"id":"GOLD","order":3,"displayKey":"ranked.tiers.gold","mmrMin":1600,"mmrMax":1999,"divisions":["III","II","I"],"rewards":[{"type":"COSMETIC","cosmeticId":"COS-FRAME-004"}]},
+    {"id":"PLATINUM","order":4,"displayKey":"ranked.tiers.platinum","mmrMin":2000,"mmrMax":2399,"divisions":["III","II","I"],"rewards":[]},
+    {"id":"DIAMOND","order":5,"displayKey":"ranked.tiers.diamond","mmrMin":2400,"mmrMax":null,"divisions":["III","II","I"],"divisionThresholds":{"III":2400,"II":2600,"I":2800},"rewards":[{"type":"COSMETIC","cosmeticId":"COS-FRAME-005"}]}
+  ]
+}
