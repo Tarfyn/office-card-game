@@ -11805,26 +11805,8 @@ body.match-mode .own-hand .hand-fan-card:focus-within { z-index:60 !important; }
   mask-position:center;
   -webkit-mask-size:100% 100%;
   mask-size:100% 100%;
-}
-.avatar-composition .avatar-portrait-mask.avatar-frame-mask-blue-silver {
-  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/blue-silver.png');
-  mask-image:url('/cosmetics/avatar-frames/masks/blue-silver.png');
-}
-.avatar-composition .avatar-portrait-mask.avatar-frame-mask-bronze {
-  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/bronze-ranked-s01.png');
-  mask-image:url('/cosmetics/avatar-frames/masks/bronze-ranked-s01.png');
-}
-.avatar-composition .avatar-portrait-mask.avatar-frame-mask-gold {
-  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/gold-ranked-s01.png');
-  mask-image:url('/cosmetics/avatar-frames/masks/gold-ranked-s01.png');
-}
-.avatar-composition .avatar-portrait-mask.avatar-frame-mask-diamond {
-  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/diamond-ranked-s01.png');
-  mask-image:url('/cosmetics/avatar-frames/masks/diamond-ranked-s01.png');
-}
-.avatar-composition .avatar-portrait-mask.avatar-frame-mask-silver {
-  -webkit-mask-image:url('/cosmetics/avatar-frames/masks/silver-ranked-s01.png');
-  mask-image:url('/cosmetics/avatar-frames/masks/silver-ranked-s01.png');
+  -webkit-mask-image:var(--avatar-frame-mask);
+  mask-image:var(--avatar-frame-mask);
 }
 .avatar-composition .avatar-composition-fallback {
   position:absolute;

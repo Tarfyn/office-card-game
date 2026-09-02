@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { COSMETIC_CATALOG, COSMETIC_SHOP_CATALOG, cosmeticIsOwned, defaultCosmeticOwnership, normalizePlayerCosmetics } from "../src/cosmetics.js";
+import { COSMETIC_CATALOG, COSMETIC_SHOP_CATALOG, cosmeticIsOwned, defaultCosmeticOwnership, normalizePlayerCosmetics, sortCosmeticItems } from "../src/cosmetics.js";
 
 let passed = 0;
 function test(name: string, fn: () => void) { fn(); passed += 1; console.log(`✓ ${name}`); }
@@ -71,6 +71,12 @@ test("ranked frames remain reward-only until an explicit ranked grant", () => {
   assert.equal(granted.owned.find((grant) => grant.cosmeticId === "COS-FRAME-003")?.source, "ranked");
 });
 
+test("ranked frame collection order follows ranked tier metadata", () => {
+  const items = ["COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"].map((id) => ({ definition:COSMETIC_CATALOG[id] }));
+  const ordered = sortCosmeticItems(items, rankedRanks.ranks).map((item) => item.definition.id);
+  assert.deepEqual(ordered, ["COS-FRAME-003", "COS-FRAME-006", "COS-FRAME-004", "COS-FRAME-005"]);
+});
+
 test("identity rendering layers an equipped transparent frame over the avatar", () => {
   assert.match(app, /frames: Object\.freeze/);
   assert.match(app, /function cosmeticFrameAsset\(frameId\)/);
@@ -96,4 +102,4 @@ test("Silver is the Silver-tier reward and remains out of the Shop", () => {
   assert.equal(COSMETIC_SHOP_CATALOG.some((entry) => String(entry.cosmeticId) === "COS-FRAME-006"), false);
 });
 
-console.log(`\n${passed}/${passed} v7.69.39 cosmetic asset tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.40 cosmetic asset tests passed.`);

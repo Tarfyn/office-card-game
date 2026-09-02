@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.39
+# Office Card Game - Codex Handover v7.69.40
 
 ## Baseline
 
-- Version: `v7.69.39`
-- Commit: release commit for annotated tag v7.69.39
+- Version: `v7.69.40`
+- Commit: release commit for annotated tag v7.69.40
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.39 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.40 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership, configurable Achievement
 and Ranked progression, level milestone rewards, the Silver Ranked frame, and the Bot/Training/
@@ -76,6 +76,17 @@ The desktop symmetry regression was traced to historical asymmetric horizontal p
 opponent world (`158px` versus `104px`). The current baseline uses the same `104px` horizontal
 padding for both worlds. Browser verification at 1920 and 4K measured corresponding pre-transform
 slot centers with a maximum difference of `0px` for all Employee and Support slots.
+
+## Avatar frame mask pipeline
+
+Avatar Frame portrait masks are derived by the shared build-time mask pipeline rather than by
+frame-specific CSS rules. The derivation flood-fills transparent pixels connected to the asset
+boundary, selects the enclosed portrait opening, and applies a small erosion to keep portrait
+pixels beneath antialiased frame edges. Every registered 512x512 frame requires a matching
+derived PNG mask; `scripts/avatar-frame-mask-audit.mjs` validates the complete set during builds.
+An optional `portraitMaskAsset` metadata override remains available for genuinely ambiguous future
+artwork, but current frames use the deterministic same-basename mask path. The normalized frame
+asset remains full-size at the avatar perimeter and is rendered above the masked portrait.
 
 ## Cosmetics
 

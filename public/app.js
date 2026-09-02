@@ -511,22 +511,17 @@ async function enterCosmeticSurface(mode) {
   try { await loadCosmeticViews(); } catch (error) { state.cosmeticMessage = cosmeticErrorMessage(error); }
   render();
 }
-function avatarFrameMaskClass(frameAsset) {
-  const file = String(frameAsset ?? '').split('/').pop();
-  return ({
-    'default-blue-silver.webp':'avatar-frame-mask-blue-silver',
-    'bronze-ranked-s01.webp':'avatar-frame-mask-bronze',
-    'gold-ranked-s01.webp':'avatar-frame-mask-gold',
-    'diamond-ranked-s01.webp':'avatar-frame-mask-diamond',
-    'silver-ranked-s01.webp':'avatar-frame-mask-silver'
-  })[file] ?? '';
+function avatarFrameMaskAsset(frameAsset, explicitMaskAsset = '') {
+  if (explicitMaskAsset) return explicitMaskAsset;
+  const file = String(frameAsset ?? '').split('/').pop() ?? '';
+  return file ? `/cosmetics/avatar-frames/masks/${file.replace(/\.webp$/i, '.png')}` : '';
 }
-function renderAvatarComposition({ avatarAsset = null, frameAsset = null, decorationAsset = null, avatarAlt = '', frameAlt = '', fallbackText = '', className = '' } = {}) {
+function renderAvatarComposition({ avatarAsset = null, frameAsset = null, frameMaskAsset = '', decorationAsset = null, avatarAlt = '', frameAlt = '', fallbackText = '', className = '' } = {}) {
   const classes = ['avatar-composition', 'player-avatar-frame', frameAsset ? 'has-avatar-frame' : '', decorationAsset ? 'has-avatar-decoration' : '', className].filter(Boolean).join(' ');
   const face = avatarAsset
     ? `<img class="avatar-composition-image player-avatar-image" src="${esc(avatarAsset)}" alt="${esc(avatarAlt)}" />`
     : `<span class="avatar-composition-fallback">${esc(fallbackText)}</span>`;
-  const portrait = frameAsset ? `<div class="avatar-portrait-mask ${avatarFrameMaskClass(frameAsset)}">${face}</div>` : face;
+  const portrait = frameAsset ? `<div class="avatar-portrait-mask" style="--avatar-frame-mask:url('${esc(avatarFrameMaskAsset(frameAsset, frameMaskAsset))}')">${face}</div>` : face;
   const frame = frameAsset ? `<img class="avatar-composition-frame player-avatar-frame-image" src="${esc(frameAsset)}" alt="${esc(frameAlt)}" />` : '';
   const decoration = decorationAsset ? `<img class="avatar-composition-decoration" src="${esc(decorationAsset)}" alt="" />` : '';
   return `<div class="${classes}">${portrait}${decoration}${frame}</div>`;
@@ -542,6 +537,7 @@ function renderCosmeticPreview(item, kind) {
     return renderAvatarComposition({
       avatarAsset:avatarAsset ?? '/cosmetics/avatars/overworked-sysadmin.webp',
       frameAsset:kind === 'AVATAR_FRAME' ? def.assetPath : equippedFrame,
+      frameMaskAsset:kind === 'AVATAR_FRAME' ? def.portraitMaskAsset : '',
       decorationAsset:kind === 'AVATAR_DECORATION' ? def.assetPath : null,
       frameAlt:kind === 'AVATAR_FRAME' ? cosmeticText(def,'name') : '',
       className:'cosmetic-avatar-preview layered'

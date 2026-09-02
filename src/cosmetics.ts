@@ -15,6 +15,12 @@ export interface CosmeticDefinition {
   nameKey: string;
   descriptionKey: string;
   assetPath: string | null;
+  /** Optional escape hatch for an asset whose opening cannot be inferred from alpha. */
+  portraitMaskAsset?: string;
+  /** Ranked cosmetics sort by configured tier order instead of cosmetic ID. */
+  rankTierId?: string;
+  /** Fallback order for non-ranked cosmetics in collection views. */
+  sortOrder?: number;
 }
 
 export interface CosmeticOwnershipGrant {
@@ -72,11 +78,11 @@ export const COSMETIC_CATALOG: Record<string, CosmeticDefinition> = {
   [COSMETIC_IDS.confidentAnalystAvatar]: { id:COSMETIC_IDS.confidentAnalystAvatar, kind:"AVATAR", slot:"avatarId", name:"Confident Analyst", description:"Optimistic, prepared and suspiciously motivated.", nameKey:"cosmetics.confidentAnalystName", descriptionKey:"cosmetics.confidentAnalystDescription", assetPath:"/cosmetics/avatars/confident-analyst.webp" },
   [COSMETIC_IDS.customerCareVeteranAvatar]: { id:COSMETIC_IDS.customerCareVeteranAvatar, kind:"AVATAR", slot:"avatarId", name:"Customer Care Veteran", description:"Calm voice, tired eyes, infinite patience.", nameKey:"cosmetics.customerCareVeteranName", descriptionKey:"cosmetics.customerCareVeteranDescription", assetPath:"/cosmetics/avatars/customer-care-veteran.webp" },
   [COSMETIC_IDS.defaultCorporateCardBack]: { id:COSMETIC_IDS.defaultCorporateCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Corporate Standard", description:"A dependable company-issued card back.", nameKey:"cosmetics.corporateStandardName", descriptionKey:"cosmetics.corporateStandardDescription", assetPath:null },
-  [COSMETIC_IDS.defaultBlueSilverFrame]: { id:COSMETIC_IDS.defaultBlueSilverFrame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Blue Silver Frame", description:"Clean corporate standard issue.", nameKey:"cosmetics.blueSilverFrameName", descriptionKey:"cosmetics.blueSilverFrameDescription", assetPath:"/cosmetics/avatar-frames/default-blue-silver.webp" },
-  [COSMETIC_IDS.bronzeRankedS01Frame]: { id:COSMETIC_IDS.bronzeRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Bronze Ranked S1", description:"Early-season ranked reward frame.", nameKey:"cosmetics.bronzeRankedS01Name", descriptionKey:"cosmetics.bronzeRankedS01Description", assetPath:"/cosmetics/avatar-frames/bronze-ranked-s01.webp" },
-  [COSMETIC_IDS.goldRankedS01Frame]: { id:COSMETIC_IDS.goldRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Gold Ranked S1", description:"Premium ranked reward frame.", nameKey:"cosmetics.goldRankedS01Name", descriptionKey:"cosmetics.goldRankedS01Description", assetPath:"/cosmetics/avatar-frames/gold-ranked-s01.webp" },
-  [COSMETIC_IDS.diamondRankedS01Frame]: { id:COSMETIC_IDS.diamondRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Diamond Ranked S1", description:"High-tier ranked reward frame.", nameKey:"cosmetics.diamondRankedS01Name", descriptionKey:"cosmetics.diamondRankedS01Description", assetPath:"/cosmetics/avatar-frames/diamond-ranked-s01.webp" },
-  [COSMETIC_IDS.silverRankedS01Frame]: { id:COSMETIC_IDS.silverRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Silver Ranked S1", description:"Mid-tier ranked reward frame.", nameKey:"cosmetics.silverRankedS01Name", descriptionKey:"cosmetics.silverRankedS01Description", assetPath:"/cosmetics/avatar-frames/silver-ranked-s01.webp" }
+  [COSMETIC_IDS.defaultBlueSilverFrame]: { id:COSMETIC_IDS.defaultBlueSilverFrame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Blue Silver Frame", description:"Clean corporate standard issue.", nameKey:"cosmetics.blueSilverFrameName", descriptionKey:"cosmetics.blueSilverFrameDescription", assetPath:"/cosmetics/avatar-frames/default-blue-silver.webp", sortOrder:0 },
+  [COSMETIC_IDS.bronzeRankedS01Frame]: { id:COSMETIC_IDS.bronzeRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Bronze Ranked S1", description:"Early-season ranked reward frame.", nameKey:"cosmetics.bronzeRankedS01Name", descriptionKey:"cosmetics.bronzeRankedS01Description", assetPath:"/cosmetics/avatar-frames/bronze-ranked-s01.webp", rankTierId:"BRONZE" },
+  [COSMETIC_IDS.goldRankedS01Frame]: { id:COSMETIC_IDS.goldRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Gold Ranked S1", description:"Premium ranked reward frame.", nameKey:"cosmetics.goldRankedS01Name", descriptionKey:"cosmetics.goldRankedS01Description", assetPath:"/cosmetics/avatar-frames/gold-ranked-s01.webp", rankTierId:"GOLD" },
+  [COSMETIC_IDS.diamondRankedS01Frame]: { id:COSMETIC_IDS.diamondRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Diamond Ranked S1", description:"High-tier ranked reward frame.", nameKey:"cosmetics.diamondRankedS01Name", descriptionKey:"cosmetics.diamondRankedS01Description", assetPath:"/cosmetics/avatar-frames/diamond-ranked-s01.webp", rankTierId:"DIAMOND" },
+  [COSMETIC_IDS.silverRankedS01Frame]: { id:COSMETIC_IDS.silverRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Silver Ranked S1", description:"Mid-tier ranked reward frame.", nameKey:"cosmetics.silverRankedS01Name", descriptionKey:"cosmetics.silverRankedS01Description", assetPath:"/cosmetics/avatar-frames/silver-ranked-s01.webp", rankTierId:"SILVER" }
 };
 
 export const COSMETIC_SHOP_CATALOG = Object.freeze([
@@ -91,6 +97,16 @@ export const COSMETIC_SHOP_CATALOG = Object.freeze([
   { cosmeticId:COSMETIC_IDS.customerCareVeteranAvatar, price:240 },
   { cosmeticId:COSMETIC_IDS.defaultBlueSilverFrame, price:160 }
 ]);
+
+export function sortCosmeticItems<T extends { definition?: CosmeticDefinition }>(items: readonly T[], rankedTiers: readonly { id: string; order: number }[] = []): T[] {
+  const rankOrder = new Map(rankedTiers.map((tier) => [String(tier.id).toUpperCase(), Number(tier.order)]));
+  const sortKey = (item: T) => {
+    const definition = item.definition;
+    if (definition?.rankTierId) return 1000 + (rankOrder.get(definition.rankTierId.toUpperCase()) ?? 999);
+    return Number(definition?.sortOrder ?? 0);
+  };
+  return [...items].sort((a, b) => sortKey(a) - sortKey(b) || String(a.definition?.id ?? '').localeCompare(String(b.definition?.id ?? '')));
+}
 
 const LEGACY_STARTER_EXCLUDED_COSMETICS = new Set<string>([
   COSMETIC_IDS.softOfficeBoard,

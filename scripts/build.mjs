@@ -35,4 +35,6 @@ function copyData() {
 rmSync(dist, { recursive: true, force: true });
 runTypeScript();
 copyData();
+const maskAudit = spawnSync(process.execPath, ['scripts/avatar-frame-mask-audit.mjs'], { cwd: root, stdio: 'inherit' });
+if (maskAudit.status !== 0) process.exit(maskAudit.status ?? 1);
 console.log('Build complete: dist/');
