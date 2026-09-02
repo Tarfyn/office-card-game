@@ -27,6 +27,7 @@ import { assertDeckInput } from "../src/player-decks.js";
 import { PlayerProfileService, type GuestCredentialStoreSnapshot, type PlayerDataStoreSnapshot } from "../src/profile.js";
 
 const app = readFileSync(fileURLToPath(new URL("../../public/app.js", import.meta.url)), "utf8");
+const styles = readFileSync(fileURLToPath(new URL("../../public/styles.css", import.meta.url)), "utf8");
 
 const cards = Object.values(alphaDefinitions);
 const base = cards.find(isExecutiveEditionEligible)!;
@@ -117,6 +118,11 @@ assert.equal(production.ownedCardVariants[alphaExecutiveId] ?? 0, 0);
 assert.match(app, /id="collectionFinishFilter"/);
 assert.match(app, /data-card-variant/);
 assert.match(app, /data-deck-finish-swap/);
+assert.match(styles, /--exec-foil-opacity:\.46/);
+assert.match(styles, /\.hover-card-face\.executive-edition \.card-art-window::after/);
+assert.match(styles, /\.catalog-art-stage \.executive-art-foil[\s\S]*background:var\(--exec-foil-background\)/);
+assert.match(styles, /body\.match-mode \.hover-card-face\.executive-edition[\s\S]*background:var\(--exec-card-background\)/);
+assert.doesNotMatch(styles, /@media\s*\([^)]*hover\s*:\s*hover[^)]*\)[^{]*\{[^}]*executive-art-foil/);
 
 let players: PlayerDataStoreSnapshot | null = null;
 let credentials: GuestCredentialStoreSnapshot | null = null;

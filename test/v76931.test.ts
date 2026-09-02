@@ -87,4 +87,4 @@ test("new cosmetic names and descriptions are localized in English and German", 
   assert.match(de, /diamondRankedS01Description: "Ranked-Rahmen für hohe Platzierungen\."/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.31 cosmetic asset tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.32 cosmetic asset tests passed.`);
