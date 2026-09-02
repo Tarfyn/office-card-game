@@ -12788,3 +12788,9 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
   .catalog-card-face.executive-edition,
   .hover-card-face.executive-edition { --exec-foil-opacity:.70; }
 }
+
+/* Keep 1K Deckbuilder names clear of finish and cost badges without changing live-card typography. */
+@media (min-width:761px) and (max-width:2199px) {
+  .collection-card .catalog-name-row > strong { font-size:10.4px; }
+  .collection-card .catalog-name-row > strong.long-name { font-size:9.1px; }
+}
