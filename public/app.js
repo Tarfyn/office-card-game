@@ -5829,11 +5829,17 @@ function installFoilPointerTracking() {
     const rect=face.getBoundingClientRect();
     const x=Math.max(0,Math.min(100,((event.clientX-rect.left)/Math.max(1,rect.width))*100));
     const y=Math.max(0,Math.min(100,((event.clientY-rect.top)/Math.max(1,rect.height))*100));
-    face.style.setProperty('--foil-x',`${x.toFixed(1)}%`); face.style.setProperty('--foil-y',`${y.toFixed(1)}%`);
+    const hyp=Math.min(1,Math.hypot((x-50)/50,(y-50)/50));
+    const px=`${x.toFixed(1)}%`; const py=`${y.toFixed(1)}%`;
+    face.style.setProperty('--foil-x',px); face.style.setProperty('--foil-y',py);
+    face.style.setProperty('--mx',px); face.style.setProperty('--my',py);
+    face.style.setProperty('--posx',px); face.style.setProperty('--posy',py);
+    face.style.setProperty('--pos',`${px} ${py}`); face.style.setProperty('--hyp',hyp.toFixed(3));
   },{passive:true});
   document.addEventListener('pointerout',(event)=>{
     if (!foilTrackedElement || foilTrackedElement.contains(event.relatedTarget)) return;
-    foilTrackedElement.style.removeProperty('--foil-x'); foilTrackedElement.style.removeProperty('--foil-y'); foilTrackedElement=null;
+    for (const property of ['--foil-x','--foil-y','--mx','--my','--posx','--posy','--pos','--hyp']) foilTrackedElement.style.removeProperty(property);
+    foilTrackedElement=null;
   },{passive:true});
 }
 function finishReviewCards() { return [...state.catalog.values()].map(localizedCard).filter((def)=>Boolean(def.artId)); }

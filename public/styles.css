@@ -12713,15 +12713,26 @@ body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.activ
 
 /* The shared avatar-composition root owns frame bounds; no category-specific inset is needed. */
 
-/* Executive Edition is a collectible finish layered on the existing card engine. */
+/* Executive Edition adapts the reference's position-driven shine/glare stack to the existing art layer. */
 .card.executive-edition,
 .catalog-card-face.executive-edition,
 .hover-card-face.executive-edition {
   --gold-light:#f5dc91;
   --gold-mid:#b8791f;
   --gold-deep:#5a3009;
-  --exec-foil-opacity:.56;
-  --exec-foil-background:repeating-linear-gradient(104deg,transparent 0 12px,rgba(255,82,181,.26) 12px 15px,rgba(255,229,98,.24) 15px 18px,rgba(92,239,214,.24) 18px 21px,rgba(91,167,255,.25) 21px 24px,rgba(191,103,255,.24) 24px 27px,transparent 27px 42px),repeating-linear-gradient(104deg,transparent 0 31px,rgba(255,255,255,.42) 31px 33px,transparent 33px 50px),linear-gradient(112deg,transparent 3%,rgba(255,74,190,.22) 20%,rgba(255,237,129,.28) 35%,rgba(83,225,255,.22) 51%,rgba(173,110,255,.22) 68%,transparent 91%),radial-gradient(circle at 23% 27%,rgba(255,255,255,.34) 0 1px,transparent 2px),radial-gradient(circle at 76% 71%,rgba(255,246,190,.26) 0 1px,transparent 2px);
+  --exec-foil-opacity:.62;
+  --mx:50%;
+  --my:50%;
+  --pos:50% 50%;
+  --posx:50%;
+  --posy:50%;
+  --hyp:0;
+  --exec-foil-background:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.10) 0 1px,transparent 1px 5px),
+    repeating-linear-gradient(112deg,#e85a78 0 4%,#f2d05c 4% 9%,#62d7a9 9% 14%,#62c3eb 14% 19%,#aa78e4 19% 24%,#e85a78 24% 29%),
+    repeating-linear-gradient(104deg,rgba(67,31,8,.38) 0 8%,rgba(255,224,138,.36) 9% 12%,rgba(255,255,255,.16) 12.5% 14%,rgba(40,18,4,.26) 14.5% 22%),
+    radial-gradient(farthest-corner circle at var(--mx) var(--my),rgba(255,255,255,.55) 0%,rgba(255,220,141,.20) 24%,rgba(18,8,0,.22) 88%),
+    linear-gradient(105deg,transparent 9%,rgba(255,255,255,.42) 18%,transparent 27%,transparent 68%,rgba(255,239,180,.24) 80%,transparent 89%);
   --exec-card-background:linear-gradient(122deg,rgba(255,233,158,.34),transparent 18% 62%,rgba(49,24,3,.27)),repeating-linear-gradient(0deg,rgba(255,250,219,.045) 0 1px,transparent 1px 3px),linear-gradient(145deg,#512807 0%,#8a4f0e 14%,#c17f20 28%,#efc35d 43%,#a45f10 58%,#d39a2c 75%,#572b06 100%);
   border-color:#845316;
   background:var(--exec-card-background);
@@ -12739,9 +12750,15 @@ body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.activ
 .catalog-card-face.executive-edition .catalog-art-stage { border-color:rgba(103,66,12,.48); }
 .card-finish-badge { justify-self:end; padding:2px 4px; border:1px solid rgba(74,43,7,.58); border-radius:3px; background:linear-gradient(145deg,#ffe9a0,#c38a25 58%,#75460d); color:#3b2709; box-shadow:inset 0 1px rgba(255,246,190,.70),0 1px 3px rgba(66,37,5,.22); font-size:5px; line-height:1; font-style:normal; font-weight:950; letter-spacing:.08em; white-space:nowrap; }
 .card-art-stage .executive-art-foil,
-.catalog-art-stage .executive-art-foil { position:absolute; inset:0; z-index:6; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:150% 150%,100% 100%,180% 180%,100% 100%,100% 100%; background-position:center,center,var(--foil-x,32%) var(--foil-y,48%),center,center; mix-blend-mode:screen; filter:saturate(1.28) contrast(1.08); transition:opacity .16s ease,background-position .16s ease; }
+.catalog-art-stage .executive-art-foil { position:absolute; inset:0; z-index:6; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:100% 100%,620% 620%,260% 260%,180% 180%,220% 220%; background-position:center,calc(((50% - var(--posx)) * 2.4) + 50%) calc(((50% - var(--posy)) * 1.4) + 50%),var(--posx) var(--posy),var(--posx) var(--posy),calc(((50% - var(--posx)) * -1) + 50%) calc(((50% - var(--posy)) * -1) + 50%); background-blend-mode:soft-light,hue,hard-light,screen,normal; mix-blend-mode:screen; filter:brightness(calc(.76 + (var(--hyp) * .16))) contrast(1.72) saturate(1.28); transition:opacity .16s ease,background-position .16s ease; }
+.card-art-stage .executive-art-foil::before,
+.catalog-art-stage .executive-art-foil::before,
+.hover-card-face.executive-edition .card-art-window::before { content:''; position:absolute; inset:0; z-index:1; pointer-events:none; background:repeating-linear-gradient(90deg,transparent 0 18px,rgba(255,255,255,.18) 18px 20px,transparent 20px 39px),radial-gradient(farthest-corner circle at var(--mx) var(--my),rgba(255,255,255,.38) 0%,rgba(255,231,164,.10) 32%,transparent 78%); background-size:260% 100%,140% 140%; background-position:calc(((50% - var(--posx)) * 3) + 50%) var(--posy),var(--pos); background-blend-mode:screen,soft-light; mix-blend-mode:screen; opacity:.62; filter:contrast(1.55) saturate(1.32); }
+.card-art-stage .executive-art-foil::after,
+.catalog-art-stage .executive-art-foil::after,
+.hover-card-face.executive-edition .card-art-window::after { content:''; position:absolute; inset:0; z-index:2; pointer-events:none; background:radial-gradient(farthest-corner ellipse at var(--mx) var(--my),rgba(255,255,255,.46) 0%,rgba(255,244,199,.20) 21%,transparent 58%,rgba(42,17,0,.20) 100%),linear-gradient(105deg,transparent 42%,rgba(255,255,255,.30) 48%,transparent 54%); background-size:135% 135%,180% 180%; background-position:var(--pos),calc(((50% - var(--posx)) * -1.4) + 50%) var(--posy); background-blend-mode:screen,soft-light; mix-blend-mode:screen; opacity:.46; filter:brightness(calc(.92 + (var(--hyp) * .20))) contrast(1.35); }
 .hover-card-face.executive-edition .card-art-window { position:relative; overflow:hidden; }
-.hover-card-face.executive-edition .card-art-window::after { content:''; position:absolute; inset:0; z-index:2; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:150% 150%,100% 100%,180% 180%,100% 100%,100% 100%; background-position:center,center,var(--foil-x,32%) var(--foil-y,48%),center,center; mix-blend-mode:screen; filter:saturate(1.28) contrast(1.08); transition:opacity .16s ease,background-position .16s ease; }
+.hover-card-face.executive-edition .card-art-window::after { content:''; position:absolute; inset:0; z-index:2; pointer-events:none; opacity:var(--exec-foil-opacity); background:var(--exec-foil-background); background-size:100% 100%,620% 620%,260% 260%,180% 180%,220% 220%; background-position:center,calc(((50% - var(--posx)) * 2.4) + 50%) calc(((50% - var(--posy)) * 1.4) + 50%),var(--posx) var(--posy),var(--posx) var(--posy),calc(((50% - var(--posx)) * -1) + 50%) calc(((50% - var(--posy)) * -1) + 50%); background-blend-mode:soft-light,hue,hard-light,screen,normal; mix-blend-mode:screen; filter:brightness(calc(.76 + (var(--hyp) * .16))) contrast(1.72) saturate(1.28); transition:opacity .16s ease,background-position .16s ease; }
 .hover-card-face.executive-edition > .executive-art-foil { display:none; }
 body.match-mode .hover-card-face.executive-edition { border-color:#845316; background:var(--exec-card-background); box-shadow:inset 0 0 0 1px rgba(255,246,193,.92),inset 0 0 0 3px rgba(82,43,7,.42),inset 0 7px 14px rgba(255,239,167,.18),0 9px 22px rgba(66,38,7,.28); }
 .card.executive-edition:hover .executive-art-foil,
@@ -12751,6 +12768,14 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
 .card.executive-edition:hover .executive-art-foil,
 .card.executive-edition:focus-visible .executive-art-foil,
 .catalog-card-face.executive-edition:hover .executive-art-foil { opacity:.62; }
+.card.executive-edition:hover .executive-art-foil::before,
+.card.executive-edition:focus-visible .executive-art-foil::before,
+.catalog-card-face.executive-edition:hover .executive-art-foil::before,
+.hover-card-face.executive-edition:hover .card-art-window::before { opacity:.82; }
+.card.executive-edition:hover .executive-art-foil::after,
+.card.executive-edition:focus-visible .executive-art-foil::after,
+.catalog-card-face.executive-edition:hover .executive-art-foil::after,
+.hover-card-face.executive-edition:hover .card-art-window::after { opacity:.70; }
 .card-variant-picker { display:flex; gap:3px; margin:0 1px 2px; }
 .card-variant-picker button { flex:1 1 0; min-width:0; padding:3px 4px; border:1px solid #c8bca7; border-radius:3px; background:#f7f2e8; color:#6b6256; font-size:6px; font-weight:900; letter-spacing:.05em; }
 .card-variant-picker button.selected { border-color:#8d6b2d; background:#e7d2a0; color:#34280f; }
@@ -12761,5 +12786,5 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
 @media (hover:none), (pointer:coarse) {
   .card.executive-edition,
   .catalog-card-face.executive-edition,
-  .hover-card-face.executive-edition { --exec-foil-opacity:.64; }
+  .hover-card-face.executive-edition { --exec-foil-opacity:.70; }
 }
