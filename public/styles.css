@@ -11803,6 +11803,8 @@ body.match-mode .own-hand .hand-fan-card:focus-within { z-index:60 !important; }
   mask-repeat:no-repeat;
   -webkit-mask-position:center;
   mask-position:center;
+  -webkit-mask-mode:alpha;
+  mask-mode:alpha;
   -webkit-mask-size:100% 100%;
   mask-size:100% 100%;
   -webkit-mask-image:var(--avatar-frame-mask);

@@ -91,7 +91,14 @@ function Get-OpeningMask($raster, [string]$FallbackMaskPath) {
 }
 
 function Write-MaskPng($mask, [string]$Path) {
-  $source = [System.Windows.Media.Imaging.BitmapSource]::Create($mask.Width, $mask.Height, 96, 96, [System.Windows.Media.PixelFormats]::Gray8, $null, $mask.Bytes, $mask.Width)
+  # CSS mask images use the alpha channel consistently across Chromium/WebKit.
+  # Keep the opening white and make the exterior genuinely transparent.
+  $rgba = New-Object byte[] ($mask.Width * $mask.Height * 4)
+  for ($p = 0; $p -lt $mask.Bytes.Length; $p++) {
+    $value = $mask.Bytes[$p]; $base = $p * 4
+    $rgba[$base] = 255; $rgba[$base + 1] = 255; $rgba[$base + 2] = 255; $rgba[$base + 3] = $value
+  }
+  $source = [System.Windows.Media.Imaging.BitmapSource]::Create($mask.Width, $mask.Height, 96, 96, [System.Windows.Media.PixelFormats]::Bgra32, $null, $rgba, $mask.Width * 4)
   $encoder = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
   $encoder.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($source))
   $stream = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Create)

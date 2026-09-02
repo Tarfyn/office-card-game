@@ -537,7 +537,7 @@ function renderCosmeticPreview(item, kind) {
     return renderAvatarComposition({
       avatarAsset:avatarAsset ?? '/cosmetics/avatars/overworked-sysadmin.webp',
       frameAsset:kind === 'AVATAR_FRAME' ? def.assetPath : equippedFrame,
-      frameMaskAsset:kind === 'AVATAR_FRAME' ? def.portraitMaskAsset : '',
+      frameMaskAsset:kind === 'AVATAR_FRAME' ? def.portraitMaskAsset : cosmeticFrameMaskAsset(state.cosmeticPersonnel?.loadout?.avatarFrameId),
       decorationAsset:kind === 'AVATAR_DECORATION' ? def.assetPath : null,
       frameAlt:kind === 'AVATAR_FRAME' ? cosmeticText(def,'name') : '',
       className:'cosmetic-avatar-preview layered'
@@ -5300,7 +5300,7 @@ function renderLobbyProfileAvatar() {
   const avatarId = loadout.avatarId ?? 'COS-AVA-001';
   const avatarAsset = cosmeticAvatarAsset(avatarId);
   const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
-  return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}">${renderAvatarComposition({ avatarAsset, frameAsset, fallbackText:playerInitials(state.serverProfile?.displayName) })}</div>`;
+  return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(state.serverProfile?.displayName) })}</div>`;
 }
 
 function renderProfileStrip() {
@@ -6428,7 +6428,7 @@ const COSMETIC_UI_CATALOG = Object.freeze({
     'COS-FRAME-003': Object.freeze({ asset:'/cosmetics/avatar-frames/bronze-ranked-s01.webp' }),
     'COS-FRAME-004': Object.freeze({ asset:'/cosmetics/avatar-frames/gold-ranked-s01.webp' }),
     'COS-FRAME-005': Object.freeze({ asset:'/cosmetics/avatar-frames/diamond-ranked-s01.webp' }),
-    'COS-FRAME-006': Object.freeze({ asset:'/cosmetics/avatar-frames/silver-ranked-s01.webp' })
+    'COS-FRAME-006': Object.freeze({ asset:'/cosmetics/avatar-frames/silver-ranked-s01.webp', mask:'/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png' })
   })
 });
 
@@ -6454,12 +6454,17 @@ function cosmeticFrameAsset(frameId) {
   return COSMETIC_UI_CATALOG.frames[String(frameId || '')]?.asset ?? null;
 }
 
+function cosmeticFrameMaskAsset(frameId) {
+  const entry = COSMETIC_UI_CATALOG.frames[String(frameId || '')];
+  return entry?.mask ?? avatarFrameMaskAsset(entry?.asset);
+}
+
 function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}) {
   const meta = roomDeckMeta(playerId);
   const loadout = roomCosmeticLoadout(playerId);
   const avatarAsset = cosmeticAvatarAsset(loadout.avatarId);
   const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
-  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}">${renderAvatarComposition({ avatarAsset, frameAsset, fallbackText:playerInitials(meta.playerName) })}${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
+  return `<div class="player-avatar-slot ${own ? 'own' : 'opponent'} ${combat ? 'combat-avatar' : ''} ${repDelta < 0 ? 'rep-hit' : ''}" data-player-avatar="${esc(playerId)}" data-avatar-id="${esc(loadout.avatarId)}" title="${esc(meta.playerName)}">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(meta.playerName) })}${combat && repDelta < 0 ? `<b class="combat-rep-delta">${esc(repDelta)} REP</b>` : ''}</div>`;
 }
 
 function renderDeckStackVisual(deckCount) {
