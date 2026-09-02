@@ -25,7 +25,7 @@ test("cosmetic ownership starts with grants and hides unowned catalog items", ()
 test("shop availability is explicit and purchase is authoritative and atomic", () => {
   const profile = createAlphaMetaProfile();
   profile.balances.OFFICE_CREDITS = 300;
-  assert.deepEqual(COSMETIC_SHOP_CATALOG.map((item) => item.cosmeticId), ["COS-AVA-002", "COS-AVA-003", "COS-AVA-004", "COS-AVA-005", "COS-AVA-006", "COS-FRAME-002"]);
+  assert.deepEqual(COSMETIC_SHOP_CATALOG.map((item) => item.cosmeticId), ["COS-BOARD-002", "COS-BOARD-003", "COS-BOARD-004", "COS-BOARD-005", "COS-AVA-002", "COS-AVA-003", "COS-AVA-004", "COS-AVA-005", "COS-AVA-006", "COS-FRAME-002"]);
   const purchased = applyCosmeticPurchase(profile, "COS-AVA-003", 123);
   assert.equal(purchased.balances.OFFICE_CREDITS, 60);
   assert.equal(purchased.cosmetics.owned.at(-1)?.source, "shop");

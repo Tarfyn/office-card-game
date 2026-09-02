@@ -41,6 +41,10 @@ export interface CosmeticLoadout {
 
 export const COSMETIC_IDS = {
   classicOfficeBoard: "COS-BOARD-001",
+  softOfficeBoard: "COS-BOARD-002",
+  midnightCircuitBoard: "COS-BOARD-003",
+  executiveSteelBoard: "COS-BOARD-004",
+  concreteMinimalBoard: "COS-BOARD-005",
   overworkedSysadminAvatar: "COS-AVA-001",
   hrOracleAvatar: "COS-AVA-002",
   executiveDirectorAvatar: "COS-AVA-003",
@@ -57,6 +61,10 @@ export const COSMETIC_IDS = {
 
 export const COSMETIC_CATALOG: Record<string, CosmeticDefinition> = {
   [COSMETIC_IDS.classicOfficeBoard]: { id:COSMETIC_IDS.classicOfficeBoard, kind:"BOARD", slot:"boardSkinId", name:"Classic Office", description:"The original executive desk.", nameKey:"cosmetics.classicOfficeName", descriptionKey:"cosmetics.classicOfficeDescription", assetPath:"/cosmetics/boards/classic-office.webp" },
+  [COSMETIC_IDS.softOfficeBoard]: { id:COSMETIC_IDS.softOfficeBoard, kind:"BOARD", slot:"boardSkinId", name:"Soft Office", description:"A warm neutral desk-style board with a bright office character.", nameKey:"cosmetics.softOfficeName", descriptionKey:"cosmetics.softOfficeDescription", assetPath:"/cosmetics/boards/soft-office.webp" },
+  [COSMETIC_IDS.midnightCircuitBoard]: { id:COSMETIC_IDS.midnightCircuitBoard, kind:"BOARD", slot:"boardSkinId", name:"Midnight Circuit", description:"A sleek dark board with subtle neon-lit panel seams.", nameKey:"cosmetics.midnightCircuitName", descriptionKey:"cosmetics.midnightCircuitDescription", assetPath:"/cosmetics/boards/midnight-circuit.webp" },
+  [COSMETIC_IDS.executiveSteelBoard]: { id:COSMETIC_IDS.executiveSteelBoard, kind:"BOARD", slot:"boardSkinId", name:"Executive Steel", description:"A premium graphite play surface framed by industrial steel.", nameKey:"cosmetics.executiveSteelName", descriptionKey:"cosmetics.executiveSteelDescription", assetPath:"/cosmetics/boards/executive-steel.webp" },
+  [COSMETIC_IDS.concreteMinimalBoard]: { id:COSMETIC_IDS.concreteMinimalBoard, kind:"BOARD", slot:"boardSkinId", name:"Concrete Minimal", description:"A clean stone-textured board for a calm, modern workspace feel.", nameKey:"cosmetics.concreteMinimalName", descriptionKey:"cosmetics.concreteMinimalDescription", assetPath:"/cosmetics/boards/concrete-minimal.webp" },
   [COSMETIC_IDS.overworkedSysadminAvatar]: { id:COSMETIC_IDS.overworkedSysadminAvatar, kind:"AVATAR", slot:"avatarId", name:"Overworked Sysadmin", description:"Keeps the office online one incident at a time.", nameKey:"cosmetics.overworkedSysadminName", descriptionKey:"cosmetics.overworkedSysadminDescription", assetPath:"/cosmetics/avatars/overworked-sysadmin.webp" },
   [COSMETIC_IDS.hrOracleAvatar]: { id:COSMETIC_IDS.hrOracleAvatar, kind:"AVATAR", slot:"avatarId", name:"HR Oracle", description:"Knows who approved it before you ask.", nameKey:"cosmetics.hrOracleName", descriptionKey:"cosmetics.hrOracleDescription", assetPath:"/cosmetics/avatars/hr-oracle.webp" },
   [COSMETIC_IDS.executiveDirectorAvatar]: { id:COSMETIC_IDS.executiveDirectorAvatar, kind:"AVATAR", slot:"avatarId", name:"Executive Director", description:"Looks like every approval already went through.", nameKey:"cosmetics.executiveDirectorName", descriptionKey:"cosmetics.executiveDirectorDescription", assetPath:"/cosmetics/avatars/executive-director.webp" },
@@ -72,6 +80,10 @@ export const COSMETIC_CATALOG: Record<string, CosmeticDefinition> = {
 };
 
 export const COSMETIC_SHOP_CATALOG = Object.freeze([
+  { cosmeticId:COSMETIC_IDS.softOfficeBoard, price:180 },
+  { cosmeticId:COSMETIC_IDS.midnightCircuitBoard, price:220 },
+  { cosmeticId:COSMETIC_IDS.executiveSteelBoard, price:260 },
+  { cosmeticId:COSMETIC_IDS.concreteMinimalBoard, price:180 },
   { cosmeticId:COSMETIC_IDS.hrOracleAvatar, price:180 },
   { cosmeticId:COSMETIC_IDS.executiveDirectorAvatar, price:240 },
   { cosmeticId:COSMETIC_IDS.overloadedJuniorAvatar, price:240 },
@@ -81,6 +93,10 @@ export const COSMETIC_SHOP_CATALOG = Object.freeze([
 ]);
 
 const LEGACY_STARTER_EXCLUDED_COSMETICS = new Set<string>([
+  COSMETIC_IDS.softOfficeBoard,
+  COSMETIC_IDS.midnightCircuitBoard,
+  COSMETIC_IDS.executiveSteelBoard,
+  COSMETIC_IDS.concreteMinimalBoard,
   COSMETIC_IDS.executiveDirectorAvatar,
   COSMETIC_IDS.overloadedJuniorAvatar,
   COSMETIC_IDS.confidentAnalystAvatar,
@@ -93,7 +109,15 @@ const LEGACY_STARTER_EXCLUDED_COSMETICS = new Set<string>([
 
 const LEGACY_BOARD_TO_ID: Record<string, string> = {
   "classic-office": COSMETIC_IDS.classicOfficeBoard,
-  [COSMETIC_IDS.classicOfficeBoard]: COSMETIC_IDS.classicOfficeBoard
+  [COSMETIC_IDS.classicOfficeBoard]: COSMETIC_IDS.classicOfficeBoard,
+  "soft-office": COSMETIC_IDS.softOfficeBoard,
+  "midnight-circuit": COSMETIC_IDS.midnightCircuitBoard,
+  "executive-steel": COSMETIC_IDS.executiveSteelBoard,
+  "concrete-minimal": COSMETIC_IDS.concreteMinimalBoard,
+  [COSMETIC_IDS.softOfficeBoard]: COSMETIC_IDS.softOfficeBoard,
+  [COSMETIC_IDS.midnightCircuitBoard]: COSMETIC_IDS.midnightCircuitBoard,
+  [COSMETIC_IDS.executiveSteelBoard]: COSMETIC_IDS.executiveSteelBoard,
+  [COSMETIC_IDS.concreteMinimalBoard]: COSMETIC_IDS.concreteMinimalBoard
 };
 
 export function defaultCosmeticLoadout(playerId: PlayerId): CosmeticLoadout {

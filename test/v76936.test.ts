@@ -7,10 +7,10 @@ const app = root("public/app.js");
 const css = root("public/styles.css");
 const packageJson = JSON.parse(root("package.json"));
 
-assert.equal(packageJson.version, "7.69.38");
+assert.equal(packageJson.version, "7.69.39");
 assert.match(app, /finishBadgePlacement = 'type-strip'/);
 assert.match(app, /finishBadgePlacement === 'artwork' \? finishBadge : ''/);
 assert.match(app, /renderCollectionCard[\s\S]*finishBadgePlacement:'artwork'/);
 assert.match(css, /\.collection-card \.catalog-art-stage \.card-finish-badge/);
 
-console.log("\n4/4 v7.69.38 Deckbuilder plaque tests passed.");
+console.log("\n4/4 v7.69.39 Deckbuilder plaque tests passed.");

@@ -6413,7 +6413,11 @@ function playerInitials(name = 'Player') {
 
 const COSMETIC_UI_CATALOG = Object.freeze({
   boards: Object.freeze({
-    'COS-BOARD-001': Object.freeze({ slug:'classic-office' })
+    'COS-BOARD-001': Object.freeze({ slug:'classic-office' }),
+    'COS-BOARD-002': Object.freeze({ slug:'soft-office' }),
+    'COS-BOARD-003': Object.freeze({ slug:'midnight-circuit' }),
+    'COS-BOARD-004': Object.freeze({ slug:'executive-steel' }),
+    'COS-BOARD-005': Object.freeze({ slug:'concrete-minimal' })
   }),
   avatars: Object.freeze({
     'COS-AVA-001': Object.freeze({ asset:'/cosmetics/avatars/overworked-sysadmin.webp' }),

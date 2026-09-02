@@ -1,18 +1,23 @@
-# Office Card Game - Codex Handover v7.69.38
+# Office Card Game - Codex Handover v7.69.39
 
 ## Baseline
 
-- Version: `v7.69.38`
-- Commit: release commit for annotated tag v7.69.38
+- Version: `v7.69.39`
+- Commit: release commit for annotated tag v7.69.39
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.38 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.39 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership, configurable Achievement
 and Ranked progression, level milestone rewards, the Silver Ranked frame, and the Bot/Training/
 Tutorial foundation.
+
+The release also adds four explicit shop-only Board cosmetics: Soft Office, Midnight Circuit,
+Executive Steel and Concrete Minimal. They reuse the shared Board Skin architecture, remain
+separate from each player's loadout selection, and use the same asset with the established 180deg
+opponent orientation rule.
 
 ## Match Board
 

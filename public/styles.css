@@ -11395,6 +11395,10 @@ body.match-mode .player-board::before {
   transform-origin:50% 50%;
 }
 body.match-mode .player-board.board-skin-classic-office { --board-skin-image:url('/cosmetics/boards/classic-office.webp'); }
+body.match-mode .player-board.board-skin-soft-office { --board-skin-image:url('/cosmetics/boards/soft-office.webp'); }
+body.match-mode .player-board.board-skin-midnight-circuit { --board-skin-image:url('/cosmetics/boards/midnight-circuit.webp'); }
+body.match-mode .player-board.board-skin-executive-steel { --board-skin-image:url('/cosmetics/boards/executive-steel.webp'); }
+body.match-mode .player-board.board-skin-concrete-minimal { --board-skin-image:url('/cosmetics/boards/concrete-minimal.webp'); }
 body.match-mode .own-board::before { transform:none; }
 body.match-mode .opponent-board::before { transform:rotate(180deg); }
 
