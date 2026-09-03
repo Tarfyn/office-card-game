@@ -637,6 +637,19 @@ database restore, helper installation/replacement, firewall change, or emergency
 rollback remains human-root-only. See `docs/database-operations.md` for the exact workflow and
 NO-GO conditions.
 
+Authenticated Account identity must resolve exclusively from an opaque server session cookie;
+never trust client-supplied user, player, profile, or role identifiers for authorization. Store only
+modern password hashes and hashed session tokens, never log or return authentication material, and
+keep Account profile/economy/deck mutations transactional and safe across processes. Guest identity
+must remain visibly separate and must not become a parallel authoritative Account store.
+
+The internal `/ops` surface and every `/api/ops/*` endpoint require an authenticated database-backed
+`OPS` or `ADMIN` role on the server. Operations Phase 1 is read-only: never expose arbitrary SQL,
+shell/root/helper execution, environment dumps, credentials, hashes, tokens, unrestricted paths, or
+log-file reads. Do not give the web service sudo/systemd access for observability; unavailable
+infrastructure-only state must remain unavailable. Add an attributable Admin Audit Log before any
+future Ops mutation endpoint.
+
 ## Git and Release Workflow
 
 - Work directly in the local repository.

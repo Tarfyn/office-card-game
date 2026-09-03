@@ -22,6 +22,7 @@ function acceptView(view) {
 // Regression compatibility marker for v5.4 collection NEW badge: new-card-badge
 // Regression compatibility marker for v3.3 booster owned copy source: OWNED ${esc(ownedCopies(id))}
 // Regression compatibility marker for v3.7 profile storage label: persistent local server profile
+// Regression compatibility marker for v7.65 Guest copy: Guest profile · progress saved on this server
 // Regression compatibility marker for v3.3 booster visual source: class="booster-hit-art"
 // v7.0 card-system visual unification
 // v7.1 card discovery + information polish
@@ -155,6 +156,16 @@ const state = {
   adminOps: null,
   adminOpsBusy: false,
   adminOpsMessage: null,
+  account: null,
+  accountPersistenceConfigured: false,
+  accountPersistenceAvailable: false,
+  authDialog: null,
+  authBusy: false,
+  authMessage: null,
+  authEmail: '',
+  operations: null,
+  operationsBusy: false,
+  operationsMessage: null,
   finishReviewCardId: null,
   customDecks: [],
   editingDeckId: null,
@@ -373,7 +384,7 @@ function markAllCollectionCardsSeen() {
 function loadMetaProfile() {
   try {
     const raw = JSON.parse(localStorage.getItem(META_PROFILE_KEY) ?? 'null');
-    if (raw && typeof raw === 'object' && raw.profileVersion === 1) {
+    if (raw && typeof raw === 'object' && Number(raw.profileVersion) >= 1) {
       state.metaProfile = { ...state.metaProfile, ...raw, claimedRewardRooms:Array.isArray(raw.claimedRewardRooms)?raw.claimedRewardRooms:[], progression:{ ...state.metaProfile.progression, ...(raw.progression ?? {}) } };
     }
   } catch { /* sandbox profile stays at defaults */ }
@@ -381,6 +392,7 @@ function loadMetaProfile() {
 }
 
 function saveMetaProfile() {
+  if (state.account) return;
   localStorage.setItem(META_PROFILE_KEY, JSON.stringify(state.metaProfile));
 }
 
@@ -389,7 +401,7 @@ function applyServerProfile(profile) {
   state.serverProfile = profile;
   loadNewCollectionCards(profile);
   state.metaProfile = profile.meta;
-  saveMetaProfile();
+  if (!state.account) saveMetaProfile();
   if (state.serverDecksReady && Array.isArray(profile.decks)) {
     state.customDecks = profile.decks.map((deck) => ({ ...deck, createdAt:Number(deck.createdAt) || null, updatedAt:Number(deck.updatedAt) || null }));
     const selected = profile.selectedDeckId;
@@ -409,11 +421,11 @@ function applyServerDeckProfile(profile) {
 }
 
 async function syncServerDecks() {
-  if (!state.profileToken) return;
+  if (!hasProfileIdentity()) return;
   const localDecks = state.customDecks.map((deck) => ({ id:deck.id, name:deck.name, cards:deck.cards, createdAt:deck.createdAt, updatedAt:deck.updatedAt, sourcePresetId:deck.sourcePresetId, description:deck.description }));
   const listed = await api('/api/profiles/me/decks', { headers:profileAuthHeaders() });
   const marker = localStorage.getItem(`${DECK_MIGRATION_KEY}:${state.serverProfile?.playerId ?? 'local'}`);
-  if (localDecks.length && !marker) {
+  if (!state.account && localDecks.length && !marker) {
     const imported = await api('/api/profiles/me/decks/import', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ decks:localDecks }) });
     localStorage.setItem(`${DECK_MIGRATION_KEY}:${state.serverProfile?.playerId ?? 'local'}`, '1');
     localStorage.removeItem(CUSTOM_DECKS_KEY);
@@ -428,7 +440,7 @@ async function syncServerDecks() {
 }
 
 async function refreshServerProfile() {
-  if (!state.profileToken) return null;
+  if (!hasProfileIdentity()) return null;
   const result = await api('/api/profiles/me', { headers:profileAuthHeaders() });
   state.profileStorage = result.storage ?? state.profileStorage;
   state.serverAccount = result.account ?? state.serverAccount;
@@ -609,6 +621,19 @@ function renderAchievements() {
 }
 
 async function ensureServerProfile() {
+  const current = await api('/api/auth/current');
+  state.accountPersistenceConfigured = current.accountPersistenceConfigured === true;
+  state.accountPersistenceAvailable = current.accountPersistenceAvailable === true;
+  if (current.mode === 'ACCOUNT' && current.account && current.profile) {
+    state.account = current.account;
+    state.profileToken = null;
+    state.profileStorage = 'POSTGRES';
+    state.serverAccount = current.account;
+    applyServerProfile(current.profile);
+    try { await syncServerDecks(); } catch (error) { state.deckPersistenceError = error.message; }
+    return;
+  }
+  state.account = null;
   const savedToken = localStorage.getItem(SERVER_PROFILE_TOKEN_KEY);
   if (savedToken) {
     try {
@@ -638,6 +663,7 @@ async function ensureServerProfile() {
 }
 
 function metaRequest(extra = {}) {
+  if (state.account) return { ...extra };
   return state.profileToken ? { profileToken:state.profileToken, ...extra } : { profile:state.metaProfile, ...extra };
 }
 
@@ -651,7 +677,7 @@ function cosmeticErrorMessage(error) {
   return ({ COSMETIC_NOT_FOUND:t('cosmetics.purchaseFailed'), COSMETIC_INSUFFICIENT_CREDITS:t('cosmetics.insufficientCredits'), COSMETIC_ALREADY_OWNED:t('cosmetics.alreadyOwned'), COSMETIC_NOT_OWNED:t('cosmetics.notOwned'), COSMETIC_WRONG_SLOT:t('cosmetics.wrongSlot'), COSMETIC_REQUIRED:t('cosmetics.requiredSlot'), COSMETIC_SLOT_INVALID:t('cosmetics.invalidSlot'), COSMETIC_NOT_IN_SHOP:t('cosmetics.shopOnly') })[error?.code] ?? error?.message ?? t('cosmetics.purchaseFailed');
 }
 async function loadCosmeticViews() {
-  if (!state.profileToken) return;
+  if (!hasProfileIdentity()) return;
   const [personnel, shop] = await Promise.all([api('/api/cosmetics/personnel', { headers:profileAuthHeaders() }), api('/api/cosmetics/shop', { headers:profileAuthHeaders() })]);
   state.cosmeticPersonnel = personnel;
   state.cosmeticShop = shop;
@@ -809,6 +835,7 @@ function loadCustomDecks() {
 }
 
 function saveCustomDecks() {
+  if (state.account) return;
   localStorage.setItem(CUSTOM_DECKS_KEY, JSON.stringify(state.customDecks));
 }
 
@@ -875,7 +902,7 @@ async function saveDeckEdits(deck) {
   deck.createdAt ||= now;
   deck.updatedAt = now;
   saveCustomDecks();
-  if (!state.serverDecksReady || !state.profileToken) {
+  if (!state.serverDecksReady || !hasProfileIdentity()) {
     checkpointDeckEdits(deck);
     state.deckBuilderMessage = t('decks.saved');
     return;
@@ -940,7 +967,7 @@ async function setCollectionMode(mode) {
   const collectionMode = mode === 'OWNED_COPIES' ? 'OWNED_COPIES' : 'SANDBOX_ALL_AVAILABLE';
   state.metaProfile.collectionMode = collectionMode;
   saveMetaProfile();
-  if (state.profileToken) {
+  if (hasProfileIdentity()) {
     try {
       const result = await api('/api/profiles/me/collection-mode', { method:'POST', body:JSON.stringify({ profileToken:state.profileToken, collectionMode }) });
       applyServerProfile(result.profile);
@@ -987,7 +1014,7 @@ function selectedDeckPayload(selectValue) {
 }
 
 async function persistNewDeck(deck) {
-  if (!deck || !state.serverDecksReady || !state.profileToken) return;
+  if (!deck || !state.serverDecksReady || !hasProfileIdentity()) return;
   const existing = pendingDeckCreates.get(deck.id);
   if (existing) return existing;
   const operation = (async () => {
@@ -1008,7 +1035,7 @@ async function persistNewDeck(deck) {
 }
 
 async function persistDeletedDeck(deckId) {
-  if (!state.serverDecksReady || !state.profileToken) return;
+  if (!state.serverDecksReady || !hasProfileIdentity()) return;
   try {
     const result = await api(`/api/profiles/me/decks/${encodeURIComponent(deckId)}`, { method:'DELETE', headers:profileAuthHeaders() });
     applyServerDeckProfile(result.profile);
@@ -1285,7 +1312,7 @@ function deckPersistenceMessage(error) {
   return t('decks.saveFailed');
 }
 async function retryServerDecks() {
-  if (!state.profileToken) return;
+  if (!hasProfileIdentity()) return;
   state.deckPersistenceError = null;
   try {
     await refreshServerProfile();
@@ -1298,13 +1325,14 @@ async function retryServerDecks() {
 function profileAuthHeaders(token = state.profileToken) {
   return token ? { authorization:`Bearer ${token}` } : {};
 }
+function hasProfileIdentity() { return Boolean(state.account || state.profileToken); }
 function roomAuthHeaders(token = state.session?.token) {
   return token ? { 'x-room-token':token } : {};
 }
 function adminAuthHeaders(token = state.adminToken) {
   return token ? { 'x-admin-token':token } : {};
 }
-function opsModeAvailable() { return new URLSearchParams(location.search).get('ops') === '1'; }
+function opsModeAvailable() { return location.pathname === '/ops' || new URLSearchParams(location.search).get('ops') === '1'; }
 function finishReviewRequested() { return new URLSearchParams(location.search).get('finish-review') === '1'; }
 
 async function api(path, options = {}) {
@@ -4114,7 +4142,7 @@ function renderLobbyDeckPrep(value, context = 'QUICK') {
 }
 
 async function persistSelectedDeck(value) {
-  if (!state.serverDecksReady || !state.profileToken || !value || state.lastPersistedSelectedDeck === value) return;
+  if (!state.serverDecksReady || !hasProfileIdentity() || !value || state.lastPersistedSelectedDeck === value) return;
   const deckId = value.startsWith('custom:') ? value.slice('custom:'.length) : value;
   const pendingCreate = pendingDeckCreates.get(deckId);
   if (pendingCreate && !(await pendingCreate)) return;
@@ -5128,7 +5156,7 @@ function resultDeckValue(playerId) {
 
 // Regression compatibility markers for the v7.33 feedback surface: HUMAN PLAYTEST NOTE, Too fast, ONE-SIDED?, DECISIONS, Save playtest note.
 function renderHumanPlaytestCapture(match) {
-  if (!match || match.status !== 'ENDED' || !state.profileToken) return '';
+  if (!match || match.status !== 'ENDED' || !hasProfileIdentity()) return '';
   const f = state.playtestFeedback ?? {};
   const active = (group,value) => f?.[group] === value ? ' selected' : '';
   const oneSided = f?.oneSided;
@@ -5143,12 +5171,12 @@ function renderHumanPlaytestCapture(match) {
 }
 
 async function loadPlaytestFeedback(roomId) {
-  if (!state.profileToken || !roomId) return;
+  if (!hasProfileIdentity() || !roomId) return;
   try { const result=await api(`/api/playtest/feedback/${encodeURIComponent(roomId)}`, { headers:profileAuthHeaders() }); state.playtestFeedback=result.feedback??{}; } catch { state.playtestFeedback={}; }
 }
 
 async function savePlaytestFeedback() {
-  const roomId=state.view?.roomId;if(!roomId||!state.profileToken||state.playtestFeedbackBusy)return;
+  const roomId=state.view?.roomId;if(!roomId||!hasProfileIdentity()||state.playtestFeedbackBusy)return;
   state.playtestFeedbackBusy=true;state.playtestFeedbackMessage=null;render();
   try { const note=document.querySelector('#playtestFeedbackNote')?.value ?? state.playtestFeedback?.note ?? ''; const raw=document.querySelector('#playtestFeedbackCards')?.value ?? ''; const cardIds=String(raw).split(',').map(v=>v.trim().toUpperCase()).filter(Boolean); const result=await api(`/api/playtest/feedback/${encodeURIComponent(roomId)}`,{method:'POST',body:JSON.stringify({profileToken:state.profileToken,feedback:{...state.playtestFeedback,sessionId:alphaTestSessionId(),note,cardIds}})});state.playtestFeedback=result.feedback;state.playtestFeedbackMessage=t('result.feedbackSaved');} catch(error){state.playtestFeedbackMessage=t('result.feedbackSaveFailed');} finally{state.playtestFeedbackBusy=false;render();}
 }
@@ -5163,7 +5191,7 @@ function setPlaytestFeedbackChoice(raw){const [key,value]=String(raw??'').split(
 // Regression compatibility marker for v6.0 legacy result styling: match-result-panel ${esc(tone)} ${esc(departmentThemeClass(mine.department))}
 function renderMatchResultPanel(match) {
   if (!match || match.status !== 'ENDED') return '';
-  if (state.profileToken && state.playtestFeedbackRoomId !== state.view?.roomId) { state.playtestFeedbackRoomId=state.view?.roomId; state.playtestFeedback=null; queueMicrotask(()=>loadPlaytestFeedback(state.view?.roomId).then(()=>render())); }
+  if (hasProfileIdentity() && state.playtestFeedbackRoomId !== state.view?.roomId) { state.playtestFeedbackRoomId=state.view?.roomId; state.playtestFeedback=null; queueMicrotask(()=>loadPlaytestFeedback(state.view?.roomId).then(()=>render())); }
   const outcome = matchRewardOutcome(match) ?? 'DRAW';
   const mine = roomDeckMeta(match.viewerId);
   const opponentId = match.viewerId === 'P1' ? 'P2' : 'P1';
@@ -5501,14 +5529,98 @@ function renderLobbyProfileAvatar() {
   return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(state.serverProfile?.displayName) })}</div>`;
 }
 
+function renderAccountControls() {
+  if (state.account) {
+    const ops = ['OPS','ADMIN'].includes(state.account.role)
+      ? `<button type="button" class="ghost" id="openAccountOps">${lobbyCopy('Operations','Betrieb')}</button>` : '';
+    return `<section class="account-strip is-account"><div><span>${lobbyCopy('SIGNED IN ACCOUNT','ANGEMELDETES KONTO')}</span><strong>${esc(state.account.email)}</strong><small>${lobbyCopy('PostgreSQL-backed · available across devices','PostgreSQL-gesichert · geräteübergreifend verfügbar')}</small></div><div>${ops}<button type="button" class="ghost" id="logoutAccount">${lobbyCopy('Log out','Abmelden')}</button></div></section>`;
+  }
+  const unavailable = !state.accountPersistenceAvailable;
+  const unavailableCopy = state.accountPersistenceConfigured
+    ? lobbyCopy('Account persistence is temporarily unavailable.','Die Kontospeicherung ist vorübergehend nicht verfügbar.')
+    : lobbyCopy('Account service is not enabled on this server.','Der Kontodienst ist auf diesem Server nicht aktiviert.');
+  return `<section class="account-strip is-guest"><div><span>${lobbyCopy('GUEST · THIS BROWSER','GAST · DIESER BROWSER')}</span><strong>${lobbyCopy('Temporary Alpha profile','Temporäres Alpha-Profil')}</strong><small>${unavailable ? unavailableCopy : lobbyCopy('No cross-device guarantee · Guest progress is not moved into an account','Keine Geräte-Synchronisierung · Gastfortschritt wird nicht ins Konto übernommen')}</small></div>${unavailable ? '' : `<div><button type="button" id="openLogin">${lobbyCopy('Log in','Anmelden')}</button><button type="button" class="primary" id="openRegister">${lobbyCopy('Create account','Konto erstellen')}</button></div>`}</section>`;
+}
+
+function renderAuthDialog() {
+  if (!state.authDialog) return '';
+  const registering = state.authDialog === 'REGISTER';
+  return `<div class="account-dialog-backdrop" role="presentation"><section class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="accountDialogTitle"><button type="button" class="account-dialog-close" id="closeAuthDialog" aria-label="${lobbyCopy('Close','Schließen')}">×</button><span>${lobbyCopy('OFFICE ACCOUNT','OFFICE-KONTO')}</span><h2 id="accountDialogTitle">${registering ? lobbyCopy('Create account','Konto erstellen') : lobbyCopy('Welcome back','Willkommen zurück')}</h2><p>${registering ? lobbyCopy('Start a fresh persistent Alpha profile. Existing Guest progress is not migrated.','Starte ein neues dauerhaftes Alpha-Profil. Bestehender Gastfortschritt wird nicht übernommen.') : lobbyCopy('Continue your PostgreSQL-backed profile on this device.','Setze dein PostgreSQL-gesichertes Profil auf diesem Gerät fort.')}</p><form id="accountForm" novalidate><label>${lobbyCopy('Email','E-Mail')}<input id="accountEmail" type="email" maxlength="254" autocomplete="email" inputmode="email" value="${esc(state.authEmail)}" required /></label><label>${lobbyCopy('Password','Passwort')}<input id="accountPassword" type="password" minlength="10" maxlength="128" autocomplete="${registering ? 'new-password' : 'current-password'}" required /><small>${registering ? lobbyCopy('10–128 characters. Email verification is not enabled yet.','10–128 Zeichen. E-Mail-Verifizierung ist noch nicht aktiviert.') : ''}</small></label>${registering ? `<label>${lobbyCopy('Confirm password','Passwort bestätigen')}<input id="accountPasswordConfirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" required /></label>` : ''}${state.authMessage ? `<div class="account-form-message error" role="alert">${esc(state.authMessage)}</div>` : ''}<button class="primary" type="submit" ${state.authBusy ? 'disabled' : ''}>${state.authBusy ? lobbyCopy('Working…','Wird verarbeitet…') : registering ? lobbyCopy('Create fresh account','Neues Konto erstellen') : lobbyCopy('Log in','Anmelden')}</button></form></section></div>`;
+}
+
+function openAuthDialog(mode) {
+  state.authDialog = mode === 'REGISTER' ? 'REGISTER' : 'LOGIN';
+  state.authMessage = null;
+  renderLobby();
+  requestAnimationFrame(() => document.querySelector('#accountEmail')?.focus());
+}
+
+async function submitAccountForm(event) {
+  event.preventDefault();
+  if (state.authBusy) return;
+  const email = document.querySelector('#accountEmail')?.value ?? '';
+  state.authEmail = email;
+  const password = document.querySelector('#accountPassword')?.value ?? '';
+  if (state.authDialog === 'REGISTER' && password !== (document.querySelector('#accountPasswordConfirm')?.value ?? '')) {
+    state.authMessage = lobbyCopy('Passwords do not match.','Die Passwörter stimmen nicht überein.');
+    renderLobby();
+    return;
+  }
+  state.authBusy = true;
+  state.authMessage = null;
+  try {
+    const path = state.authDialog === 'REGISTER' ? '/api/auth/register' : '/api/auth/login';
+    const result = await api(path, { method:'POST', body:JSON.stringify({ email, password }) });
+    state.account = result.account;
+    state.serverAccount = result.account;
+    state.profileToken = null;
+    state.profileStorage = 'POSTGRES';
+    state.serverDecksReady = false;
+    state.authDialog = null;
+    state.authEmail = '';
+    applyServerProfile(result.profile);
+    await syncServerDecks();
+  } catch (error) {
+    state.authMessage = error.message;
+  } finally {
+    state.authBusy = false;
+    renderLobby();
+  }
+}
+
+async function logoutAccount() {
+  try { await api('/api/auth/logout', { method:'POST', body:'{}' }); }
+  catch (error) { state.lastError = error.message; return renderLobby(); }
+  state.account = null;
+  state.serverAccount = null;
+  state.serverProfile = null;
+  state.serverDecksReady = false;
+  loadMetaProfile();
+  loadCustomDecks();
+  await ensureServerProfile();
+  renderLobby();
+}
+
+function bindAccountControls() {
+  document.querySelector('#openLogin')?.addEventListener('click', () => openAuthDialog('LOGIN'));
+  document.querySelector('#openRegister')?.addEventListener('click', () => openAuthDialog('REGISTER'));
+  document.querySelector('#closeAuthDialog')?.addEventListener('click', () => { state.authDialog=null; state.authMessage=null; state.authEmail=''; renderLobby(); });
+  document.querySelector('#accountForm')?.addEventListener('submit', submitAccountForm);
+  document.querySelector('#logoutAccount')?.addEventListener('click', logoutAccount);
+  document.querySelector('#openAccountOps')?.addEventListener('click', () => location.assign('/ops'));
+}
+
 function renderProfileStrip() {
+  // Historical v3.6 copy marker: PLAYTEST PROFILE · SERVER
   const profile = state.serverProfile;
   const progression = state.metaProfile?.progression ?? {};
   if (!profile) return `<section class="profile-strip"><span>${lobbyCopy('PLAYTEST PROFILE','PLAYTEST-PROFIL')}</span><strong>${lobbyCopy('Connecting profile…','Profil wird verbunden…')}</strong></section>`;
   const stats = profile.stats ?? {};
   const ranked = profile.ranked ?? {};
   const rankLabel = ranked.status === 'RATED' ? `${ranked.rating ?? 1000} MMR` : `${lobbyCopy('Placement','Platzierung')} ${ranked.placementsPlayed ?? 0}/${ranked.placementsRequired ?? 5}`;
-  return `<section class="profile-strip"><div class="profile-identity">${renderLobbyProfileAvatar()}<div class="profile-identity-copy"><span>${lobbyCopy('PLAYTEST PROFILE · SERVER','PLAYTEST-PROFIL · SERVER')}</span><strong>${esc(profile.displayName)}</strong><small>${lobbyCopy('Guest profile · progress saved on this server','Gastprofil · Fortschritt wird auf diesem Server gespeichert')}</small></div></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','BÜRO-CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
+  const identityKind = state.account ? lobbyCopy('ACCOUNT PROFILE · POSTGRESQL','KONTO-PROFIL · POSTGRESQL') : lobbyCopy('GUEST PROFILE · LOCAL ALPHA','GASTPROFIL · LOKALES ALPHA');
+  const identityNote = state.account ? state.account.email : lobbyCopy('Temporary testing identity · no cross-device guarantee','Temporäre Testidentität · keine Geräte-Synchronisierung');
+  return `<section class="profile-strip"><div class="profile-identity">${renderLobbyProfileAvatar()}<div class="profile-identity-copy"><span>${identityKind}</span><strong>${esc(profile.displayName)}</strong><small>${esc(identityNote)}</small></div></div><div class="profile-stats"><span>LV <b>${esc(progression.level ?? 1)}</b></span><span>W–L <b>${esc(stats.wins ?? 0)}–${esc(stats.losses ?? 0)}</b></span><span>${lobbyCopy('RANK','RANG')} <b>${esc(rankLabel)}</b></span><span>${lobbyCopy('CREDITS','BÜRO-CREDITS')} <b>${esc(state.metaProfile?.balances?.OFFICE_CREDITS ?? 0)}</b></span><span>${lobbyCopy('SCRAPS','SCHREDDERRESTE')} <b>${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)}</b></span></div><div class="profile-rename"><input id="profileDisplayName" maxlength="24" value="${esc(profile.displayName)}" aria-label="${lobbyCopy('Profile name','Profilname')}"/><button id="saveProfileName">${lobbyCopy('Rename','Umbenennen')}</button></div></section>`;
 }
 
 function renderRankedStanding() {
@@ -5605,7 +5717,7 @@ function replayMomentStats(replay) {
 
 
 async function openMatchReplay(roomId) {
-  if (!roomId || !state.profileToken || state.replayBusy) return;
+  if (!roomId || !hasProfileIdentity() || state.replayBusy) return;
   state.replayBusy = true;
   state.replayError = null;
   state.replay = null;
@@ -5703,7 +5815,7 @@ function renderReplayModal() {
 
 async function exportMatchReplay() {
   const replay = state.replay;
-  if (!replay || !state.profileToken) return;
+  if (!replay || !hasProfileIdentity()) return;
   try {
     const response = await fetch(`/api/profiles/me/matches/${encodeURIComponent(replay.roomId)}/replay/export`, { headers:profileAuthHeaders() });
     if (!response.ok) throw new Error(`Replay export failed (HTTP ${response.status}).`);
@@ -5842,7 +5954,7 @@ function renderPlaytestAnalytics() {
 }
 
 async function renamePlaytestProfile() {
-  if (!state.profileToken) return;
+  if (!hasProfileIdentity()) return;
   const input = document.querySelector('#profileDisplayName');
   try {
     const result = await api('/api/profiles/me/name', { method:'POST', body:JSON.stringify({ profileToken:state.profileToken, displayName:input?.value ?? '' }) });
@@ -5857,7 +5969,7 @@ function saveMatchmakingTicket(ticket) {
 }
 
 async function restoreMatchmakingTicket() {
-  if (!state.profileToken || state.session) return;
+  if (!hasProfileIdentity() || state.session) return;
   try {
     const saved = JSON.parse(localStorage.getItem(MATCHMAKING_TICKET_KEY) ?? 'null');
     if (!saved?.ticketId) return;
@@ -5901,7 +6013,7 @@ function scheduleMatchmakingPoll() {
 }
 
 async function pollMatchmaking() {
-  if (!state.profileToken || state.matchmakingTicket?.status !== 'WAITING') return;
+  if (!hasProfileIdentity() || state.matchmakingTicket?.status !== 'WAITING') return;
   try {
     const result = await api(`/api/matchmaking/status?ticketId=${encodeURIComponent(state.matchmakingTicket.ticketId)}`, { headers:profileAuthHeaders() });
     state.matchmakingTicket = result.ticket;
@@ -5929,7 +6041,7 @@ function rankedQueueMessage(ranked, ticket) {
 }
 
 async function beginQuickMatch() {
-  if (!state.profileToken || state.matchmakingBusy) return;
+  if (!hasProfileIdentity() || state.matchmakingBusy) return;
   state.matchmakingBusy = true;
   state.matchmakingMessage = null;
   try {
@@ -5949,7 +6061,7 @@ async function beginQuickMatch() {
 }
 
 async function startBotMatch(mode) {
-  if (!state.profileToken || state.botBusy) return;
+  if (!hasProfileIdentity() || state.botBusy) return;
   state.botBusy = true;
   state.botMessage = null;
   try {
@@ -5974,7 +6086,7 @@ async function startBotMatch(mode) {
 }
 
 async function cancelQuickMatch() {
-  if (!state.profileToken || !state.matchmakingTicket) return;
+  if (!hasProfileIdentity() || !state.matchmakingTicket) return;
   stopMatchmakingPoll();
   try {
     const result = await api('/api/matchmaking/cancel', { method:'POST', body:JSON.stringify({ profileToken:state.profileToken, ticketId:state.matchmakingTicket.ticketId }) });
@@ -6086,18 +6198,6 @@ function renderFinishReview() {
   document.querySelector('#finishReviewCard')?.addEventListener('change',(event)=>{state.finishReviewCardId=event.target.value;renderFinishReview();});
 }
 
-async function refreshAdminOps({ renderAfter=true } = {}) {
-  if (!state.adminToken) { state.adminOps=null; state.adminOpsMessage='Enter the server ADMIN_TOKEN to open operator data.'; if (renderAfter) renderOpsDashboard(); return; }
-  state.adminOpsBusy=true; state.adminOpsMessage=null;
-  try {
-    const data=await api('/api/admin/ops',{ headers:adminAuthHeaders() });
-    state.adminOps=data.ops;
-    sessionStorage.setItem('office-card-game-admin-token-v1',state.adminToken);
-  } catch (error) {
-    state.adminOps=null;
-    state.adminOpsMessage=error.code==='ADMIN_REQUIRED' ? 'Admin authorization failed.' : error.message;
-  } finally { state.adminOpsBusy=false; if (renderAfter) renderOpsDashboard(); }
-}
 function opsAge(ms) {
   const seconds=Math.max(0,Math.round(Number(ms||0)/1000));
   if (seconds<60) return `${seconds}s`;
@@ -6105,20 +6205,43 @@ function opsAge(ms) {
   return `${Math.floor(minutes/60)}h ${minutes%60}m`;
 }
 function opsDate(value) { return value ? new Date(value).toLocaleString() : '—'; }
+function opsValue(value) { return value == null ? 'Unavailable' : String(value); }
+function opsState(value) {
+  const label=String(value??'UNAVAILABLE');
+  const tone=['HEALTHY','READY','CURRENT','SET','ENABLED','YES'].includes(label)?'healthy':['WARNING','OVERDUE','PENDING','NOT_SET'].includes(label)?'warning':['DEGRADED','FAILED','NO'].includes(label)?'danger':'neutral';
+  return `<span class="ops-state tone-${tone}">${tone==='healthy'?'●':tone==='warning'?'▲':tone==='danger'?'■':'○'} ${esc(label.replaceAll('_',' '))}</span>`;
+}
+async function refreshOperations({ renderAfter=true } = {}) {
+  state.operationsBusy=true;
+  state.operationsMessage=null;
+  try { state.operations=(await api('/api/ops/overview')).ops; }
+  catch(error){ state.operations=null; state.operationsMessage=error.code==='OPS_FORBIDDEN'?'This account is not authorized for Operations.':error.code==='AUTH_REQUIRED'?'Your account session expired. Sign in again from the Lobby.':error.message; }
+  finally { state.operationsBusy=false; if(renderAfter) renderOpsDashboard(); }
+}
 function renderOpsDashboard() {
-  state.mode='ADMIN';
-  const ops=state.adminOps;
+  state.mode='OPS';
+  const ops=state.operations;
   if (!ops) {
-    app.innerHTML=`<section class="ops-shell ops-login"><button class="ghost" id="opsBack">← Lobby</button><div class="ops-login-panel"><span>ALPHA OPERATIONS</span><h1>Operator console</h1><p>Protected server diagnostics. The credential is kept in this browser tab only.</p><label>ADMIN_TOKEN<input id="opsToken" type="password" autocomplete="off" value="${esc(state.adminToken)}" /></label><button class="primary" id="opsConnect" ${state.adminOpsBusy?'disabled':''}>${state.adminOpsBusy?'Connecting…':'Open console'}</button>${state.adminOpsMessage?`<div class="error">${esc(state.adminOpsMessage)}</div>`:''}</div></section>`;
+    app.innerHTML=`<section class="ops-shell ops-login"><div class="ops-login-panel"><span>OFFICE CARD GAME · OPERATIONS</span><h1>${state.operationsBusy?'Loading production status…':'Operations unavailable'}</h1><p>${esc(state.operationsMessage??'Reading the protected, account-authorized status contract.')}</p><div class="ops-header-actions"><button class="primary" id="opsRefresh" ${state.operationsBusy?'disabled':''}>Retry</button><button class="ghost" id="opsBack">Lobby</button></div></div></section>`;
   } else {
-    const c=ops.counts;
-    app.innerHTML=`<section class="ops-shell"><header class="ops-header"><div><span>EXTERNAL ALPHA · OPERATIONS</span><h1>Server desk</h1><p>${esc(ops.version)} · ${esc(ops.server.mode)} · generated ${esc(opsDate(ops.generatedAt))}</p></div><div><button id="opsRefresh" ${state.adminOpsBusy?'disabled':''}>${state.adminOpsBusy?'Refreshing…':'Refresh'}</button><button class="ghost" id="opsLock">Lock console</button><button class="ghost" id="opsBack">Lobby</button></div></header><div class="ops-metrics"><article><span>ACTIVE MATCHES</span><strong>${esc(c.activeMatches)}</strong></article><article><span>WAITING ROOMS</span><strong>${esc(c.waitingRooms)}</strong></article><article><span>QUEUE</span><strong>${esc(c.queuedFriendly+c.queuedRanked)}</strong><small>${esc(c.queuedFriendly)} friendly · ${esc(c.queuedRanked)} ranked</small></article><article><span>PROFILES</span><strong>${esc(c.profiles)}</strong></article></div><div class="ops-grid"><section class="ops-panel"><header><strong>Rooms & matches</strong><small>Latest ${esc(ops.rooms.length)} server records</small></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Room</th><th>Status</th><th>Mode</th><th>Decks</th><th>Turns</th><th>Created</th></tr></thead><tbody>${ops.rooms.length?ops.rooms.map((room)=>`<tr><td><b>${esc(room.roomId)}</b><small>${esc(room.matchId??'waiting')}</small></td><td><span class="ops-status status-${esc(room.status.toLowerCase())}">${esc(room.status)}</span></td><td>${esc(room.mode)}</td><td>${esc(room.seats?.P1?.deckName??'—')}<small>${esc(room.seats?.P2?.deckName??'waiting')}</small></td><td>${esc(room.turns)}</td><td>${esc(opsDate(room.createdAt))}</td></tr>`).join(''):'<tr><td colspan="6">No rooms yet.</td></tr>'}</tbody></table></div></section><aside class="ops-panel"><header><strong>Matchmaking queue</strong><small>Waiting tickets only</small></header><div class="ops-queue">${ops.queue.length?ops.queue.map((ticket)=>`<article><span>${esc(ticket.mode)}</span><strong>${esc(ticket.ticketId)}</strong><small>waiting ${esc(opsAge(ticket.waitMs))}</small></article>`).join(''):'<div class="ops-empty">Queue clear.</div>'}</div><div class="ops-runtime"><span>UPTIME <b>${esc(opsAge(ops.server.uptimeSeconds*1000))}</b></span><span>RUNTIME <b>${esc(ops.server.runtimeDir)}</b></span><span>PUBLIC URL <b>${esc(ops.server.publicBaseUrl??'local')}</b></span></div></aside></div>${state.adminOpsMessage?`<div class="error">${esc(state.adminOpsMessage)}</div>`:''}</section>`;
+    const a=ops.accounts, d=ops.database, p=ops.persistence, b=ops.backups, c=ops.cutover, g=ops.progression;
+    const statusItems=[['APP',ops.overall.app],['POSTGRES',ops.overall.postgres],['MIGRATIONS',ops.overall.migrations],['BACKUP',ops.overall.backup],['READINESS',ops.overall.readiness]];
+    app.innerHTML=`<section class="ops-shell"><header class="ops-header"><div><span>OFFICE CARD GAME · ${esc(ops.system.environment.toUpperCase())}</span><h1>Operations cockpit</h1><p>v${esc(ops.system.version)} · uptime ${esc(opsAge(ops.system.uptimeSeconds*1000))} · generated ${esc(opsDate(ops.generatedAt))}</p></div><div class="ops-header-actions"><button id="opsRefresh" ${state.operationsBusy?'disabled':''}>${state.operationsBusy?'Refreshing…':'Refresh status'}</button><button class="ghost" id="opsBack">Lobby</button></div></header>
+      <div class="ops-status-strip">${statusItems.map(([label,value])=>`<div><small>${esc(label)}</small>${opsState(value)}</div>`).join('')}</div>
+      <div class="ops-section-grid">
+        <section class="ops-panel ops-detail"><header><strong>System</strong><small>Application runtime</small></header><dl><div><dt>Version</dt><dd>${esc(ops.system.version)}</dd></div><div><dt>Release</dt><dd>${esc(opsValue(ops.system.releaseIdentifier))}</dd></div><div><dt>Node</dt><dd>${esc(ops.system.nodeVersion)}</dd></div><div><dt>Health</dt><dd>${opsState(ops.system.health)}</dd></div><div><dt>Ready</dt><dd>${opsState(ops.system.readiness)}</dd></div></dl></section>
+        <section class="ops-panel ops-detail"><header><strong>Persistence</strong><small>Authoritative store</small></header><dl><div><dt>Backend</dt><dd><b>${esc(p.backend)}</b></dd></div><div><dt>Source of truth</dt><dd>${esc(p.sourceOfTruth)}</dd></div><div><dt>PostgreSQL configured</dt><dd>${esc(p.postgresConfigured?'YES':'NO')}</dd></div><div><dt>Database required</dt><dd>${esc(p.databaseRequired?'YES':'NO')}</dd></div><div><dt>Legacy store</dt><dd>${esc(p.legacyStorePresent?'PRESENT':'EMPTY')}</dd></div><div><dt>Legacy player writes</dt><dd>${esc(p.legacyWrites)}</dd></div><div><dt>Legacy import</dt><dd>${esc(p.legacyImportState)}</dd></div><div><dt>Automatic fallback</dt><dd>NO</dd></div></dl></section>
+        <section class="ops-panel ops-detail"><header><strong>Database</strong><small>Schema and pool</small></header><dl><div><dt>PostgreSQL</dt><dd>${opsState(d.status)}</dd></div><div><dt>Version</dt><dd>${esc(opsValue(d.version))}</dd></div><div><dt>Schema</dt><dd>${esc(d.schemaReady==null?'UNAVAILABLE':d.schemaReady?'READY':'NOT READY')}</dd></div><div><dt>Migrations</dt><dd>${opsState(d.migrations.state)}</dd></div><div><dt>Applied / required</dt><dd>${esc(opsValue(d.migrations.applied))} / ${esc(opsValue(d.migrations.required))}</dd></div><div><dt>Pool active / idle / waiting</dt><dd>${esc(opsValue(d.pool.active))} / ${esc(opsValue(d.pool.idle))} / ${esc(opsValue(d.pool.waiting))}</dd></div></dl>${d.migrations.pending?.length?`<p class="ops-warning">Pending: ${d.migrations.pending.map(esc).join(', ')}</p>`:''}</section>
+        <section class="ops-panel ops-detail"><header><strong>Backups</strong><small>Safe application-visible metadata</small></header><dl><div><dt>Database backup</dt><dd>${opsState(b.database.status)}</dd></div><div><dt>Last DB success</dt><dd>${esc(opsDate(b.database.lastSuccessfulAt))}</dd></div><div><dt>Legacy backup</dt><dd>${opsState(b.legacy.status)}</dd></div><div><dt>Last legacy success</dt><dd>${esc(opsDate(b.legacy.lastSuccessfulAt))}</dd></div><div><dt>Retention</dt><dd>${esc(b.retentionDays)} days</dd></div><div><dt>Timer</dt><dd>${opsState(b.timerStatus)}</dd></div></dl><p class="ops-note">Root-only helper and systemd state are unavailable here by design. The web service receives no sudo access.</p></section>
+        <section class="ops-panel ops-detail"><header><strong>Cutover</strong><small>Alpha reset contract</small></header><dl><div><dt>State</dt><dd>${esc(c.state)}</dd></div><div><dt>Active store</dt><dd><b>${esc(c.activeStore)}</b></dd></div><div><dt>Marker</dt><dd>${opsState(c.marker)}</dd></div><div><dt>Postgres writes</dt><dd>${opsState(c.postgresWrites)}</dd></div><div><dt>Legacy progress</dt><dd>${esc(c.legacyPlayerProgress)}</dd></div><div><dt>Ready for cutover</dt><dd>${opsState(c.readyForCutover)}</dd></div></dl></section>
+        <section class="ops-panel ops-detail"><header><strong>Accounts</strong><small>Protected aggregates</small></header><div class="ops-number-grid"><span><small>Accounts</small><b>${esc(opsValue(a.total))}</b></span><span><small>Profiles</small><b>${esc(opsValue(a.profiles))}</b></span><span><small>Active sessions</small><b>${esc(opsValue(a.activeSessions))}</b></span><span><small>Registrations · 7d</small><b>${esc(opsValue(a.registrationsLast7Days))}</b></span></div>${a.recent?.length?`<div class="ops-account-list">${a.recent.map(account=>`<span><b>${esc(account.email)}</b><small>${esc(account.role)} · ${esc(account.status)} · active ${esc(opsDate(account.lastActiveAt))}</small></span>`).join('')}</div>`:'<p class="ops-note">No account rows available.</p>'}</section>
+        <section class="ops-panel ops-detail"><header><strong>Progression</strong><small>Read-only diagnostics</small></header><div class="ops-number-grid"><span><small>Achievements complete</small><b>${esc(opsValue(g.achievementsCompleted))}</b></span><span><small>Reward grants</small><b>${esc(opsValue(g.rewardGrants))}</b></span><span><small>Office Credits</small><b>${esc(opsValue(g.economy?.officeCredits))}</b></span><span><small>Scrap</small><b>${esc(opsValue(g.economy?.scrap))}</b></span></div><p class="ops-note">Levels: ${g.levels?.length?g.levels.map(item=>`L${esc(item.level)} · ${esc(item.count)}`).join(' / '):'Unavailable'}<br/>Ranked: ${g.rankedTiers?.length?g.rankedTiers.map(item=>`${esc(item.tier)} · ${esc(item.count)}`).join(' / '):'Unavailable'}</p></section>
+        <section class="ops-panel ops-detail ops-profile-sample"><header><strong>Recent profiles</strong><small>Safe support sample · newest activity first</small></header>${a.recentProfiles?.length?`<div class="ops-profile-list">${a.recentProfiles.map(profile=>`<article><div><b>${esc(profile.displayName)}</b><small>${esc(profile.email)}</small></div><span>LV ${esc(profile.level)} · ${esc(profile.rankedTier??profile.rankedStatus)}<small>${esc(profile.selectedDeck??'No selected deck')} · ${esc(profile.primaryDepartment??'No department history')}</small></span><time>${esc(opsDate(profile.lastActiveAt))}</time></article>`).join('')}</div>`:'<p class="ops-note">No profile sample available.</p>'}</section>
+        <section class="ops-panel ops-detail ops-diagnostics"><header><strong>Diagnostics</strong><small>Structured categories only</small></header>${ops.diagnostics?.length?ops.diagnostics.map(item=>`<p><b>${esc(item.code)}</b><small>${esc(opsDate(item.at))}</small></p>`).join(''):'<div class="ops-empty">No persistence diagnostics recorded.</div>'}</section>
+      </div>${state.operationsMessage?`<div class="error">${esc(state.operationsMessage)}</div>`:''}</section>`;
   }
-  document.querySelector('#opsBack')?.addEventListener('click',()=>{ state.mode='PLAY'; renderLobby(); });
-  document.querySelector('#opsConnect')?.addEventListener('click',async()=>{ state.adminToken=document.querySelector('#opsToken')?.value?.trim()??''; await refreshAdminOps(); });
-  document.querySelector('#opsToken')?.addEventListener('keydown',async(event)=>{ if(event.key==='Enter'){state.adminToken=event.currentTarget.value.trim();await refreshAdminOps();} });
-  document.querySelector('#opsRefresh')?.addEventListener('click',()=>refreshAdminOps());
-  document.querySelector('#opsLock')?.addEventListener('click',()=>{ state.adminToken='';state.adminOps=null;sessionStorage.removeItem('office-card-game-admin-token-v1');renderOpsDashboard(); });
+  document.querySelector('#opsBack')?.addEventListener('click',()=>location.assign('/'));
+  document.querySelector('#opsRefresh')?.addEventListener('click',()=>refreshOperations());
 }
 
 function renderLobby() {
@@ -6132,6 +6255,7 @@ function renderLobby() {
   const queueWaiting = state.matchmakingTicket?.status === 'WAITING';
   app.innerHTML = `<section class="executive-lobby material-executive-lobby">
     ${renderRecentSessionCard()}
+    ${renderAccountControls()}
     <div class="executive-desk-surface">
       <aside class="executive-desk-left" aria-label="${esc(lobbyCopy('Lobby navigation and utilities','Lobby-Navigation und Werkzeuge'))}">
         <div class="desk-nav-rail">
@@ -6145,7 +6269,7 @@ function renderLobby() {
           <button id="openStore" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.shopCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.shop'))}</strong><small>${esc(t('cosmetics.buy'))}</small></button>
           <button id="openAchievements" class="desk-file-button progression-nav-button" type="button"><span>${esc(t('achievements.kicker'))}</span><strong>${esc(t('achievements.title'))}</strong><small>${esc(t('achievements.shortDescription'))}</small></button>
           <button id="openAlphaGuide" class="desk-file-button" type="button"><span>${lobbyCopy('FIELD GUIDE','FELDHANDBUCH')}</span><strong>${lobbyCopy('How to play','Spielanleitung')}</strong></button>
-          ${opsModeAvailable()?'<button id="openOps" class="desk-file-button" type="button"><span>ALPHA OPS</span><strong>Server tools</strong></button>':''}
+          ${['OPS','ADMIN'].includes(state.account?.role)?'<button id="openOps" class="desk-file-button" type="button"><span>OPERATIONS</span><strong>Production cockpit</strong></button>':''}
           ${renderLobbyConnectionStatus()}
         </div>
       </aside>
@@ -6208,12 +6332,13 @@ function renderLobby() {
         ${renderLobbyPlaytestDrawer()}
       </div>
     </section>
-  </section>${renderAlphaOnboarding()}`;
+  </section>${renderAlphaOnboarding()}${renderAuthDialog()}`;
   app.insertAdjacentHTML('beforeend', renderReplayModal());
   bindReplayControls();
   bindGuidanceHandlers();
   bindResponsiveLobbySelects();
   bindAlphaOnboarding();
+  bindAccountControls();
   bindConnectionDiagnostics();
   bindBugReportControls();
   bindAlphaSessionControls();
@@ -6232,7 +6357,7 @@ function renderLobby() {
   document.querySelector('#openPersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
   document.querySelector('#openStore')?.addEventListener('click',()=>enterCosmeticSurface('SHOP'));
   document.querySelector('#openAchievements')?.addEventListener('click', enterAchievements);
-  document.querySelector('#openOps')?.addEventListener('click',async()=>{ state.mode='ADMIN'; if(state.adminToken) await refreshAdminOps(); else renderOpsDashboard(); });
+  document.querySelector('#openOps')?.addEventListener('click',()=>location.assign('/ops'));
   document.querySelector('#saveProfileName')?.addEventListener('click', renamePlaytestProfile);
   document.querySelector('#profileDisplayName')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') renamePlaytestProfile(); });
   document.querySelectorAll('[data-starter-deck]').forEach((button) => button.addEventListener('click', () => {
@@ -7198,7 +7323,7 @@ function render() {
   document.body.classList.toggle('cosmetic-mode', personnelMode || shopMode);
   document.body.classList.toggle('achievement-mode', achievementMode);
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
-  if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
+  if (!state.session && state.mode === 'OPS') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
   if (!state.session && state.mode === 'PERSONNEL') { app.innerHTML=renderPersonnelFile(); bindCosmeticSurface(); return; }
   if (!state.session && state.mode === 'SHOP') { app.innerHTML=renderCompanyStore(); bindCosmeticSurface(); return; }
@@ -7852,6 +7977,10 @@ async function boot() {
     state.economyConfig = economy.economy;
     state.matchSettings = matchSettings.settings;
     await ensureServerProfile();
+    if (location.pathname === '/ops') {
+      state.mode='OPS';
+      await refreshOperations({ renderAfter:false });
+    }
     if (state.adminToken && opsModeAvailable()) await refreshPlaytestAnalytics(false);
     if (!state.customDecks.length) newCustomDeck();
     state.editingDeckId ??= state.customDecks[0]?.id ?? null;
@@ -7868,7 +7997,7 @@ async function boot() {
     }
     if (!state.session) await refreshRecentSession();
     if (!state.session) await restoreMatchmakingTicket();
-    if (!state.session && finishReviewRequested()) state.mode='FINISH_REVIEW';
+    if (!state.session && finishReviewRequested() && location.pathname !== '/ops') state.mode='FINISH_REVIEW';
   } catch (error) {
     state.lastError = `Startup failed: ${error.message}`;
   }

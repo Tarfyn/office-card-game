@@ -1,6 +1,6 @@
 [Unit]
 Description=Office Card Game Alpha Server
-After=network.target
+After=network.target postgresql.service
 
 [Service]
 Type=simple

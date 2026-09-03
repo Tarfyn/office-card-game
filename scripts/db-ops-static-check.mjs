@@ -182,7 +182,7 @@ assert.ok(
 );
 assert.match(helper, /runuser --user="\$\{ADMIN_USER\}" -- \/usr\/bin\/test -w/);
 assert.match(helper, /EnvironmentFile=\$\{migration_env\}/);
-assert.match(helper, /PROFILE_STORAGE_BACKEND" "POSTGRESQL"/);
+assert.match(helper, /PROFILE_STORAGE_BACKEND" "POSTGRES"/);
 assert.match(helper, /DATABASE_REQUIRED" "1"/);
 assert.match(migrationRunner, /schema_migrations/);
 assert.match(migrationRunner, /pg_advisory_lock/);
