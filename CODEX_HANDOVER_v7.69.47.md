@@ -1,16 +1,17 @@
-# Office Card Game - Codex Handover v7.69.46
+# Office Card Game - Codex Handover v7.69.47
 
 ## Current baseline
 
-- Version: `v7.69.46`
-- Release commit: the final commit referenced by annotated tag `v7.69.46`
+- Version: `v7.69.47` release candidate
+- Release commit: the final commit on `codex/release-v7.69.47-account-postgres`; no production tag exists yet
 - Ranked timer: disabled
 - Server authority: hosted Match state, profile persistence, ownership, rewards and progression remain authoritative
 
-This release adds recovery hardening on top of the v7.69.45 Player File and Match History baseline.
-The project remains on the current portable file-backed profile architecture. The domain
-models are deliberately serializable and adapter-friendly for a future database persistence layer;
-no database dependency is required by this release.
+This release adds the Account, PostgreSQL persistence, and protected Operations foundation on top
+of the v7.69.46 recovery-hardening baseline. Production remains `FILE_JSON_LOCAL` until the separate
+explicit cutover, while `POSTGRES` mode provides the reviewed authenticated source of truth. The
+release contains the required `argon2` and `pg` runtime dependencies; PostgreSQL reachability is
+required for readiness only when the PostgreSQL backend is selected.
 
 ## Player File meta hub
 
@@ -132,7 +133,7 @@ Known gaps for future work:
 2. Public profiles and player lookup are not implemented.
 3. Matches completed before this feature are not reconstructed.
 4. The favorite Deck summary has no direct Open Deck shortcut yet.
-5. True cross-device identity still depends on transferring/reusing the current `GUEST_LOCAL` profile token.
+5. Guest play remains browser-local; authenticated Accounts provide the cross-device identity path.
 6. Unsaved Deckbuilder drafts remain recoverable only on the originating browser.
 7. Tutorial guidance and Bot/Training quality still benefit from live polish/playtesting.
 8. Desktop perspective and neutral board art may still be tuned after live testing; perspective is client-rendered.
@@ -177,8 +178,8 @@ artwork audit, diff check, `/api/ready`, `/api/health`, and Ranked timer disable
 
 ## Account and PostgreSQL persistence candidate
 
-The active implementation branch adds the first-party Account foundation without changing the
-released 7.69.46 version or production state. `PROFILE_STORAGE_BACKEND` is explicit:
+The release-candidate branch adds the first-party Account foundation as version 7.69.47 without
+changing production state. `PROFILE_STORAGE_BACKEND` is explicit:
 `FILE_JSON_LOCAL` keeps Guest player state authoritative; `POSTGRES` enables Account registration,
 login, logout, opaque cookie sessions, and PostgreSQL-backed player profiles. `DATABASE_URL` alone
 never changes the backend. The accepted root helper writes `POSTGRESQL`, which the application
@@ -227,7 +228,13 @@ The first reviewed operator/admin is designated only by the human-root-run
 `scripts/account-role.mjs grant-ops|grant-admin <email>` CLI; it accepts no generic role, SQL, path,
 or credential argument and has no web equivalent.
 
+The candidate now includes the exact `deploy/postgres-persistence-ready` capability marker and the
+repository-managed `ops/office-card-game-deploy.sh`. The deploy artifact packages production
+`argon2`/`pg` dependencies and runs `ocg-db-helper migrate <validated-release>` after finalization
+but before activation. Migration failure leaves the previous release active. Installing that deploy
+artifact on the VPS remains a human-controlled pre-cutover requirement.
+
 Before cutover, run `npm run test:db` with a disposable `office_card_game_test*` database, perform
 two-browser same-Account persistence QA, and complete 1920×1080, 3840×2160, 390×844, and 844×390
-visual checks. Do not add `deploy/postgres-persistence-ready`, call `enable-postgres`, migrate
-production, tag, merge, or deploy until those gates pass and explicit approval is given.
+visual checks. Do not call `enable-postgres`, migrate production, tag, merge, or deploy until those
+gates pass and explicit approval is given.

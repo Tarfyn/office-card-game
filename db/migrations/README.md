@@ -8,7 +8,7 @@ Migrations are forward-only, additive, and recorded with a SHA-256 checksum in
 `public.schema_migrations`. Never edit a migration after it has reached a deployed release. Add a
 new migration instead.
 
-The application candidate includes the additive Account/profile foundation migration. It still
-intentionally omits `deploy/postgres-persistence-ready`: that marker is a separate release/cutover
-gate and may be added only after explicit approval and the production checks described in
-`docs/database-operations.md`.
+The release candidate includes the additive Account/profile foundation migration and the exact
+`deploy/postgres-persistence-ready` capability marker after successful real PostgreSQL QA. The
+marker does not perform a migration or activate PostgreSQL; the production gates and explicit
+cutover procedure remain defined in `docs/database-operations.md`.

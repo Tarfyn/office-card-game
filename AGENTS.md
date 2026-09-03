@@ -637,6 +637,13 @@ database restore, helper installation/replacement, firewall change, or emergency
 rollback remains human-root-only. See `docs/database-operations.md` for the exact workflow and
 NO-GO conditions.
 
+PostgreSQL-capable releases must be deployed through the reviewed repository-managed deployment
+artifact installed at `/opt/office-card-game/deploy.sh`. A finalized release carrying
+`deploy/postgres-persistence-ready` must run `ocg-db-helper migrate <validated-release>` successfully
+before activation. The release must contain its production `argon2` and `pg` runtime dependencies;
+never rely on `node_modules` from the mutable source checkout. The deployment script must not call
+`enable-postgres`; switching the authoritative backend remains a separate explicit cutover action.
+
 Authenticated Account identity must resolve exclusively from an opaque server session cookie;
 never trust client-supplied user, player, profile, or role identifiers for authorization. Store only
 modern password hashes and hashed session tokens, never log or return authentication material, and
