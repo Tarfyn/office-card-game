@@ -10,6 +10,7 @@ const sudoers = read("ops/office-card-game-db.sudoers");
 const migrationRunner = read("scripts/db-migrate.mjs");
 const backupService = read("ops/office-card-game-db-backup.service");
 const backupTimer = read("ops/office-card-game-db-backup.timer");
+const listenerClassifier = read("ops/ocg-db-listener-classifier.awk");
 
 const shellFunction = (name) => {
   const match = helper.match(new RegExp(`^${name}\\(\\) \\{\\n([\\s\\S]*?)^\\}\\n`, "m"));
@@ -22,7 +23,8 @@ for (const [name, content] of [
   ["ops/install-db-helper.sh", installer],
   ["ops/office-card-game-db.sudoers", sudoers],
   ["ops/office-card-game-db-backup.service", backupService],
-  ["ops/office-card-game-db-backup.timer", backupTimer]
+  ["ops/office-card-game-db-backup.timer", backupTimer],
+  ["ops/ocg-db-listener-classifier.awk", listenerClassifier]
 ]) {
   assert.doesNotMatch(content, /\r/, `${name} must use LF line endings`);
   assert.doesNotMatch(content, /[ \t]+$/m, `${name} contains trailing whitespace`);
@@ -73,6 +75,38 @@ assert.match(helper, /SERVICE_TEMPLATE="\$\{TEMPLATE_ROOT\}\/office-card-game-db
 assert.match(helper, /TIMER_TEMPLATE="\$\{TEMPLATE_ROOT\}\/office-card-game-db-backup\.timer"/);
 assert.match(helper, /systemd-analyze verify "\$\{SERVICE_UNIT_PATH\}" "\$\{TIMER_UNIT_PATH\}"/);
 assert.match(helper, /systemctl enable --now "\$\{BACKUP_TIMER\}"/);
+assert.match(helper, /ss --no-header --listening --tcp --numeric 'sport = :5432'/);
+assert.match(helper, /listener_output_has_external_address "\$\{tcp_listeners\}"/);
+assert.match(listenerClassifier, /address = local_address\(\$4\)/);
+assert.doesNotMatch(listenerClassifier, /\$5/);
+const classifierPath = fileURLToPath(new URL("../ops/ocg-db-listener-classifier.awk", import.meta.url));
+const observedLoopbackListeners = [
+  'LISTEN 0 200 127.0.0.1:5432 0.0.0.0:* users:(("postgres",...))',
+  'LISTEN 0 200 [::1]:5432 [::](5432):* users:(("postgres",...))'
+].join("\n");
+const additionalLoopbackListener = "LISTEN 0 200 127.42.7.9:5432 0.0.0.0:*";
+const nonLoopbackListeners = [
+  "LISTEN 0 200 0.0.0.0:5432 0.0.0.0:*",
+  "LISTEN 0 200 192.168.10.25:5432 0.0.0.0:*",
+  "LISTEN 0 200 [2001:db8::25]:5432 [::]:*"
+];
+const awkProbe = spawnSync("awk", ["--file", classifierPath], { encoding:"utf8", input:"" });
+if (awkProbe.error?.code === "ENOENT" || awkProbe.error?.code === "EPERM") {
+  console.warn("DB_OPS_STATIC_CHECK_NOTE · awk unavailable; installed helper validates listener fixtures on Ubuntu");
+} else {
+  assert.ifError(awkProbe.error);
+  assert.equal(awkProbe.status, 1, `empty TCP listener set must be safe: ${awkProbe.stderr}`);
+  for (const fixture of [observedLoopbackListeners, additionalLoopbackListener]) {
+    const result = spawnSync("awk", ["--file", classifierPath], { encoding:"utf8", input:`${fixture}\n` });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, `loopback listener was classified as external: ${fixture}`);
+  }
+  for (const fixture of nonLoopbackListeners) {
+    const result = spawnSync("awk", ["--file", classifierPath], { encoding:"utf8", input:`${fixture}\n` });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, `non-loopback listener was accepted: ${fixture}`);
+  }
+}
 const backupRootLayout = shellFunction("ensure_backup_root_layout");
 const legacyLayout = shellFunction("ensure_legacy_backup_layout");
 const postgresLayout = shellFunction("ensure_postgres_backup_layout");

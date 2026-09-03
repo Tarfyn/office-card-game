@@ -12,11 +12,13 @@ readonly HELPER_SOURCE="${SOURCE_DIR}/ocg-db-helper"
 readonly SUDOERS_SOURCE="${SOURCE_DIR}/office-card-game-db.sudoers"
 readonly SERVICE_SOURCE="${SOURCE_DIR}/office-card-game-db-backup.service"
 readonly TIMER_SOURCE="${SOURCE_DIR}/office-card-game-db-backup.timer"
+readonly LISTENER_CLASSIFIER_SOURCE="${SOURCE_DIR}/ocg-db-listener-classifier.awk"
 readonly HELPER_TARGET="/usr/local/sbin/ocg-db-helper"
 readonly SUDOERS_TARGET="/etc/sudoers.d/office-card-game-db"
 readonly TEMPLATE_ROOT="/usr/local/share/office-card-game"
 readonly SERVICE_TEMPLATE_TARGET="${TEMPLATE_ROOT}/office-card-game-db-backup.service"
 readonly TIMER_TEMPLATE_TARGET="${TEMPLATE_ROOT}/office-card-game-db-backup.timer"
+readonly LISTENER_CLASSIFIER_TARGET="${TEMPLATE_ROOT}/ocg-db-listener-classifier.awk"
 readonly EXPECTED_RELEASE_RULE="(root) NOPASSWD: /usr/local/sbin/ocg-release-helper"
 readonly EXPECTED_DB_RULE="(root) NOPASSWD: /usr/local/sbin/ocg-db-helper"
 
@@ -34,7 +36,7 @@ nopasswd_rules_for_ocgadmin() {
     /usr/bin/sort
 }
 
-for source_file in "${HELPER_SOURCE}" "${SUDOERS_SOURCE}" "${SERVICE_SOURCE}" "${TIMER_SOURCE}"; do
+for source_file in "${HELPER_SOURCE}" "${SUDOERS_SOURCE}" "${SERVICE_SOURCE}" "${TIMER_SOURCE}" "${LISTENER_CLASSIFIER_SOURCE}"; do
   [[ -f ${source_file} && ! -L ${source_file} ]] || die "Missing or unsafe source file: ${source_file}"
 done
 
@@ -53,6 +55,7 @@ fi
 /usr/bin/install --owner=root --group=root --mode=0755 "${HELPER_SOURCE}" "${HELPER_TARGET}"
 /usr/bin/install --owner=root --group=root --mode=0644 "${SERVICE_SOURCE}" "${SERVICE_TEMPLATE_TARGET}"
 /usr/bin/install --owner=root --group=root --mode=0644 "${TIMER_SOURCE}" "${TIMER_TEMPLATE_TARGET}"
+/usr/bin/install --owner=root --group=root --mode=0644 "${LISTENER_CLASSIFIER_SOURCE}" "${LISTENER_CLASSIFIER_TARGET}"
 /usr/bin/install --owner=root --group=root --mode=0440 "${SUDOERS_SOURCE}" "${SUDOERS_TARGET}"
 /usr/sbin/visudo -cf "${SUDOERS_TARGET}"
 
@@ -65,6 +68,17 @@ fi
 [[ $(/usr/bin/stat --format='%U:%G:%a' "${SUDOERS_TARGET}") == "root:root:440" ]] || die "Installed sudoers metadata is unsafe."
 [[ $(/usr/bin/stat --format='%U:%G:%a' "${SERVICE_TEMPLATE_TARGET}") == "root:root:644" ]] || die "Installed service template metadata is unsafe."
 [[ $(/usr/bin/stat --format='%U:%G:%a' "${TIMER_TEMPLATE_TARGET}") == "root:root:644" ]] || die "Installed timer template metadata is unsafe."
+[[ $(/usr/bin/stat --format='%U:%G:%a' "${LISTENER_CLASSIFIER_TARGET}") == "root:root:644" ]] || die "Installed listener classifier metadata is unsafe."
+
+loopback_fixture=$'LISTEN 0 200 127.0.0.1:5432 0.0.0.0:* users:(("postgres",...))\nLISTEN 0 200 [::1]:5432 [::](5432):* users:(("postgres",...))'
+if printf '%s\n' "${loopback_fixture}" | /usr/bin/awk --file="${LISTENER_CLASSIFIER_TARGET}"; then
+  die "Installed listener classifier rejected loopback-only listeners."
+else
+  classifier_status=$?
+  [[ ${classifier_status} -eq 1 ]] || die "Installed listener classifier could not parse loopback fixtures."
+fi
+printf '%s\n' 'LISTEN 0 200 0.0.0.0:5432 0.0.0.0:*' |
+  /usr/bin/awk --file="${LISTENER_CLASSIFIER_TARGET}" || die "Installed listener classifier accepted a public listener."
 
 nopasswd_rules=$(nopasswd_rules_for_ocgadmin)
 [[ ${nopasswd_rules} == "${expected_with_db}" ]] ||

@@ -31,6 +31,7 @@ readonly ENV_FILE="/etc/office-card-game.env"
 readonly TEMPLATE_ROOT="/usr/local/share/office-card-game"
 readonly SERVICE_TEMPLATE="${TEMPLATE_ROOT}/office-card-game-db-backup.service"
 readonly TIMER_TEMPLATE="${TEMPLATE_ROOT}/office-card-game-db-backup.timer"
+readonly LISTENER_CLASSIFIER="${TEMPLATE_ROOT}/ocg-db-listener-classifier.awk"
 readonly SERVICE_UNIT_PATH="/etc/systemd/system/${BACKUP_SERVICE}"
 readonly TIMER_UNIT_PATH="/etc/systemd/system/${BACKUP_TIMER}"
 readonly PG_CONFIG_DIR="/etc/postgresql/${PG_MAJOR}/main"
@@ -245,9 +246,34 @@ postgres_cluster_exists() {
     /usr/bin/awk -v major="${PG_MAJOR}" '$1 == major && $2 == "main" { found=1 } END { exit(found ? 0 : 1) }'
 }
 
+ensure_listener_classifier() {
+  [[ -f ${LISTENER_CLASSIFIER} && ! -L ${LISTENER_CLASSIFIER} ]] ||
+    die "Missing immutable listener classifier: ${LISTENER_CLASSIFIER}"
+  [[ $(/usr/bin/stat --format='%u:%g:%a' "${LISTENER_CLASSIFIER}") == "0:0:644" ]] ||
+    die "Listener classifier metadata is unsafe: ${LISTENER_CLASSIFIER}"
+}
+
+postgres_tcp_listeners() {
+  /usr/bin/ss --no-header --listening --tcp --numeric 'sport = :5432' 2>/dev/null
+}
+
+listener_output_has_external_address() {
+  local listener_output="$1"
+  local classifier_status=0
+  ensure_listener_classifier
+  [[ -n ${listener_output} ]] || return 1
+  printf '%s\n' "${listener_output}" | /usr/bin/awk --file="${LISTENER_CLASSIFIER}" || classifier_status=$?
+  case "${classifier_status}" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) die "Listener classifier failed." ;;
+  esac
+}
+
 external_listener_present() {
-  /usr/bin/ss --no-header --listening --tcp 'sport = :5432' 2>/dev/null |
-    /usr/bin/awk '$4 != "127.0.0.1:5432" && $4 != "[::1]:5432" && $4 != "::1:5432" { unsafe=1 } END { exit(unsafe ? 0 : 1) }'
+  local listener_output=""
+  listener_output=$(postgres_tcp_listeners) || die "Could not inspect PostgreSQL TCP listeners."
+  listener_output_has_external_address "${listener_output}"
 }
 
 ufw_allows_postgres() {
@@ -697,6 +723,7 @@ audit() {
   local listen_setting="not-inspected"
   local exposure="NO_LISTENER"
   local migrations="not-available"
+  local tcp_listeners=""
   if [[ -e ${ENV_FILE} && ( ! -f ${ENV_FILE} || -L ${ENV_FILE} ) ]]; then
     database_url_state="unsafe environment file"
     backend="UNAVAILABLE"
@@ -734,9 +761,10 @@ audit() {
       fi
     fi
   fi
-  if /usr/bin/ss --no-header --listening --tcp 'sport = :5432' 2>/dev/null |
-    /usr/bin/awk 'END { exit(NR > 0 ? 0 : 1) }'; then
-    if external_listener_present; then
+  if ! tcp_listeners=$(postgres_tcp_listeners); then
+    exposure="LISTENER_INSPECTION_FAILED"
+  elif [[ -n ${tcp_listeners} ]]; then
+    if listener_output_has_external_address "${tcp_listeners}"; then
       exposure="POTENTIALLY_PUBLIC_NON_LOOPBACK_LISTENER"
     elif command -v /usr/sbin/ufw >/dev/null 2>&1 && ufw_allows_postgres; then
       exposure="UFW_ALLOWS_5432_DESPITE_LOOPBACK_BIND"
@@ -752,7 +780,7 @@ audit() {
   printf 'listen_addresses: %s\n' "${listen_setting}"
   printf 'Port 5432 exposure: %s\n' "${exposure}"
   printf 'TCP listeners on 5432:\n'
-  /usr/bin/ss --no-header --listening --tcp 'sport = :5432' 2>/dev/null || true
+  [[ -n ${tcp_listeners} ]] && printf '%s\n' "${tcp_listeners}"
   printf 'Unix sockets on 5432:\n'
   /usr/bin/ss --no-header --listening --unix 2>/dev/null | /usr/bin/grep --fixed-strings '.s.PGSQL.5432' || true
   printf 'UFW state relevant to 5432:\n'

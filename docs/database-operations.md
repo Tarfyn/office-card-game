@@ -37,6 +37,8 @@ The fixed resources are:
 - PostgreSQL backups: `/srv/office-card-game/backups/postgresql`
 - Legacy JSON backups: `/srv/office-card-game/backups/legacy-json`
 - Helper state: `/var/lib/office-card-game-db-helper`, `root:root`, mode `0700`
+- Listener classifier: `/usr/local/share/office-card-game/ocg-db-listener-classifier.awk`,
+  `root:root`, mode `0644`
 
 The backup root is `root:root` mode `0750`. Legacy JSON backup directories are independently
 prepared as `root:root` mode `0700` and do not require PostgreSQL packages, a `postgres` Unix user,
@@ -103,6 +105,12 @@ migration count, backup status, and current release.
 
 The exposure result is based on local bind/listener and UFW evidence. A human should still perform
 an external 5432 connection scan after bootstrap.
+
+TCP listener inspection requests numeric `ss` output and classifies only its local endpoint column.
+IPv4 addresses in `127.0.0.0/8` and IPv6 `::1` are accepted; wildcard or concrete non-loopback
+addresses fail validation. The peer endpoint column is ignored. Unix sockets are local and are
+reported separately. PostgreSQL's own `SHOW listen_addresses` check remains an independent
+bootstrap requirement.
 
 ### `bootstrap`
 
