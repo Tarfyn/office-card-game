@@ -615,6 +615,28 @@ For visual issues, "fixed" means:
 
 Passing tests alone are not sufficient for visual tasks.
 
+## PostgreSQL privileged operations
+
+Production PostgreSQL administration must use the reviewed, root-owned
+`/usr/local/sbin/ocg-db-helper` installed from the repository `ops/` artifacts. Its sudoers grant
+must remain exactly:
+
+```text
+ocgadmin ALL=(root) NOPASSWD: /usr/local/sbin/ocg-db-helper
+```
+
+Do not grant passwordless access to package managers, PostgreSQL clients, `systemctl`, shells,
+editors, or general filesystem commands. Do not modify `/usr/local/sbin/ocg-release-helper` for
+database work. The DB helper may operate only on its fixed Office Card Game database, role,
+environment, runtime, backup, state, and validated immutable release paths.
+
+PostgreSQL must remain loopback/Unix-socket only. Production migrations are forward-only,
+versioned, additive, checksum-recorded, and must succeed before release activation. A legacy JSON
+snapshot and a validated PostgreSQL dump are mandatory before the first persistence cutover. A
+database restore, helper installation/replacement, firewall change, or emergency environment
+rollback remains human-root-only. See `docs/database-operations.md` for the exact workflow and
+NO-GO conditions.
+
 ## Git and Release Workflow
 
 - Work directly in the local repository.

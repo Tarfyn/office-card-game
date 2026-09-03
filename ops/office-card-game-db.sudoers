@@ -1,0 +1,2 @@
+# Managed Office Card Game PostgreSQL helper. Do not add general-purpose commands here.
+ocgadmin ALL=(root) NOPASSWD: /usr/local/sbin/ocg-db-helper

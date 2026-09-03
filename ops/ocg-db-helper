@@ -1,0 +1,961 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+IFS=$'\n\t'
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly PG_MAJOR="18"
+readonly DB_NAME="office_card_game"
+readonly DB_ROLE="office_card_game_app"
+readonly DB_HOST="127.0.0.1"
+readonly DB_PORT="5432"
+readonly APP_USER="officecardgame"
+readonly ADMIN_USER="ocgadmin"
+readonly APP_SERVICE="office-card-game.service"
+readonly PG_SERVICE="postgresql.service"
+readonly BACKUP_TIMER="office-card-game-db-backup.timer"
+readonly BACKUP_SERVICE="office-card-game-db-backup.service"
+readonly BASE_DIR="/srv/office-card-game"
+readonly RELEASE_ROOT="${BASE_DIR}/releases"
+readonly CURRENT_LINK="${BASE_DIR}/current"
+readonly RUNTIME_DIR="${BASE_DIR}/runtime"
+readonly BACKUP_ROOT="${BASE_DIR}/backups"
+readonly PG_BACKUP_DIR="${BACKUP_ROOT}/postgresql"
+readonly LEGACY_BACKUP_DIR="${BACKUP_ROOT}/legacy-json"
+readonly STATE_DIR="/var/lib/office-card-game-db-helper"
+readonly RUN_DIR="/run/office-card-game-db-helper"
+readonly LOCK_FILE="/run/lock/office-card-game-db-helper.lock"
+readonly ENV_FILE="/etc/office-card-game.env"
+readonly TEMPLATE_ROOT="/usr/local/share/office-card-game"
+readonly SERVICE_TEMPLATE="${TEMPLATE_ROOT}/office-card-game-db-backup.service"
+readonly TIMER_TEMPLATE="${TEMPLATE_ROOT}/office-card-game-db-backup.timer"
+readonly LISTENER_CLASSIFIER="${TEMPLATE_ROOT}/ocg-db-listener-classifier.awk"
+readonly SERVICE_UNIT_PATH="/etc/systemd/system/${BACKUP_SERVICE}"
+readonly TIMER_UNIT_PATH="/etc/systemd/system/${BACKUP_TIMER}"
+readonly PG_CONFIG_DIR="/etc/postgresql/${PG_MAJOR}/main"
+readonly PG_MANAGED_CONFIG="${PG_CONFIG_DIR}/conf.d/99-office-card-game.conf"
+readonly PG_HBA_FILE="${PG_CONFIG_DIR}/pg_hba.conf"
+readonly PG_HBA_INCLUDE_DIR="${PG_CONFIG_DIR}/pg_hba.conf.d"
+readonly PG_MANAGED_HBA="${PG_HBA_INCLUDE_DIR}/office-card-game.conf"
+readonly MIGRATION_RUNNER_REL="scripts/db-migrate.mjs"
+readonly CUTOVER_MARKER_REL="deploy/postgres-persistence-ready"
+readonly RETENTION_DAYS="30"
+
+readonly -a PG_BACKUP_TRAVERSE_DIRS=(
+  "/srv"
+  "${BASE_DIR}"
+  "${BACKUP_ROOT}"
+)
+
+readonly -a LEGACY_FILES=(
+  "profiles.local.json"
+  "players.local.json"
+  "guest-credentials.local.json"
+  "rooms.local.json"
+  "matchmaking.local.json"
+  "playtest-feedback.local.json"
+)
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  /usr/bin/cat >&2 <<'EOF'
+Usage: ocg-db-helper audit
+       ocg-db-helper bootstrap
+       ocg-db-helper backup-legacy
+       ocg-db-helper backup-now
+       ocg-db-helper backup-status
+       ocg-db-helper migrate <vX.Y.Z-abcdef12>
+       ocg-db-helper enable-postgres
+EOF
+  exit 64
+}
+
+require_root() {
+  [[ ${EUID} -eq 0 ]] || die "This helper must run as root through its exact sudoers rule."
+}
+
+require_no_extra_args() {
+  [[ $# -eq 1 ]] || usage
+}
+
+validate_release_name() {
+  local release_name="${1:-}"
+  [[ ${release_name} =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{8}$ ]] ||
+    die "Invalid release name. Expected vX.Y.Z-abcdef12."
+}
+
+acquire_lock() {
+  exec 9>"${LOCK_FILE}"
+  /usr/bin/flock --exclusive --nonblock 9 || die "Another database helper action is running."
+}
+
+timestamp() {
+  /usr/bin/date --utc '+%Y%m%dT%H%M%S.%NZ'
+}
+
+ensure_fixed_identity() {
+  /usr/bin/id -u "${APP_USER}" >/dev/null 2>&1 || die "Required service user ${APP_USER} does not exist."
+  /usr/bin/id -u "${ADMIN_USER}" >/dev/null 2>&1 || die "Required administrator user ${ADMIN_USER} does not exist."
+}
+
+ensure_env_file() {
+  if [[ -e ${ENV_FILE} ]]; then
+    [[ -f ${ENV_FILE} && ! -L ${ENV_FILE} ]] || die "${ENV_FILE} must be a regular non-symlink file."
+    [[ $(/usr/bin/stat --format='%u' "${ENV_FILE}") == "0" ]] || die "${ENV_FILE} must be owned by root."
+  else
+    /usr/bin/install --owner=root --group=root --mode=0600 /dev/null "${ENV_FILE}"
+  fi
+  /usr/bin/chown root:root "${ENV_FILE}"
+  /usr/bin/chmod 0600 "${ENV_FILE}"
+}
+
+read_env_value() {
+  local key="$1"
+  local line=""
+  local value=""
+  local found=0
+  [[ -f ${ENV_FILE} ]] || return 1
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    if [[ ${line} == "${key}="* ]]; then
+      found=$((found + 1))
+      value="${line#*=}"
+    fi
+  done < "${ENV_FILE}"
+  [[ ${found} -le 1 ]] || return 2
+  [[ ${found} -eq 1 ]] || return 1
+  printf '%s' "${value}"
+}
+
+upsert_env_value() {
+  local key="$1"
+  local value="$2"
+  local line=""
+  local found=0
+  local temp_file=""
+  [[ ${key} =~ ^[A-Z][A-Z0-9_]*$ ]] || die "Internal environment key validation failed."
+  [[ ${value} != *$'\n'* && ${value} != *$'\r'* ]] || die "Environment values must be single-line."
+  ensure_env_file
+  local read_status=0
+  read_env_value "${key}" >/dev/null 2>&1 || read_status=$?
+  [[ ${read_status} -ne 2 ]] || die "${ENV_FILE} contains duplicate ${key} entries."
+  temp_file=$(/usr/bin/mktemp "/etc/.office-card-game.env.XXXXXX")
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    if [[ ${line} == "${key}="* ]]; then
+      if [[ ${found} -eq 0 ]]; then
+        printf '%s=%s\n' "${key}" "${value}" >> "${temp_file}"
+        found=1
+      fi
+    else
+      printf '%s\n' "${line}" >> "${temp_file}"
+    fi
+  done < "${ENV_FILE}"
+  if [[ ${found} -eq 0 ]]; then
+    printf '%s=%s\n' "${key}" "${value}" >> "${temp_file}"
+  fi
+  /usr/bin/chown root:root "${temp_file}"
+  /usr/bin/chmod 0600 "${temp_file}"
+  /usr/bin/mv -- "${temp_file}" "${ENV_FILE}"
+}
+
+database_password_from_url() {
+  local database_url="$1"
+  if [[ ${database_url} =~ ^postgresql://office_card_game_app:([0-9a-f]{64})@127\.0\.0\.1:5432/office_card_game$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+managed_database_url() {
+  local database_url=""
+  local read_status=0
+  database_url=$(read_env_value "DATABASE_URL") || read_status=$?
+  [[ ${read_status} -eq 0 ]] || return "${read_status}"
+  database_password_from_url "${database_url}" >/dev/null || return 2
+  printf '%s' "${database_url}"
+}
+
+require_managed_database_url() {
+  local database_url=""
+  local url_status=0
+  database_url=$(managed_database_url) || url_status=$?
+  case "${url_status}" in
+    0) printf '%s' "${database_url}" ;;
+    1) die "Managed DATABASE_URL is missing." ;;
+    2) die "DATABASE_URL is duplicated or does not match the helper-managed local PostgreSQL URL." ;;
+    *) die "Could not inspect DATABASE_URL." ;;
+  esac
+}
+
+write_state_file() {
+  local name="$1"
+  local value="$2"
+  local temp_file=""
+  [[ ${name} =~ ^[a-z0-9-]+$ ]] || die "Internal state filename validation failed."
+  [[ ${value} != *$'\n'* && ${value} != *$'\r'* ]] || die "State values must be single-line."
+  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${STATE_DIR}"
+  temp_file=$(/usr/bin/mktemp "${STATE_DIR}/.${name}.XXXXXX")
+  printf '%s\n' "${value}" > "${temp_file}"
+  /usr/bin/chown root:root "${temp_file}"
+  /usr/bin/chmod 0600 "${temp_file}"
+  /usr/bin/mv -- "${temp_file}" "${STATE_DIR}/${name}"
+}
+
+read_state_file() {
+  local name="$1"
+  local path="${STATE_DIR}/${name}"
+  local value=""
+  if [[ -e ${path} || -L ${path} ]]; then
+    [[ -f ${path} && ! -L ${path} ]] || return 2
+  else
+    return 1
+  fi
+  [[ $(/usr/bin/stat --format='%u:%a' "${path}") == "0:600" ]] || return 2
+  IFS= read -r value < "${path}" || true
+  printf '%s' "${value}"
+}
+
+state_value_or_none() {
+  local name="$1"
+  local value=""
+  local state_status=0
+  value=$(read_state_file "${name}") || state_status=$?
+  case "${state_status}" in
+    0) printf '%s' "${value}" ;;
+    1) printf 'none' ;;
+    2) die "Unsafe state file metadata: ${STATE_DIR}/${name}" ;;
+    *) die "Could not inspect state file: ${STATE_DIR}/${name}" ;;
+  esac
+}
+
+postgres_psql() {
+  /usr/sbin/runuser --user=postgres -- /usr/bin/psql --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
+}
+
+postgres_scalar() {
+  postgres_psql --quiet --tuples-only --no-align "$@" | /usr/bin/sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+postgres_installed() {
+  /usr/bin/dpkg-query --show --showformat='${Status}' "postgresql-${PG_MAJOR}" 2>/dev/null |
+    /usr/bin/grep --quiet '^install ok installed$'
+}
+
+postgres_cluster_exists() {
+  /usr/bin/pg_lsclusters --no-header 2>/dev/null |
+    /usr/bin/awk -v major="${PG_MAJOR}" '$1 == major && $2 == "main" { found=1 } END { exit(found ? 0 : 1) }'
+}
+
+acl_tools_installed() {
+  /usr/bin/dpkg-query --show --showformat='${Status}' acl 2>/dev/null |
+    /usr/bin/grep --quiet '^install ok installed$' &&
+    [[ -x /usr/bin/setfacl && -x /usr/bin/getfacl ]]
+}
+
+ensure_listener_classifier() {
+  [[ -f ${LISTENER_CLASSIFIER} && ! -L ${LISTENER_CLASSIFIER} ]] ||
+    die "Missing immutable listener classifier: ${LISTENER_CLASSIFIER}"
+  [[ $(/usr/bin/stat --format='%u:%g:%a' "${LISTENER_CLASSIFIER}") == "0:0:644" ]] ||
+    die "Listener classifier metadata is unsafe: ${LISTENER_CLASSIFIER}"
+}
+
+postgres_tcp_listeners() {
+  /usr/bin/ss --no-header --listening --tcp --numeric 'sport = :5432' 2>/dev/null
+}
+
+listener_output_has_external_address() {
+  local listener_output="$1"
+  local classifier_status=0
+  ensure_listener_classifier
+  [[ -n ${listener_output} ]] || return 1
+  printf '%s\n' "${listener_output}" | /usr/bin/awk --file="${LISTENER_CLASSIFIER}" || classifier_status=$?
+  case "${classifier_status}" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) die "Listener classifier failed." ;;
+  esac
+}
+
+external_listener_present() {
+  local listener_output=""
+  listener_output=$(postgres_tcp_listeners) || die "Could not inspect PostgreSQL TCP listeners."
+  listener_output_has_external_address "${listener_output}"
+}
+
+ufw_allows_postgres() {
+  /usr/sbin/ufw status 2>/dev/null |
+    /usr/bin/awk 'tolower($0) ~ /5432/ && tolower($0) ~ /allow/ { found=1 } END { exit(found ? 0 : 1) }'
+}
+
+install_postgres_packages() {
+  if postgres_installed && acl_tools_installed; then
+    return 0
+  fi
+  (
+    export DEBIAN_FRONTEND=noninteractive
+    /usr/bin/apt-get update
+    /usr/bin/apt-get install --yes --no-install-recommends \
+      "postgresql-${PG_MAJOR}" "postgresql-client-${PG_MAJOR}" acl
+  )
+  postgres_installed || die "PostgreSQL package installation did not complete."
+  acl_tools_installed || die "Required POSIX ACL tooling is unavailable."
+}
+
+ensure_postgres_cluster() {
+  if ! postgres_cluster_exists; then
+    /usr/bin/pg_createcluster "${PG_MAJOR}" main --start
+  fi
+  [[ -d ${PG_CONFIG_DIR} ]] || die "Expected PostgreSQL cluster config ${PG_CONFIG_DIR} is missing."
+}
+
+write_postgres_config() {
+  local temp_file=""
+  /usr/bin/install --directory --owner=root --group=postgres --mode=0750 "${PG_CONFIG_DIR}/conf.d"
+  temp_file=$(/usr/bin/mktemp "${PG_CONFIG_DIR}/conf.d/.office-card-game.XXXXXX")
+  /usr/bin/cat > "${temp_file}" <<'EOF'
+# Managed by /usr/local/sbin/ocg-db-helper. Do not expose PostgreSQL publicly.
+listen_addresses = '127.0.0.1,::1'
+port = 5432
+password_encryption = 'scram-sha-256'
+EOF
+  /usr/bin/install --owner=root --group=postgres --mode=0640 "${temp_file}" "${PG_MANAGED_CONFIG}"
+  /usr/bin/rm --force -- "${temp_file}"
+
+  [[ -f ${PG_HBA_FILE} && ! -L ${PG_HBA_FILE} ]] || die "Expected regular pg_hba.conf is missing."
+  /usr/bin/install --directory --owner=root --group=postgres --mode=0750 "${PG_HBA_INCLUDE_DIR}"
+  temp_file=$(/usr/bin/mktemp "${PG_HBA_INCLUDE_DIR}/.office-card-game.XXXXXX")
+  /usr/bin/cat > "${temp_file}" <<'EOF'
+# Managed by /usr/local/sbin/ocg-db-helper.
+host office_card_game office_card_game_app 127.0.0.1/32 scram-sha-256
+host office_card_game office_card_game_app ::1/128 scram-sha-256
+EOF
+  /usr/bin/install --owner=root --group=postgres --mode=0640 "${temp_file}" "${PG_MANAGED_HBA}"
+  /usr/bin/rm --force -- "${temp_file}"
+
+  local include_line="include_if_exists '${PG_MANAGED_HBA}'"
+  if ! /usr/bin/grep --fixed-strings --line-regexp --quiet "${include_line}" "${PG_HBA_FILE}"; then
+    temp_file=$(/usr/bin/mktemp "${PG_CONFIG_DIR}/.pg_hba.conf.XXXXXX")
+    {
+      printf '%s\n' "${include_line}"
+      /usr/bin/cat "${PG_HBA_FILE}"
+    } > "${temp_file}"
+    /usr/bin/install --owner=postgres --group=postgres --mode=0640 "${temp_file}" "${PG_HBA_FILE}"
+    /usr/bin/rm --force -- "${temp_file}"
+  fi
+}
+
+provision_database() {
+  local database_url=""
+  local password=""
+  local sql_file="${RUN_DIR}/bootstrap.sql"
+  local error_file="${RUN_DIR}/bootstrap.error"
+  local url_status=0
+  /usr/bin/install --directory --owner=root --group=postgres --mode=0710 "${RUN_DIR}"
+  database_url=$(managed_database_url) || url_status=$?
+  case "${url_status}" in
+    0)
+      password=$(database_password_from_url "${database_url}")
+      ;;
+    1)
+      password=$(/usr/bin/openssl rand -hex 32)
+      [[ ${password} =~ ^[0-9a-f]{64}$ ]] || die "Secure password generation failed."
+      database_url="postgresql://${DB_ROLE}:${password}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+      ;;
+    2)
+      die "DATABASE_URL is duplicated or does not match the helper-managed local PostgreSQL URL."
+      ;;
+    *)
+      die "Could not inspect DATABASE_URL."
+      ;;
+  esac
+
+  {
+    /usr/bin/cat <<'SQL'
+SET password_encryption = 'scram-sha-256';
+SELECT 'CREATE ROLE office_card_game_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'office_card_game_app') \gexec
+SQL
+    printf "ALTER ROLE office_card_game_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "${password}"
+    /usr/bin/cat <<'SQL'
+SELECT 'CREATE DATABASE office_card_game OWNER office_card_game_app TEMPLATE template0 ENCODING ''UTF8'''
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'office_card_game') \gexec
+DO $ocg$
+BEGIN
+  IF (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'office_card_game') <> 'office_card_game_app' THEN
+    RAISE EXCEPTION 'Existing office_card_game database is not owned by office_card_game_app';
+  END IF;
+END
+$ocg$;
+REVOKE ALL ON DATABASE office_card_game FROM PUBLIC;
+GRANT CONNECT, TEMPORARY ON DATABASE office_card_game TO office_card_game_app;
+\connect office_card_game
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO office_card_game_app;
+SQL
+  } > "${sql_file}"
+  /usr/bin/chown root:postgres "${sql_file}"
+  /usr/bin/chmod 0640 "${sql_file}"
+  : > "${error_file}"
+  /usr/bin/chown root:root "${error_file}"
+  /usr/bin/chmod 0600 "${error_file}"
+  if ! postgres_psql --dbname=postgres --file="${sql_file}" >/dev/null 2>"${error_file}"; then
+    /usr/bin/rm --force -- "${sql_file}" "${error_file}"
+    die "Database or role provisioning failed."
+  fi
+  /usr/bin/rm --force -- "${sql_file}" "${error_file}"
+  password=""
+  upsert_env_value "DATABASE_URL" "${database_url}"
+}
+
+ensure_backup_root_layout() {
+  /usr/bin/install --directory --owner=root --group=root --mode=0750 "${BACKUP_ROOT}"
+  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${STATE_DIR}"
+}
+
+ensure_legacy_backup_layout() {
+  ensure_backup_root_layout
+  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${LEGACY_BACKUP_DIR}"
+}
+
+ensure_postgres_backup_layout() {
+  local directory=""
+  /usr/bin/id -u postgres >/dev/null 2>&1 || die "PostgreSQL Unix user is missing after package installation."
+  acl_tools_installed || die "Required POSIX ACL tooling is unavailable."
+  ensure_backup_root_layout
+  for directory in "${PG_BACKUP_TRAVERSE_DIRS[@]}"; do
+    [[ -d ${directory} && ! -L ${directory} ]] || die "Unsafe PostgreSQL backup ancestor: ${directory}"
+    /usr/bin/setfacl --no-mask --modify='user:postgres:--x' -- "${directory}" ||
+      die "Could not grant execute-only PostgreSQL backup traversal on ${directory}."
+  done
+  /usr/bin/install --directory --owner=postgres --group=postgres --mode=0750 "${PG_BACKUP_DIR}"
+}
+
+postgres_backup_access_policy_valid() {
+  local directory=""
+  local probe_status=0
+  /usr/bin/id -u postgres >/dev/null 2>&1 || return 1
+  acl_tools_installed || return 1
+  [[ -d ${PG_BACKUP_DIR} && ! -L ${PG_BACKUP_DIR} ]] || return 1
+  [[ $(/usr/bin/stat --format='%U:%G:%a' "${PG_BACKUP_DIR}") == "postgres:postgres:750" ]] || return 1
+  for directory in "${PG_BACKUP_TRAVERSE_DIRS[@]}"; do
+    [[ -d ${directory} && ! -L ${directory} ]] || return 1
+    /usr/bin/getfacl --absolute-names --omit-header -- "${directory}" 2>/dev/null |
+      /usr/bin/grep --fixed-strings --line-regexp --quiet 'user:postgres:--x' || return 1
+    postgres_can_chdir "${directory}" || return 1
+    if postgres_can_list_directory "${directory}"; then
+      return 1
+    fi
+    probe_status=0
+    postgres_write_probe "${directory}" || probe_status=$?
+    if [[ ${probe_status} -ne 1 ]]; then
+      return 1
+    fi
+  done
+  postgres_can_chdir "${PG_BACKUP_DIR}" || return 1
+  postgres_write_probe "${PG_BACKUP_DIR}" || return 1
+  if [[ -e ${LEGACY_BACKUP_DIR} || -L ${LEGACY_BACKUP_DIR} ]]; then
+    [[ -d ${LEGACY_BACKUP_DIR} && ! -L ${LEGACY_BACKUP_DIR} ]] || return 1
+    [[ $(/usr/bin/stat --format='%U:%G:%a' "${LEGACY_BACKUP_DIR}") == "root:root:700" ]] || return 1
+    if postgres_can_chdir "${LEGACY_BACKUP_DIR}"; then
+      return 1
+    fi
+    if postgres_can_list_directory "${LEGACY_BACKUP_DIR}"; then
+      return 1
+    fi
+    probe_status=0
+    postgres_write_probe "${LEGACY_BACKUP_DIR}" || probe_status=$?
+    [[ ${probe_status} -eq 1 ]] || return 1
+  fi
+}
+
+postgres_can_chdir() {
+  local directory="$1"
+  /usr/sbin/runuser --user=postgres -- /usr/bin/env --chdir="${directory}" /usr/bin/true \
+    >/dev/null 2>&1
+}
+
+postgres_can_list_directory() {
+  local directory="$1"
+  /usr/sbin/runuser --user=postgres -- /usr/bin/ls -- "${directory}" >/dev/null 2>&1
+}
+
+postgres_write_probe() {
+  local directory="$1"
+  local access_probe=""
+  if ! access_probe=$(/usr/sbin/runuser --user=postgres -- /usr/bin/mktemp \
+    "${directory}/.ocg-db-helper-permission-check.XXXXXX" 2>/dev/null); then
+    return 1
+  fi
+  if [[ ${access_probe} != "${directory}/.ocg-db-helper-permission-check."?????? ]]; then
+    return 2
+  fi
+  /usr/bin/rm --force -- "${access_probe}" || return 2
+  [[ ! -e ${access_probe} && ! -L ${access_probe} ]] || return 2
+}
+
+postgres_backup_access_state() {
+  if ! /usr/bin/id -u postgres >/dev/null 2>&1; then
+    printf 'not-available (postgres user absent)'
+  elif ! acl_tools_installed; then
+    printf 'not-ready (ACL tools absent)'
+  elif postgres_backup_access_policy_valid; then
+    printf 'ready'
+  else
+    printf 'not-ready (ACL or directory permissions invalid)'
+  fi
+}
+
+validate_postgres_backup_access() {
+  postgres_backup_access_policy_valid || die "PostgreSQL backup path access policy is invalid."
+}
+
+ensure_backup_templates() {
+  for template in "${SERVICE_TEMPLATE}" "${TIMER_TEMPLATE}"; do
+    [[ -f ${template} && ! -L ${template} ]] || die "Missing immutable backup template: ${template}"
+    [[ $(/usr/bin/stat --format='%u:%g:%a' "${template}") == "0:0:644" ]] ||
+      die "Backup template metadata is unsafe: ${template}"
+  done
+}
+
+install_and_verify_backup_units() {
+  [[ -x /usr/local/sbin/ocg-db-helper ]] || die "Installed helper executable is missing."
+  /usr/bin/install --owner=root --group=root --mode=0644 "${SERVICE_TEMPLATE}" "${SERVICE_UNIT_PATH}"
+  /usr/bin/install --owner=root --group=root --mode=0644 "${TIMER_TEMPLATE}" "${TIMER_UNIT_PATH}"
+  /usr/bin/systemctl daemon-reload
+  /usr/bin/systemd-analyze verify "${SERVICE_UNIT_PATH}" "${TIMER_UNIT_PATH}"
+}
+
+validate_postgres_setup() {
+  local listen_addresses=""
+  local hba_errors=""
+  local db_owner=""
+  local server_major=""
+  /usr/bin/systemctl is-active --quiet "${PG_SERVICE}" || die "PostgreSQL is not active."
+  /usr/bin/pg_isready --host="${DB_HOST}" --port="${DB_PORT}" --dbname="${DB_NAME}" --quiet ||
+    die "PostgreSQL is not ready on the fixed loopback endpoint."
+  server_major=$(postgres_scalar --dbname=postgres --command="SELECT current_setting('server_version_num')::integer / 10000;")
+  [[ ${server_major} == "${PG_MAJOR}" ]] || die "The running PostgreSQL major version is not ${PG_MAJOR}."
+  listen_addresses=$(postgres_scalar --dbname=postgres --command='SHOW listen_addresses;')
+  listen_addresses="${listen_addresses//[[:space:]]/}"
+  [[ ${listen_addresses} == "127.0.0.1,::1" ]] || die "PostgreSQL listen_addresses is not restricted to loopback."
+  external_listener_present && die "PostgreSQL has a non-loopback TCP listener."
+  if command -v /usr/sbin/ufw >/dev/null 2>&1 && ufw_allows_postgres; then
+    die "UFW contains an ALLOW rule for port 5432; a human root administrator must remove it."
+  fi
+  hba_errors=$(postgres_scalar --dbname=postgres --command="SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;")
+  [[ ${hba_errors} == "0" ]] || die "PostgreSQL reports invalid pg_hba.conf rules."
+  [[ $(postgres_scalar --dbname=postgres --command="SELECT count(*) FROM pg_roles WHERE rolname='${DB_ROLE}';") == "1" ]] ||
+    die "Application database role is missing."
+  [[ $(postgres_scalar --dbname=postgres --command="SELECT count(*) FROM pg_roles WHERE rolname='${DB_ROLE}' AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolinherit AND NOT rolreplication AND NOT rolbypassrls;") == "1" ]] ||
+    die "Application database role has unsafe attributes."
+  [[ $(postgres_scalar --dbname=postgres --command="SELECT count(*) FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname='${DB_ROLE}');") == "0" ]] ||
+    die "Application database role has unexpected role memberships."
+  [[ $(postgres_scalar --dbname=postgres --command="SELECT count(*) FROM pg_database WHERE datname='${DB_NAME}';") == "1" ]] ||
+    die "Application database is missing."
+  db_owner=$(postgres_scalar --dbname=postgres --command="SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='${DB_NAME}';")
+  [[ ${db_owner} == "${DB_ROLE}" ]] || die "Application database has the wrong owner."
+  require_managed_database_url >/dev/null
+  [[ $(/usr/bin/stat --format='%U:%G:%a' "${ENV_FILE}") == "root:root:600" ]] ||
+    die "${ENV_FILE} must remain root:root mode 0600."
+  validate_postgres_backup_access
+}
+
+bootstrap() {
+  ensure_fixed_identity
+  [[ -r /etc/os-release ]] || die "Cannot identify the operating system."
+  local os_id=""
+  local os_version=""
+  os_id=$(/usr/bin/sed -n 's/^ID=//p' /etc/os-release | /usr/bin/tr -d '"')
+  os_version=$(/usr/bin/sed -n 's/^VERSION_ID=//p' /etc/os-release | /usr/bin/tr -d '"')
+  [[ ${os_id} == "ubuntu" && ${os_version} == "26.04" ]] ||
+    die "This candidate is pinned to the audited Ubuntu 26.04 VPS."
+  ensure_backup_templates
+  install_postgres_packages
+  ensure_postgres_cluster
+  write_postgres_config
+  /usr/bin/systemctl enable "${PG_SERVICE}" >/dev/null
+  /usr/bin/systemctl restart "${PG_SERVICE}"
+  provision_database
+  ensure_postgres_backup_layout
+  validate_postgres_setup
+  install_and_verify_backup_units
+  /usr/bin/systemctl enable --now "${BACKUP_TIMER}" >/dev/null
+  write_state_file "bootstrap-complete" "$(timestamp)"
+  printf 'PostgreSQL bootstrap complete: version %s, database %s, role %s, loopback-only.\n' \
+    "${PG_MAJOR}" "${DB_NAME}" "${DB_ROLE}"
+}
+
+require_bootstrap() {
+  local completed=""
+  completed=$(read_state_file "bootstrap-complete") || die "Bootstrap has not completed successfully."
+  [[ -n ${completed} ]] || die "Bootstrap state is empty."
+  validate_postgres_setup
+}
+
+backup_now() {
+  local stamp=""
+  local temp_file=""
+  local final_file=""
+  require_bootstrap
+  stamp=$(timestamp)
+  final_file="${PG_BACKUP_DIR}/${DB_NAME}-${stamp}.dump"
+  temp_file=$(/usr/bin/mktemp "${PG_BACKUP_DIR}/.${DB_NAME}-${stamp}.XXXXXX.tmp")
+  /usr/bin/chown postgres:postgres "${temp_file}"
+  /usr/bin/chmod 0600 "${temp_file}"
+  if ! /usr/sbin/runuser --user=postgres -- /usr/bin/pg_dump \
+    --format=custom --compress=gzip:6 --no-owner --no-privileges \
+    --file="${temp_file}" "${DB_NAME}"; then
+    /usr/bin/rm --force -- "${temp_file}"
+    die "PostgreSQL backup failed."
+  fi
+  if ! /usr/sbin/runuser --user=postgres -- /usr/bin/pg_restore --list "${temp_file}" >/dev/null; then
+    /usr/bin/rm --force -- "${temp_file}"
+    die "PostgreSQL backup validation failed."
+  fi
+  /usr/bin/chown root:postgres "${temp_file}"
+  /usr/bin/chmod 0640 "${temp_file}"
+  /usr/bin/mv -- "${temp_file}" "${final_file}"
+  /usr/bin/find "${PG_BACKUP_DIR}" -xdev -maxdepth 1 -type f \
+    -name 'office_card_game-*.dump' -mtime "+${RETENTION_DAYS}" -delete
+  write_state_file "last-db-backup" "${final_file}"
+  printf '%s\n' "${final_file}"
+}
+
+copy_legacy_snapshot() {
+  local destination="$1"
+  local source_path=""
+  local file_name=""
+  local copied=0
+  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${destination}"
+  : > "${destination}/SHA256SUMS"
+  for file_name in "${LEGACY_FILES[@]}"; do
+    source_path="${RUNTIME_DIR}/${file_name}"
+    if [[ -e ${source_path} ]]; then
+      [[ -f ${source_path} && ! -L ${source_path} ]] || die "Legacy persistence path is not a regular file: ${source_path}"
+      /usr/bin/install --owner=root --group=root --mode=0600 "${source_path}" "${destination}/${file_name}"
+      (
+        cd "${destination}"
+        /usr/bin/sha256sum -- "${file_name}" >> SHA256SUMS
+      )
+      copied=$((copied + 1))
+    fi
+  done
+  [[ ${copied} -gt 0 ]] || die "No known legacy JSON persistence files were found."
+  {
+    printf 'created_utc=%s\n' "$(timestamp)"
+    printf 'runtime_dir=%s\n' "${RUNTIME_DIR}"
+    printf 'file_count=%s\n' "${copied}"
+  } > "${destination}/backup-metadata.txt"
+  /usr/bin/chown root:root "${destination}/SHA256SUMS" "${destination}/backup-metadata.txt"
+  /usr/bin/chmod 0600 "${destination}/SHA256SUMS" "${destination}/backup-metadata.txt"
+}
+
+backup_legacy() {
+  local destination="${LEGACY_BACKUP_DIR}/$(timestamp)"
+  local service_was_active=0
+  ensure_fixed_identity
+  ensure_legacy_backup_layout
+  (
+    restart_on_failure() {
+      local status=$?
+      trap - EXIT
+      if [[ ${service_was_active} -eq 1 ]]; then
+        /usr/bin/systemctl start "${APP_SERVICE}" || status=1
+      fi
+      exit "${status}"
+    }
+    trap restart_on_failure EXIT
+    if /usr/bin/systemctl is-active --quiet "${APP_SERVICE}"; then
+      service_was_active=1
+      /usr/bin/systemctl stop "${APP_SERVICE}"
+    fi
+    copy_legacy_snapshot "${destination}"
+    /usr/bin/sync --file-system "${destination}"
+    if [[ ${service_was_active} -eq 1 ]]; then
+      /usr/bin/systemctl start "${APP_SERVICE}"
+      service_was_active=0
+    fi
+    trap - EXIT
+  )
+  write_state_file "last-legacy-backup" "${destination}"
+  printf '%s\n' "${destination}"
+}
+
+backup_status() {
+  local last_db="none"
+  local last_legacy="none"
+  last_db=$(state_value_or_none "last-db-backup")
+  last_legacy=$(state_value_or_none "last-legacy-backup")
+  printf 'PostgreSQL backup directory: %s\n' "${PG_BACKUP_DIR}"
+  printf 'PostgreSQL backup path access: %s\n' "$(postgres_backup_access_state)"
+  printf 'Retention: %s days\n' "${RETENTION_DAYS}"
+  printf 'Last PostgreSQL backup: %s\n' "${last_db}"
+  printf 'Last legacy JSON backup: %s\n' "${last_legacy}"
+  if [[ -d ${PG_BACKUP_DIR} ]]; then
+    printf 'Recent PostgreSQL backups:\n'
+    /usr/bin/find "${PG_BACKUP_DIR}" -xdev -maxdepth 1 -type f -name 'office_card_game-*.dump' \
+      -printf '  %TY-%Tm-%TdT%TH:%TM:%TSZ\t%s bytes\t%f\n' | /usr/bin/sort --reverse | /usr/bin/sed -n '1,10p'
+  fi
+  if [[ -d ${LEGACY_BACKUP_DIR} ]]; then
+    printf 'Legacy JSON snapshots:\n'
+    /usr/bin/find "${LEGACY_BACKUP_DIR}" -xdev -mindepth 1 -maxdepth 1 -type d \
+      -printf '  %TY-%Tm-%TdT%TH:%TM:%TSZ\t%f\n' | /usr/bin/sort --reverse | /usr/bin/sed -n '1,10p'
+  fi
+}
+
+resolve_release() {
+  local release_name="$1"
+  local expected_path="${RELEASE_ROOT}/${release_name}"
+  local resolved_path=""
+  validate_release_name "${release_name}"
+  [[ -d ${expected_path} && ! -L ${expected_path} ]] || die "Validated release directory does not exist or is a symlink."
+  resolved_path=$(/usr/bin/realpath --canonicalize-existing "${expected_path}")
+  [[ ${resolved_path} == "${expected_path}" ]] || die "Release resolved outside its fixed path."
+  [[ $(/usr/bin/stat --format='%U' "${resolved_path}") == "${APP_USER}" ]] ||
+    die "Release must be finalized and owned by ${APP_USER}."
+  if /usr/sbin/runuser --user="${ADMIN_USER}" -- /usr/bin/test -w "${resolved_path}"; then
+    die "Release remains writable by ${ADMIN_USER}; finalize it before migration."
+  fi
+  printf '%s' "${resolved_path}"
+}
+
+validate_release_migration_contract() {
+  local release_path="$1"
+  local runner="${release_path}/${MIGRATION_RUNNER_REL}"
+  local marker="${release_path}/${CUTOVER_MARKER_REL}"
+  [[ $(/usr/bin/realpath --canonicalize-existing "${runner}") == "${runner}" ]] || die "Migration runner escaped its fixed release path."
+  [[ $(/usr/bin/realpath --canonicalize-existing "${marker}") == "${marker}" ]] || die "Readiness marker escaped its fixed release path."
+  [[ -f ${runner} && ! -L ${runner} ]] || die "Release migration runner is missing or unsafe."
+  [[ -f ${marker} && ! -L ${marker} ]] || die "Release is not marked PostgreSQL-persistence-ready."
+  [[ $(<"${marker}") == "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1" ]] ||
+    die "Release PostgreSQL readiness marker is invalid."
+  [[ $(/usr/bin/stat --format='%U' "${runner}") == "${APP_USER}" ]] || die "Migration runner has the wrong owner."
+  if /usr/bin/find "${runner}" -maxdepth 0 -perm /022 -print -quit | /usr/bin/grep --quiet .; then
+    die "Migration runner must not be group- or world-writable."
+  fi
+  local fixed_path=""
+  for fixed_path in "${release_path}/scripts" "${release_path}/deploy" "${runner}" "${marker}"; do
+    if /usr/sbin/runuser --user="${ADMIN_USER}" -- /usr/bin/test -w "${fixed_path}"; then
+      die "Migration contract path remains writable by ${ADMIN_USER}: ${fixed_path}"
+    fi
+  done
+}
+
+migrate_release() {
+  local release_name="$1"
+  local release_path=""
+  local database_url=""
+  local migration_env="${RUN_DIR}/migrate.env"
+  local unit_name=""
+  local post_backup=""
+  require_bootstrap
+  release_path=$(resolve_release "${release_name}")
+  validate_release_migration_contract "${release_path}"
+  database_url=$(require_managed_database_url)
+  backup_now >/dev/null
+  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${RUN_DIR}"
+  printf 'DATABASE_URL=%s\nNODE_ENV=production\n' "${database_url}" > "${migration_env}"
+  /usr/bin/chown root:root "${migration_env}"
+  /usr/bin/chmod 0600 "${migration_env}"
+  unit_name="ocg-db-migrate-${release_name//./-}"
+  if ! /usr/bin/systemd-run --quiet --wait --collect --pipe \
+    --unit="${unit_name}" \
+    --uid="${APP_USER}" --gid="${APP_USER}" \
+    --working-directory="${release_path}" \
+    --property="EnvironmentFile=${migration_env}" \
+    --property=NoNewPrivileges=yes \
+    --property='CapabilityBoundingSet=' \
+    --property=IPAddressDeny=any \
+    --property=IPAddressAllow=localhost \
+    --property=PrivateTmp=yes \
+    --property=PrivateDevices=yes \
+    --property=ProtectHome=yes \
+    --property=ProtectSystem=strict \
+    --property=LockPersonality=yes \
+    --property=RestrictNamespaces=yes \
+    --property=RestrictAddressFamilies='AF_UNIX AF_INET AF_INET6' \
+    --property=UMask=0077 \
+    /usr/bin/node "${release_path}/${MIGRATION_RUNNER_REL}"; then
+    /usr/bin/rm --force -- "${migration_env}"
+    die "Migration failed; PostgreSQL persistence was not enabled."
+  fi
+  /usr/bin/rm --force -- "${migration_env}"
+  [[ $(postgres_scalar --dbname="${DB_NAME}" --command="SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename='schema_migrations';") == "1" ]] ||
+    die "Migration runner did not create schema_migrations."
+  post_backup=$(backup_now)
+  write_state_file "last-post-migration-backup" "${post_backup}"
+  write_state_file "last-migrated-release" "${release_name}"
+  printf 'Migrations completed for %s. Post-migration backup: %s\n' "${release_name}" "${post_backup}"
+}
+
+enable_postgres() {
+  local legacy_backup=""
+  local migrated_release=""
+  local post_backup=""
+  local release_path=""
+  require_bootstrap
+  legacy_backup=$(read_state_file "last-legacy-backup") || die "A legacy JSON backup is required before cutover."
+  migrated_release=$(read_state_file "last-migrated-release") || die "A successful release migration is required before cutover."
+  post_backup=$(read_state_file "last-post-migration-backup") || die "A post-migration database backup is required before cutover."
+  validate_release_name "${migrated_release}"
+  release_path=$(resolve_release "${migrated_release}")
+  validate_release_migration_contract "${release_path}"
+  [[ ${legacy_backup} == "${LEGACY_BACKUP_DIR}/"* && -d ${legacy_backup} ]] || die "Recorded legacy backup is missing."
+  [[ ${post_backup} == "${PG_BACKUP_DIR}/"* && -f ${post_backup} ]] || die "Recorded PostgreSQL backup is missing."
+  /usr/bin/pg_restore --list "${post_backup}" >/dev/null || die "Recorded PostgreSQL backup is invalid."
+  upsert_env_value "PROFILE_STORAGE_BACKEND" "POSTGRESQL"
+  upsert_env_value "DATABASE_REQUIRED" "1"
+  write_state_file "postgres-enabled-release" "${migrated_release}"
+  printf 'PostgreSQL persistence is configured for %s on the next service start.\n' "${migrated_release}"
+  printf 'No service was restarted. Activate exactly that validated release through ocg-release-helper.\n'
+}
+
+audit() {
+  local database_url_state="absent"
+  local backend="FILE_JSON_LOCAL"
+  local pg_version="not-installed"
+  local service_state="not-installed"
+  local database_state="not-inspected"
+  local role_state="not-inspected"
+  local listen_setting="not-inspected"
+  local exposure="NO_LISTENER"
+  local migrations="not-available"
+  local tcp_listeners=""
+  if [[ -e ${ENV_FILE} && ( ! -f ${ENV_FILE} || -L ${ENV_FILE} ) ]]; then
+    database_url_state="unsafe environment file"
+    backend="UNAVAILABLE"
+  elif [[ -f ${ENV_FILE} ]]; then
+    local audit_database_url=""
+    local audit_url_status=0
+    audit_database_url=$(read_env_value "DATABASE_URL") || audit_url_status=$?
+    if [[ ${audit_url_status} -eq 0 ]]; then
+      if database_password_from_url "${audit_database_url}" >/dev/null; then
+        database_url_state="configured (secret redacted)"
+      else
+        database_url_state="configured but not helper-managed (secret redacted)"
+      fi
+    elif [[ ${audit_url_status} -eq 2 ]]; then
+      database_url_state="duplicate entries (secrets redacted)"
+    fi
+    local configured_backend=""
+    if configured_backend=$(read_env_value "PROFILE_STORAGE_BACKEND"); then
+      if [[ ${configured_backend} == "POSTGRESQL" || ${configured_backend} == "FILE_JSON_LOCAL" ]]; then
+        backend="${configured_backend}"
+      else
+        backend="UNRECOGNIZED"
+      fi
+    fi
+  fi
+  if postgres_installed; then
+    pg_version=$(/usr/bin/psql --version | /usr/bin/sed 's/^psql (PostgreSQL) //')
+    service_state=$(/usr/bin/systemctl is-active "${PG_SERVICE}" 2>/dev/null || true)
+    if [[ ${service_state} == "active" ]]; then
+      database_state=$(postgres_scalar --dbname=postgres --command="SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_database WHERE datname='${DB_NAME}') THEN 'present' ELSE 'absent' END;")
+      role_state=$(postgres_scalar --dbname=postgres --command="SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${DB_ROLE}') THEN 'present' ELSE 'absent' END;")
+      listen_setting=$(postgres_scalar --dbname=postgres --command='SHOW listen_addresses;')
+      if [[ ${database_state} == "present" ]] && [[ $(postgres_scalar --dbname="${DB_NAME}" --command="SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename='schema_migrations';") == "1" ]]; then
+        migrations=$(postgres_scalar --dbname="${DB_NAME}" --command='SELECT count(*) FROM public.schema_migrations;')
+      fi
+    fi
+  fi
+  if ! tcp_listeners=$(postgres_tcp_listeners); then
+    exposure="LISTENER_INSPECTION_FAILED"
+  elif [[ -n ${tcp_listeners} ]]; then
+    if listener_output_has_external_address "${tcp_listeners}"; then
+      exposure="POTENTIALLY_PUBLIC_NON_LOOPBACK_LISTENER"
+    elif command -v /usr/sbin/ufw >/dev/null 2>&1 && ufw_allows_postgres; then
+      exposure="UFW_ALLOWS_5432_DESPITE_LOOPBACK_BIND"
+    else
+      exposure="NO_LOCAL_PUBLIC_EXPOSURE_INDICATOR"
+    fi
+  fi
+  printf 'PostgreSQL installed: %s\n' "$(postgres_installed && printf yes || printf no)"
+  printf 'PostgreSQL version: %s\n' "${pg_version}"
+  printf 'PostgreSQL service: %s\n' "${service_state}"
+  printf 'Database %s: %s\n' "${DB_NAME}" "${database_state}"
+  printf 'Role %s: %s\n' "${DB_ROLE}" "${role_state}"
+  printf 'listen_addresses: %s\n' "${listen_setting}"
+  printf 'Port 5432 exposure: %s\n' "${exposure}"
+  printf 'TCP listeners on 5432:\n'
+  [[ -n ${tcp_listeners} ]] && printf '%s\n' "${tcp_listeners}"
+  printf 'Unix sockets on 5432:\n'
+  /usr/bin/ss --no-header --listening --unix 2>/dev/null | /usr/bin/grep --fixed-strings '.s.PGSQL.5432' || true
+  printf 'UFW state relevant to 5432:\n'
+  if command -v /usr/sbin/ufw >/dev/null 2>&1; then
+    /usr/sbin/ufw status verbose 2>/dev/null | /usr/bin/awk 'NR == 1 || tolower($0) ~ /5432/'
+  else
+    printf 'not-installed\n'
+  fi
+  printf 'Service DATABASE_URL: %s\n' "${database_url_state}"
+  printf 'Profile persistence backend: %s\n' "${backend}"
+  printf 'Known JSON persistence files present:\n'
+  local file_name=""
+  for file_name in "${LEGACY_FILES[@]}"; do
+    [[ -f ${RUNTIME_DIR}/${file_name} ]] && printf '  %s\n' "${file_name}"
+  done
+  printf 'Applied migration count: %s\n' "${migrations}"
+  backup_status
+  if [[ -L ${CURRENT_LINK} ]]; then
+    printf 'Current release: %s\n' "$(/usr/bin/readlink --canonicalize "${CURRENT_LINK}")"
+  else
+    printf 'Current release: unavailable\n'
+  fi
+}
+
+main() {
+  local action="${1:-}"
+  case "${action}" in
+    audit)
+      require_no_extra_args "$@"
+      require_root
+      audit
+      ;;
+    bootstrap)
+      require_no_extra_args "$@"
+      require_root
+      acquire_lock
+      bootstrap
+      ;;
+    backup-legacy)
+      require_no_extra_args "$@"
+      require_root
+      acquire_lock
+      backup_legacy
+      ;;
+    backup-now)
+      require_no_extra_args "$@"
+      require_root
+      acquire_lock
+      backup_now
+      ;;
+    backup-status)
+      require_no_extra_args "$@"
+      require_root
+      backup_status
+      ;;
+    migrate)
+      [[ $# -eq 2 ]] || usage
+      validate_release_name "$2"
+      require_root
+      acquire_lock
+      migrate_release "$2"
+      ;;
+    enable-postgres)
+      require_no_extra_args "$@"
+      require_root
+      acquire_lock
+      enable_postgres
+      ;;
+    *)
+      usage
+      ;;
+  esac
+}
+
+main "$@"
