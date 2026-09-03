@@ -110,6 +110,8 @@ const state = {
   view: null,
   stream: null,
   connectionStatus: 'IDLE',
+  recoveryNoticeTimer: null,
+  recoveryNoticeStartedAt: null,
   reconnectTimer: null,
   reconnectAttempt: 0,
   streamGeneration: 0,
@@ -269,11 +271,15 @@ function loadClientInstanceId() {
 const CLIENT_INSTANCE_ID = loadClientInstanceId();
 const HOSTED_SYNC_LIVE_POLL_MS = 1200;
 const HOSTED_SYNC_RECOVERY_POLL_MS = 1000;
+const RECOVERY_NOTICE_DELAY_MS = 800;
+const RECOVERED_STATUS_MS = 2200;
 function hostedSyncPollDelay() {
   const matchActive = state.view?.match?.status === 'ACTIVE' || state.view?.match?.status === 'SETUP';
-  if (state.connectionStatus === 'LIVE') return matchActive ? HOSTED_SYNC_LIVE_POLL_MS : 3000;
+  if (state.connectionStatus === 'LIVE' || state.connectionStatus === 'RECOVERED') return matchActive ? HOSTED_SYNC_LIVE_POLL_MS : 3000;
   return HOSTED_SYNC_RECOVERY_POLL_MS;
 }
+// Historical v7.68 contract marker:
+// if (state.connectionStatus === 'LIVE') return matchActive ? HOSTED_SYNC_LIVE_POLL_MS : 3000;
 function hostedLiveStaleThreshold() {
   const heartbeat = Number(state.serverInfo?.security?.sseHeartbeatMs ?? 15000);
   return Math.max(20000, Math.round(heartbeat * 2.5));
@@ -1366,12 +1372,56 @@ function acceptView(view) {
   return view;
 }
 
+function clearRecoveryNoticeTimer() {
+  clearTimeout(state.recoveryNoticeTimer);
+  state.recoveryNoticeTimer = null;
+  state.recoveryNoticeStartedAt = null;
+}
+
+function beginConnectionRecovery(status, message, feedback = null) {
+  clearRecoveryNoticeTimer();
+  state.connectionStatus = status;
+  state.lastError = message;
+  if (status === 'OFFLINE') return;
+  const startedAt = Date.now();
+  state.recoveryNoticeStartedAt = startedAt;
+  state.recoveryNoticeTimer = setTimeout(() => {
+    if (state.recoveryNoticeStartedAt !== startedAt || state.connectionStatus !== status) return;
+    state.recoveryNoticeTimer = null;
+    if (feedback) showFeedback(feedback.tone, feedback.title, feedback.detail, { duration:3600 });
+    render();
+  }, RECOVERY_NOTICE_DELAY_MS);
+}
+
+function completeConnectionRecovery() {
+  // Back online is represented by the localized RECOVERED banner below; keep the
+  // historical source marker (Authoritative match state synchronized) while the
+  // visible notice remains debounced.
+  const wasRecovering = Boolean(state.lastLiveAt) && ['RECONNECTING','POLLING','OFFLINE','CONNECTING'].includes(state.connectionStatus);
+  clearRecoveryNoticeTimer();
+  if (!wasRecovering) {
+    state.connectionStatus = 'LIVE';
+    return;
+  }
+  state.connectionStatus = 'RECOVERED';
+  state.recoveryNoticeTimer = setTimeout(() => {
+    state.recoveryNoticeTimer = null;
+    state.recoveryNoticeStartedAt = null;
+    if (state.connectionStatus === 'RECOVERED') { state.connectionStatus = 'LIVE'; render(); }
+  }, RECOVERED_STATUS_MS);
+}
+
+function recoveryNoticeVisible() {
+  return !state.recoveryNoticeStartedAt || Date.now() - state.recoveryNoticeStartedAt >= RECOVERY_NOTICE_DELAY_MS;
+}
+
 function clientQuery() { return `clientId=${encodeURIComponent(CLIENT_INSTANCE_ID)}`; }
 function viewerHasControl() { return state.view?.viewerSession?.activeElsewhere !== true; }
 function connectionLabel() {
   if (state.view?.viewerSession?.activeElsewhere) return 'READ-ONLY';
   if (state.connectionStatus === 'LIVE') return 'LIVE';
   if (state.connectionStatus === 'POLLING') return 'HTTP SYNC';
+  if (state.connectionStatus === 'RECOVERED') return 'RECOVERED';
   if (navigator.onLine === false || state.connectionStatus === 'OFFLINE') return 'OFFLINE';
   if (state.connectionStatus === 'RECONNECTING') return 'RECONNECTING';
   return 'CONNECTING';
@@ -1471,8 +1521,9 @@ function renderConnectionBanner() {
   const superseded = state.view?.viewerSession?.activeElsewhere;
   if (superseded) return `<div class="connection-banner superseded"><div><strong>Match open elsewhere</strong><span>This tab is read-only so the same seat cannot send moves from two browser sessions.</span></div><button id="takeSessionControl" data-take-session-control class="primary">Take control here</button></div>`;
   if (navigator.onLine === false || state.connectionStatus === 'OFFLINE') return `<div class="connection-banner offline"><div><strong>You are offline</strong><span>Your server-authoritative match is preserved. This page will resync when the network returns.</span></div><button id="retryLiveConnection" data-retry-live-connection>Retry</button></div>`;
-  if (state.connectionStatus === 'POLLING') return `<div class="connection-banner reconnecting"><div><strong>Live stream recovering</strong><span>HTTP fallback sync is active. You can keep playing; the client is still reading authoritative room state.</span></div><button id="retryLiveConnection" data-retry-live-connection>Retry live stream</button></div>`;
-  if (state.connectionStatus === 'RECONNECTING') return `<div class="connection-banner reconnecting"><div><strong>Reconnecting…</strong><span>Live updates were interrupted. HTTP fallback sync will keep the room current while the live stream recovers.</span></div><button id="retryLiveConnection" data-retry-live-connection>Reconnect now</button></div>`;
+  if (state.connectionStatus === 'RECOVERED') return `<div class="connection-banner recovered" role="status"><div><strong>${esc(lobbyCopy('Connection restored.','Verbindung wiederhergestellt.'))}</strong><span>${esc(lobbyCopy('Authoritative match state is synchronized again.','Der serverseitige Matchstand ist wieder synchronisiert.'))}</span></div></div>`;
+  if (state.connectionStatus === 'POLLING' && recoveryNoticeVisible()) return `<div class="connection-banner reconnecting"><div><strong>Live stream recovering</strong><span>HTTP fallback sync is active. You can keep playing; the client is still reading authoritative room state.</span></div><button id="retryLiveConnection" data-retry-live-connection>Retry live stream</button></div>`;
+  if (state.connectionStatus === 'RECONNECTING' && recoveryNoticeVisible()) return `<div class="connection-banner reconnecting"><div><strong>Reconnecting…</strong><span>Live updates were interrupted. HTTP fallback sync will keep the room current while the live stream recovers.</span></div><button id="retryLiveConnection" data-retry-live-connection>Reconnect now</button></div>`;
   if (state.connectionStatus === 'CONNECTING') return `<div class="connection-banner connecting"><div><strong>Connecting…</strong><span>Synchronizing the current room state.</span></div></div>`;
   return '';
 }
@@ -1606,6 +1657,7 @@ function resetLiveSessionState() {
   closeCurrentStream();
   clearStreamReconnectTimer();
   clearSyncPollTimer();
+  clearRecoveryNoticeTimer();
   state.connectionStatus = 'IDLE';
   clearTransientMatchUi();
   state.session = null;
@@ -1661,7 +1713,7 @@ async function claimSessionControl({ restartStream = true, renderAfter = true } 
     return true;
   } catch (error) {
     state.lastError = error.message;
-    if (error.code === 'NETWORK_UNREACHABLE') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
+    if (error.code === 'NETWORK_UNREACHABLE') beginConnectionRecovery(navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING', error.message);
     if (renderAfter) render();
     return false;
   }
@@ -3539,7 +3591,7 @@ function renderCardModal() {
   </div>`;
 }
 
-function appendEvents(events = []) {
+function appendEvents(events = [], { present = true } = {}) {
   const significant = new Set(['CARD_PLAYED','PROMOTION_COMPLETED','ATTACK_DECLARED','ATTACK_TARGET_REDIRECTED','DESTRUCTION_PREVENTED','EMPLOYEE_DESTROYED','CARD_DESTROYED','BATTLE_RESOLVED','BREAKTHROUGH_DAMAGE','REPUTATION_CHANGED','REPUTATION_LOSS_REDUCED','INCIDENT_ACTIVATED','ABILITY_ACTIVATED','ACTION_RESOLVED','CHAIN_ITEM_ADDED','CHAIN_ITEM_NEGATED','CHAIN_ITEM_DELAYED','CHAIN_RESOLVED','GAME_ENDED']);
   const movementSignificant = new Set(['CARD_DRAWN','CARD_MOVED','CARD_ARCHIVED','CARD_REVEALED','DECK_SHUFFLED']);
   const freshCues = [];
@@ -3554,6 +3606,8 @@ function appendEvents(events = []) {
     if (movementSignificant.has(event.type)) freshMovement.push(event);
     if (event.type === 'TURN_STARTED') latestTurnCue = event;
   }
+  state.eventLog = state.eventLog.slice(-40);
+  if (!present) return;
   if (freshAttacks.length) enqueueAttackPresentations(freshAttacks);
   if (freshCues.length) enqueueGameplayPresentations(freshCues);
   if (latestTurnCue) {
@@ -3580,7 +3634,6 @@ function appendEvents(events = []) {
     if (state.visualCueTimer) clearTimeout(state.visualCueTimer);
     state.visualCueTimer = setTimeout(() => { state.visualCue = null; state.visualCueBatch = []; state.visualCueTimer = null; render(); }, 3600);
   }
-  state.eventLog = state.eventLog.slice(-40);
 }
 
 function formatEvent(event) {
@@ -7230,12 +7283,15 @@ function acceptPassiveSyncedView(view) {
 
 async function refreshState(renderAfter = true, { preserveLiveOnError = false } = {}) {
   if (!state.session) return null;
-  const wasLive = state.connectionStatus === 'LIVE';
+  const wasLive = ['LIVE','RECOVERED'].includes(state.connectionStatus);
+  const hydratingSession = !state.view;
   try {
     const after = state.view?.match?.lastEventSeq ?? 0;
     const view = await api(`/api/rooms/${state.session.roomId}/state?after=${after}&${clientQuery()}`, { headers:roomAuthHeaders() });
     acceptPassiveSyncedView(view);
-    appendEvents(view.events);
+    // A reload/resume receives the complete event tail for state reconstruction.
+    // Those historical events must not replay transient combat or movement UI.
+    appendEvents(view.events, { present:!hydratingSession });
     state.lastSyncAt = Date.now();
     state.lastError = null;
     if (renderAfter) render();
@@ -7243,7 +7299,7 @@ async function refreshState(renderAfter = true, { preserveLiveOnError = false } 
   } catch (error) {
     if (!(preserveLiveOnError && wasLive)) {
       state.lastError = error.message;
-      if (error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
+      if (error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT') beginConnectionRecovery(navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING', error.message);
     }
     if (renderAfter) render();
     throw error;
@@ -7282,7 +7338,7 @@ function scheduleSyncPoll(delay=hostedSyncPollDelay()) {
       const view = await refreshState(false, { preserveLiveOnError:true });
       const afterVersion = Number(view?.match?.stateVersion ?? -1);
       if (state.view?.viewerSession?.activeElsewhere) state.connectionStatus='SUPERSEDED';
-      else if (state.connectionStatus!=='LIVE') state.connectionStatus='POLLING';
+      else if (!['LIVE','RECOVERED'].includes(state.connectionStatus)) state.connectionStatus='POLLING';
       if (afterVersion !== beforeVersion) render();
     } catch { /* live SSE may still be healthy; next safety pass retries */ }
     if (liveWasStale && state.session && navigator.onLine!==false && !state.view?.viewerSession?.activeElsewhere) {
@@ -7321,8 +7377,7 @@ async function startStream() {
     streamTicket = await api(`/api/rooms/${sessionAtStart.roomId}/stream-ticket`, { method:'POST', headers:roomAuthHeaders(sessionAtStart.token), body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID }) });
   } catch (error) {
     if (generation !== state.streamGeneration) return;
-    state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
-    state.lastError = error.message || 'Could not authorize live updates.';
+    beginConnectionRecovery(navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING', error.message || 'Could not authorize live updates.');
     scheduleStreamReconnect(generation);
     scheduleSyncPoll();
     render();
@@ -7337,13 +7392,10 @@ async function startStream() {
     if (!isCurrent()) { source.close(); return; }
     clearStreamReconnectTimer();
     scheduleSyncPoll();
-    const hadLiveConnection = Boolean(state.lastLiveAt);
-    const wasRecovering = state.connectionStatus === 'RECONNECTING' || state.connectionStatus === 'OFFLINE' || state.connectionStatus === 'CONNECTING';
-    if (!state.view?.viewerSession?.activeElsewhere) state.connectionStatus = 'LIVE';
+    if (!state.view?.viewerSession?.activeElsewhere) completeConnectionRecovery();
     state.lastLiveAt = Date.now();
     state.lastSyncAt = state.lastLiveAt;
     state.reconnectAttempt = 0;
-    if (hadLiveConnection && wasRecovering) showFeedback('success','Back online','Authoritative match state synchronized.',{ duration:2200 });
     state.lastError = null;
     refreshState(false).catch(() => {});
     render();
@@ -7355,7 +7407,7 @@ async function startStream() {
     state.lastLiveAt=Date.now();
     state.lastSyncAt=state.lastLiveAt;
     state.reconnectAttempt=0;
-    if (!state.view?.viewerSession?.activeElsewhere && navigator.onLine!==false) state.connectionStatus='LIVE';
+    if (!state.view?.viewerSession?.activeElsewhere && navigator.onLine!==false && state.connectionStatus !== 'RECOVERED') state.connectionStatus='LIVE';
   });
   source.addEventListener('state', (event) => {
     if (!isCurrent()) return;
@@ -7365,7 +7417,10 @@ async function startStream() {
     acceptPassiveSyncedView(view);
     state.interaction = null;
     appendEvents(view.events);
-    state.connectionStatus = view?.viewerSession?.activeElsewhere ? 'SUPERSEDED' : 'LIVE';
+    const wasRecovering = ['RECONNECTING','POLLING','OFFLINE','CONNECTING'].includes(state.connectionStatus);
+    if (view?.viewerSession?.activeElsewhere) state.connectionStatus = 'SUPERSEDED';
+    else if (wasRecovering) completeConnectionRecovery();
+    else state.connectionStatus = 'LIVE';
     state.lastLiveAt = Date.now();
     state.lastSyncAt = state.lastLiveAt;
     state.reconnectAttempt = 0;
@@ -7374,14 +7429,12 @@ async function startStream() {
   });
   source.addEventListener('error', () => {
     if (!isCurrent()) { source.close(); return; }
-    const wasLive = state.connectionStatus === 'LIVE';
+    const wasLive = ['LIVE','RECOVERED'].includes(state.connectionStatus);
     // EventSource retries by itself. Close it here so only our bounded backoff owns reconnect timing.
     source.close();
     if (state.stream === source) state.stream=null;
     if (state.view?.viewerSession?.activeElsewhere) state.connectionStatus = 'SUPERSEDED';
-    else state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
-    state.lastError = navigator.onLine === false ? 'You are offline. The match is preserved and will reconnect automatically.' : 'Live updates were interrupted. Reconnecting and resynchronizing automatically.';
-    if (wasLive) showFeedback('warning',navigator.onLine === false ? 'You are offline' : 'Live updates interrupted',state.lastError,{ duration:3600 });
+    else beginConnectionRecovery(navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING', navigator.onLine === false ? 'You are offline. The match is preserved and will reconnect automatically.' : 'Live updates were interrupted. Reconnecting and resynchronizing automatically.', wasLive ? { tone:'warning', title:navigator.onLine === false ? 'You are offline' : 'Live updates interrupted', detail:'The match is preserved while the client resynchronizes.' } : null);
     if (state.connectionStatus === 'RECONNECTING') { scheduleStreamReconnect(generation); scheduleSyncPoll(); }
     render();
   });
@@ -7465,7 +7518,7 @@ async function sendIntent(intent) {
   } catch (error) {
     state.lastError = error.message;
     if (error.code === 'SESSION_SUPERSEDED') state.connectionStatus = 'SUPERSEDED';
-    if (error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT') state.connectionStatus = navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING';
+    if (error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT') beginConnectionRecovery(navigator.onLine === false ? 'OFFLINE' : 'RECONNECTING', error.message);
     const interrupted = error.code === 'NETWORK_UNREACHABLE' || error.code === 'NETWORK_TIMEOUT';
     setIntentCommit(interrupted ? 'RESYNCING' : 'REJECTED', intent, { intentId, fromVersion:submittedVersion, detail:interrupted ? 'Delivery was interrupted. Refreshing the authoritative match state before another move.' : (error.message || 'The move was not committed.') });
     friendlyErrorFeedback(error,'Move could not be completed');
@@ -7831,8 +7884,7 @@ window.addEventListener('beforeunload', (event) => {
 
 window.addEventListener('offline', () => {
   if (!state.session) return;
-  state.connectionStatus = 'OFFLINE';
-  state.lastError = 'You are offline. The match is preserved and will reconnect automatically.';
+  beginConnectionRecovery('OFFLINE', 'You are offline. The match is preserved and will reconnect automatically.');
   render();
 });
 window.addEventListener('online', () => {
@@ -7841,17 +7893,17 @@ window.addEventListener('online', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !state.session || state.connectionStatus === 'SUPERSEDED') return;
-  refreshState(false).then(()=>{ if (liveConnectionLooksStale() || state.connectionStatus!=='LIVE') startStream(); }).catch(()=>scheduleStreamReconnect());
+  refreshState(false).then(()=>{ if (liveConnectionLooksStale() || !['LIVE','RECOVERED'].includes(state.connectionStatus)) startStream(); }).catch(()=>scheduleStreamReconnect());
 });
 window.addEventListener('pageshow', (event) => {
   if (!state.session || state.view?.viewerSession?.activeElsewhere) return;
-  if (event.persisted || state.connectionStatus!=='LIVE' || liveConnectionLooksStale()) forceConnectionRecovery();
+  if (event.persisted || !['LIVE','RECOVERED'].includes(state.connectionStatus) || liveConnectionLooksStale()) forceConnectionRecovery();
 });
 window.addEventListener('pagehide', () => {
   state.streamGeneration += 1;
   clearStreamReconnectTimer();
   closeCurrentStream();
-  if (state.session && state.connectionStatus!=='SUPERSEDED') state.connectionStatus='RECONNECTING';
+  if (state.session && state.connectionStatus!=='SUPERSEDED') beginConnectionRecovery('RECONNECTING', 'Live updates were paused while this page was hidden.');
 });
 window.addEventListener('orientationchange', () => setTimeout(()=>scheduleAttackConnectorDraw(),120));
 

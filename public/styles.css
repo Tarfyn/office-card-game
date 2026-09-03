@@ -1949,6 +1949,7 @@ body {
 .connection-banner span { font-size:10px; line-height:1.35; color:#66625d; }
 .connection-banner.superseded { background:#fff4df; border-color:#e6c884; }
 .connection-banner.reconnecting, .connection-banner.connecting { background:#eef5fb; border-color:#b9cfe3; }
+.connection-banner.recovered { background:#edf8f1; border-color:#b9ddc6; }
 .connection-banner.offline { background:#f3f3f3; border-color:#c9c9c9; }
 @media (max-width: 700px) { .connection-banner { align-items:stretch; flex-direction:column; } .connection-banner button { width:100%; } }
 

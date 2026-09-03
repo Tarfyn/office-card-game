@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.45
+# Office Card Game - Codex Handover v7.69.46
 
 ## Current baseline
 
-- Version: `v7.69.45`
-- Release commit: the final commit referenced by annotated tag `v7.69.45`
+- Version: `v7.69.46`
+- Release commit: the final commit referenced by annotated tag `v7.69.46`
 - Ranked timer: disabled
 - Server authority: hosted Match state, profile persistence, ownership, rewards and progression remain authoritative
 
-This release adds the Player File meta hub and persistent Match History on top of the v7.69.44
-baseline. The project remains on the current portable file-backed profile architecture. The domain
+This release adds recovery hardening on top of the v7.69.45 Player File and Match History baseline.
+The project remains on the current portable file-backed profile architecture. The domain
 models are deliberately serializable and adapter-friendly for a future database persistence layer;
 no database dependency is required by this release.
 
@@ -140,6 +140,33 @@ Known gaps for future work:
 The current Player File models are portable typed domain structures suitable for a later persistence
 adapter. Do not create a parallel profile store or modify database/helper infrastructure as part of
 ordinary feature work.
+
+## Match Recovery and Reconnect
+
+Hosted Matches use persisted `RoomService` snapshots with seat/token identity, authoritative phase,
+priority, pending Choice/target/response state, processed-intent idempotency, rematch state and
+completion data. SSE is the preferred live transport; bounded reconnect backoff and HTTP polling
+fallback resynchronize the same room after reload, visibility changes or a short network failure.
+Local process restart restores active JSON-backed rooms, while live connections are re-established
+as disconnected until clients reconnect. Server presence remains the existing connected/disconnected
+signal; disconnect grace support is configured but disabled, and no transient disconnect awards a win
+or applies Ranked penalties.
+
+The client distinguishes `LIVE`, `RECONNECTING`, `POLLING`, `OFFLINE`, `RECOVERED` and `SUPERSEDED`.
+Reconnect notices are compact, non-blocking and debounced by approximately 800ms. Successful
+resynchronization briefly presents the localized `RECOVERED` state before returning to `LIVE`.
+Historical event tails hydrate the event log without replaying transient Combat Overlay, movement or
+impact cues. A second tab may observe the room but is read-only until it explicitly takes controller
+ownership; duplicate intents remain server-idempotent. Pending server interactions restore from the
+authoritative view, while purely local uncommitted selections may reset safely.
+
+Browser QA coverage for this release verified MAIN/BATTLE reload, server interruption and restore,
+debounced recovery notice, process-restart room restore, compact UI and two-tab takeover. The
+available browser session did not provide exact viewport emulation, console-log access, a reproducible
+pending-Choice fixture, a safely reachable result-screen reload, or true mobile backgrounding; these
+remain documented QA coverage gaps rather than confirmed runtime defects. Future durable
+DB-backed Match recovery remains separate from the current JSON Room persistence and must not be
+implemented by ordinary feature work.
 
 ## QA baseline
 
