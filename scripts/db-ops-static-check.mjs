@@ -11,6 +11,12 @@ const migrationRunner = read("scripts/db-migrate.mjs");
 const backupService = read("ops/office-card-game-db-backup.service");
 const backupTimer = read("ops/office-card-game-db-backup.timer");
 
+const shellFunction = (name) => {
+  const match = helper.match(new RegExp(`^${name}\\(\\) \\{\\n([\\s\\S]*?)^\\}\\n`, "m"));
+  assert.ok(match, `missing shell function ${name}`);
+  return match[1];
+};
+
 for (const [name, content] of [
   ["ops/ocg-db-helper", helper],
   ["ops/install-db-helper.sh", installer],
@@ -67,6 +73,34 @@ assert.match(helper, /SERVICE_TEMPLATE="\$\{TEMPLATE_ROOT\}\/office-card-game-db
 assert.match(helper, /TIMER_TEMPLATE="\$\{TEMPLATE_ROOT\}\/office-card-game-db-backup\.timer"/);
 assert.match(helper, /systemd-analyze verify "\$\{SERVICE_UNIT_PATH\}" "\$\{TIMER_UNIT_PATH\}"/);
 assert.match(helper, /systemctl enable --now "\$\{BACKUP_TIMER\}"/);
+const backupRootLayout = shellFunction("ensure_backup_root_layout");
+const legacyLayout = shellFunction("ensure_legacy_backup_layout");
+const postgresLayout = shellFunction("ensure_postgres_backup_layout");
+const copyLegacySnapshot = shellFunction("copy_legacy_snapshot");
+const legacyBackup = shellFunction("backup_legacy");
+const backupStatus = shellFunction("backup_status");
+const audit = shellFunction("audit");
+const bootstrap = shellFunction("bootstrap");
+const backupNow = shellFunction("backup_now");
+assert.doesNotMatch(backupRootLayout, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
+assert.match(legacyLayout, /ensure_backup_root_layout/);
+assert.doesNotMatch(legacyLayout, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
+assert.match(postgresLayout, /id -u postgres/);
+assert.match(postgresLayout, /PG_BACKUP_DIR/);
+assert.doesNotMatch(copyLegacySnapshot, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
+assert.match(legacyBackup, /ensure_legacy_backup_layout/);
+assert.doesNotMatch(legacyBackup, /postgres|PG_BACKUP_DIR|DATABASE_URL|ensure_postgres_backup_layout/);
+assert.doesNotMatch(backupStatus, /runuser|postgres_(?:psql|scalar)|pg_(?:dump|restore|isready)|ensure_.*backup_layout/);
+assert.doesNotMatch(audit, /ensure_.*backup_layout|require_bootstrap|require_managed_database_url/);
+assert.match(audit, /if postgres_installed; then[\s\S]*postgres_scalar/);
+assert.ok(
+  bootstrap.indexOf("install_postgres_packages") < bootstrap.indexOf("ensure_postgres_backup_layout"),
+  "bootstrap must install PostgreSQL before preparing its backup directory"
+);
+assert.ok(
+  backupNow.indexOf("require_bootstrap") < backupNow.indexOf("runuser --user=postgres"),
+  "backup-now must require successful bootstrap before using the postgres Unix user"
+);
 assert.match(helper, /runuser --user="\$\{ADMIN_USER\}" -- \/usr\/bin\/test -w/);
 assert.match(helper, /EnvironmentFile=\$\{migration_env\}/);
 assert.match(helper, /PROFILE_STORAGE_BACKEND" "POSTGRESQL"/);

@@ -38,6 +38,12 @@ The fixed resources are:
 - Legacy JSON backups: `/srv/office-card-game/backups/legacy-json`
 - Helper state: `/var/lib/office-card-game-db-helper`, `root:root`, mode `0700`
 
+The backup root is `root:root` mode `0750`. Legacy JSON backup directories are independently
+prepared as `root:root` mode `0700` and do not require PostgreSQL packages, a `postgres` Unix user,
+`DATABASE_URL`, or a running database service. The PostgreSQL dump directory is prepared separately
+as `postgres:postgres` mode `0750`, only during bootstrap after package installation has created and
+validated the PostgreSQL system identity.
+
 The application role owns only its dedicated database. It is explicitly `NOSUPERUSER`,
 `NOCREATEDB`, `NOCREATEROLE`, `NOINHERIT`, and `NOREPLICATION`. Owning the dedicated database lets
 the same role apply application migrations without cluster-wide privileges.
@@ -114,7 +120,8 @@ cut over persistence.
 Stops only `office-card-game.service` when it is active, copies every present known JSON persistence
 file to a new timestamped root-only directory, writes SHA-256 checksums and metadata, syncs the
 filesystem, and restarts the service. A failure trap attempts to restart a service that was active.
-Legacy backups have no automatic deletion policy.
+Legacy backups have no automatic deletion policy. This action is intentionally usable before
+bootstrap and neither inspects nor prepares PostgreSQL resources.
 
 ### `backup-now`
 

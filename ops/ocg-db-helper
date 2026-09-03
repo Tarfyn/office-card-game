@@ -372,11 +372,20 @@ SQL
   upsert_env_value "DATABASE_URL" "${database_url}"
 }
 
-ensure_backup_layout() {
+ensure_backup_root_layout() {
   /usr/bin/install --directory --owner=root --group=root --mode=0750 "${BACKUP_ROOT}"
-  /usr/bin/install --directory --owner=postgres --group=postgres --mode=0750 "${PG_BACKUP_DIR}"
-  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${LEGACY_BACKUP_DIR}"
   /usr/bin/install --directory --owner=root --group=root --mode=0700 "${STATE_DIR}"
+}
+
+ensure_legacy_backup_layout() {
+  ensure_backup_root_layout
+  /usr/bin/install --directory --owner=root --group=root --mode=0700 "${LEGACY_BACKUP_DIR}"
+}
+
+ensure_postgres_backup_layout() {
+  /usr/bin/id -u postgres >/dev/null 2>&1 || die "PostgreSQL Unix user is missing after package installation."
+  ensure_backup_root_layout
+  /usr/bin/install --directory --owner=postgres --group=postgres --mode=0750 "${PG_BACKUP_DIR}"
 }
 
 ensure_backup_templates() {
@@ -445,7 +454,7 @@ bootstrap() {
   /usr/bin/systemctl enable "${PG_SERVICE}" >/dev/null
   /usr/bin/systemctl restart "${PG_SERVICE}"
   provision_database
-  ensure_backup_layout
+  ensure_postgres_backup_layout
   validate_postgres_setup
   install_and_verify_backup_units
   /usr/bin/systemctl enable --now "${BACKUP_TIMER}" >/dev/null
@@ -523,7 +532,7 @@ backup_legacy() {
   local destination="${LEGACY_BACKUP_DIR}/$(timestamp)"
   local service_was_active=0
   ensure_fixed_identity
-  ensure_backup_layout
+  ensure_legacy_backup_layout
   (
     restart_on_failure() {
       local status=$?
