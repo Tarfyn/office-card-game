@@ -131,11 +131,14 @@ operation, validates the restricted PostgreSQL backup path as the `postgres` Uni
 the fixed daily backup timer.
 
 The backup-path validation confirms that every protected parent has the exact execute-only named
-ACL, that `postgres` cannot read/list or write those parents, and that the PostgreSQL dump directory
-is owned by `postgres:postgres` mode `0750`. It creates and immediately removes a fixed-template
-probe file as `postgres` to prove actual write access, and fails if an existing `legacy-json`
-directory is readable, writable, or traversable by `postgres`. Bootstrap records completion and
-enables the timer only after these checks pass. Reapplying the same named ACL is idempotent.
+ACL, that `postgres` cannot list or write those parents, and that the PostgreSQL dump directory is
+owned by `postgres:postgres` mode `0750`. Permission validation uses real operations as `postgres`,
+not `test -r`, `test -w`, or `test -x`: fixed `env --chdir` calls prove traversal, fixed `ls` calls
+must fail where listing is forbidden, and fixed-template `mktemp` probes prove or disprove creation.
+Every successful creation probe is removed before its result is returned. Validation also requires
+an existing `legacy-json` directory to remain `root:root` mode `0700`, and requires chdir, listing,
+and creation there all to fail as `postgres`. Bootstrap records completion and enables the timer only
+after these checks pass. Reapplying the same named ACL is idempotent.
 
 It does not set `PROFILE_STORAGE_BACKEND`, restart the game service, migrate schema, alter UFW, or
 cut over persistence.
@@ -157,8 +160,10 @@ directory and only when their names match `office_card_game-*.dump`.
 
 ### `backup-status`
 
-Read-only. Reports the configured directories, retention, state markers, PostgreSQL backup-path ACL
-readiness, and up to ten recent PostgreSQL and legacy backups.
+Reports the configured directories, retention, state markers, PostgreSQL backup-path ACL readiness,
+and up to ten recent PostgreSQL and legacy backups. Permission validation may attempt fixed-template
+creation probes; any successful probe is immediately removed, so this action leaves no persistent
+state.
 
 ### `migrate <validated-release>`
 

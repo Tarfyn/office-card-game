@@ -438,6 +438,7 @@ ensure_postgres_backup_layout() {
 
 postgres_backup_access_policy_valid() {
   local directory=""
+  local probe_status=0
   /usr/bin/id -u postgres >/dev/null 2>&1 || return 1
   acl_tools_installed || return 1
   [[ -d ${PG_BACKUP_DIR} && ! -L ${PG_BACKUP_DIR} ]] || return 1
@@ -446,25 +447,56 @@ postgres_backup_access_policy_valid() {
     [[ -d ${directory} && ! -L ${directory} ]] || return 1
     /usr/bin/getfacl --absolute-names --omit-header -- "${directory}" 2>/dev/null |
       /usr/bin/grep --fixed-strings --line-regexp --quiet 'user:postgres:--x' || return 1
-    /usr/sbin/runuser --user=postgres -- /usr/bin/test -x "${directory}" || return 1
-    if /usr/sbin/runuser --user=postgres -- /usr/bin/test -r "${directory}"; then
+    postgres_can_chdir "${directory}" || return 1
+    if postgres_can_list_directory "${directory}"; then
       return 1
     fi
-    if /usr/sbin/runuser --user=postgres -- /usr/bin/test -w "${directory}"; then
+    probe_status=0
+    postgres_write_probe "${directory}" || probe_status=$?
+    if [[ ${probe_status} -ne 1 ]]; then
       return 1
     fi
   done
-  /usr/sbin/runuser --user=postgres -- /usr/bin/test -r "${PG_BACKUP_DIR}" || return 1
-  /usr/sbin/runuser --user=postgres -- /usr/bin/test -w "${PG_BACKUP_DIR}" || return 1
-  /usr/sbin/runuser --user=postgres -- /usr/bin/test -x "${PG_BACKUP_DIR}" || return 1
+  postgres_can_chdir "${PG_BACKUP_DIR}" || return 1
+  postgres_write_probe "${PG_BACKUP_DIR}" || return 1
   if [[ -e ${LEGACY_BACKUP_DIR} || -L ${LEGACY_BACKUP_DIR} ]]; then
     [[ -d ${LEGACY_BACKUP_DIR} && ! -L ${LEGACY_BACKUP_DIR} ]] || return 1
-    if /usr/sbin/runuser --user=postgres -- /usr/bin/test -r "${LEGACY_BACKUP_DIR}" ||
-      /usr/sbin/runuser --user=postgres -- /usr/bin/test -w "${LEGACY_BACKUP_DIR}" ||
-      /usr/sbin/runuser --user=postgres -- /usr/bin/test -x "${LEGACY_BACKUP_DIR}"; then
+    [[ $(/usr/bin/stat --format='%U:%G:%a' "${LEGACY_BACKUP_DIR}") == "root:root:700" ]] || return 1
+    if postgres_can_chdir "${LEGACY_BACKUP_DIR}"; then
       return 1
     fi
+    if postgres_can_list_directory "${LEGACY_BACKUP_DIR}"; then
+      return 1
+    fi
+    probe_status=0
+    postgres_write_probe "${LEGACY_BACKUP_DIR}" || probe_status=$?
+    [[ ${probe_status} -eq 1 ]] || return 1
   fi
+}
+
+postgres_can_chdir() {
+  local directory="$1"
+  /usr/sbin/runuser --user=postgres -- /usr/bin/env --chdir="${directory}" /usr/bin/true \
+    >/dev/null 2>&1
+}
+
+postgres_can_list_directory() {
+  local directory="$1"
+  /usr/sbin/runuser --user=postgres -- /usr/bin/ls -- "${directory}" >/dev/null 2>&1
+}
+
+postgres_write_probe() {
+  local directory="$1"
+  local access_probe=""
+  if ! access_probe=$(/usr/sbin/runuser --user=postgres -- /usr/bin/mktemp \
+    "${directory}/.ocg-db-helper-permission-check.XXXXXX" 2>/dev/null); then
+    return 1
+  fi
+  if [[ ${access_probe} != "${directory}/.ocg-db-helper-permission-check."?????? ]]; then
+    return 2
+  fi
+  /usr/bin/rm --force -- "${access_probe}" || return 2
+  [[ ! -e ${access_probe} && ! -L ${access_probe} ]] || return 2
 }
 
 postgres_backup_access_state() {
@@ -480,29 +512,7 @@ postgres_backup_access_state() {
 }
 
 validate_postgres_backup_access() {
-  (
-    local access_probe=""
-    cleanup_access_probe() {
-      local status=$?
-      trap - EXIT
-      if [[ ${access_probe} =~ ^/srv/office-card-game/backups/postgresql/\.ocg-db-helper-access-check\.[A-Za-z0-9]{6}$ ]]; then
-        /usr/bin/rm --force -- "${access_probe}" || status=1
-      fi
-      exit "${status}"
-    }
-    trap cleanup_access_probe EXIT
-    postgres_backup_access_policy_valid || die "PostgreSQL backup path access policy is invalid."
-    if ! access_probe=$(/usr/sbin/runuser --user=postgres -- /usr/bin/mktemp \
-      "${PG_BACKUP_DIR}/.ocg-db-helper-access-check.XXXXXX"); then
-      die "PostgreSQL Unix user cannot create a file in the backup directory."
-    fi
-    [[ ${access_probe} =~ ^/srv/office-card-game/backups/postgresql/\.ocg-db-helper-access-check\.[A-Za-z0-9]{6}$ ]] ||
-      die "PostgreSQL backup access probe returned an unexpected fixed path."
-    /usr/bin/rm --force -- "${access_probe}"
-    [[ ! -e ${access_probe} && ! -L ${access_probe} ]] || die "PostgreSQL backup access probe cleanup failed."
-    access_probe=""
-    trap - EXIT
-  )
+  postgres_backup_access_policy_valid || die "PostgreSQL backup path access policy is invalid."
 }
 
 ensure_backup_templates() {

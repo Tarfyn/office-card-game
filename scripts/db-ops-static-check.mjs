@@ -117,7 +117,11 @@ const audit = shellFunction("audit");
 const bootstrap = shellFunction("bootstrap");
 const backupNow = shellFunction("backup_now");
 const backupAccessPolicy = shellFunction("postgres_backup_access_policy_valid");
+const backupAccessState = shellFunction("postgres_backup_access_state");
 const validateBackupAccess = shellFunction("validate_postgres_backup_access");
+const postgresChdirProbe = shellFunction("postgres_can_chdir");
+const postgresListProbe = shellFunction("postgres_can_list_directory");
+const postgresWriteProbe = shellFunction("postgres_write_probe");
 assert.doesNotMatch(backupRootLayout, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
 assert.match(legacyLayout, /ensure_backup_root_layout/);
 assert.doesNotMatch(legacyLayout, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
@@ -132,20 +136,26 @@ assert.match(legacyLayout, /install --directory --owner=root --group=root --mode
 assert.doesNotMatch(legacyLayout, /setfacl|postgres/);
 assert.match(backupAccessPolicy, /getfacl --absolute-names --omit-header -- "\$\{directory\}"/);
 assert.match(backupAccessPolicy, /grep --fixed-strings --line-regexp --quiet 'user:postgres:--x'/);
-assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -x "\$\{directory\}"/);
-assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -r "\$\{directory\}"/);
-assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -w "\$\{directory\}"/);
 assert.match(backupAccessPolicy, /stat --format='%U:%G:%a' "\$\{PG_BACKUP_DIR\}"\) == "postgres:postgres:750"/);
-assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -w "\$\{PG_BACKUP_DIR\}"/);
-for (const permission of ["r", "w", "x"]) {
-  assert.match(
-    backupAccessPolicy,
-    new RegExp(`runuser --user=postgres -- \\/usr\\/bin\\/test -${permission} "\\$\\{LEGACY_BACKUP_DIR\\}"`)
-  );
-}
-assert.match(validateBackupAccess, /runuser --user=postgres -- \/usr\/bin\/mktemp/);
-assert.match(validateBackupAccess, /rm --force -- "\$\{access_probe\}"/);
-assert.match(validateBackupAccess, /trap cleanup_access_probe EXIT/);
+assert.match(backupAccessPolicy, /stat --format='%U:%G:%a' "\$\{LEGACY_BACKUP_DIR\}"\) == "root:root:700"/);
+assert.match(backupAccessPolicy, /postgres_can_chdir "\$\{directory\}" \|\| return 1/);
+assert.match(backupAccessPolicy, /if postgres_can_list_directory "\$\{directory\}"; then/);
+assert.match(backupAccessPolicy, /postgres_write_probe "\$\{directory\}" \|\| probe_status=\$\?/);
+assert.match(backupAccessPolicy, /postgres_can_chdir "\$\{PG_BACKUP_DIR\}" \|\| return 1/);
+assert.match(backupAccessPolicy, /postgres_write_probe "\$\{PG_BACKUP_DIR\}" \|\| return 1/);
+assert.match(backupAccessPolicy, /if postgres_can_chdir "\$\{LEGACY_BACKUP_DIR\}"; then/);
+assert.match(backupAccessPolicy, /if postgres_can_list_directory "\$\{LEGACY_BACKUP_DIR\}"; then/);
+assert.match(backupAccessPolicy, /postgres_write_probe "\$\{LEGACY_BACKUP_DIR\}" \|\| probe_status=\$\?/);
+assert.match(postgresChdirProbe, /runuser --user=postgres -- \/usr\/bin\/env --chdir="\$\{directory\}" \/usr\/bin\/true/);
+assert.match(postgresListProbe, /runuser --user=postgres -- \/usr\/bin\/ls -- "\$\{directory\}"/);
+assert.match(postgresWriteProbe, /runuser --user=postgres -- \/usr\/bin\/mktemp/);
+assert.match(postgresWriteProbe, /\.ocg-db-helper-permission-check\.XXXXXX/);
+assert.match(postgresWriteProbe, /rm --force -- "\$\{access_probe\}"/);
+assert.match(backupAccessState, /postgres_backup_access_policy_valid/);
+assert.match(validateBackupAccess, /postgres_backup_access_policy_valid/);
+assert.match(audit, /backup_status/);
+assert.doesNotMatch(backupAccessPolicy, /\/usr\/bin\/test -[rwx]/);
+assert.doesNotMatch(postgresChdirProbe + postgresListProbe + postgresWriteProbe, /\b(?:bash|sh)\b|\beval\b/);
 assert.match(helper, /apt-get install --yes --no-install-recommends[\s\\]+[\s\S]* acl/);
 assert.match(backupStatus, /postgres_backup_access_state/);
 assert.doesNotMatch(copyLegacySnapshot, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
