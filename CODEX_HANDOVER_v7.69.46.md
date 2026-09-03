@@ -181,8 +181,9 @@ The active implementation branch adds the first-party Account foundation without
 released 7.69.46 version or production state. `PROFILE_STORAGE_BACKEND` is explicit:
 `FILE_JSON_LOCAL` keeps Guest player state authoritative; `POSTGRES` enables Account registration,
 login, logout, opaque cookie sessions, and PostgreSQL-backed player profiles. `DATABASE_URL` alone
-never changes the backend. Existing hosted Room, Matchmaking, and playtest-feedback operational
-snapshots remain JSON-backed in this first cutover.
+never changes the backend. The accepted root helper writes `POSTGRESQL`, which the application
+normalizes to the same internal `POSTGRES` state. Existing hosted Room, Matchmaking, and
+playtest-feedback operational snapshots remain JSON-backed in this first cutover.
 
 Email lookup trims and lowercases addresses. Passwords are Argon2id hashes (64 MiB, three
 iterations, one lane), with two concurrent password jobs and a bounded queue of 20 to protect the
