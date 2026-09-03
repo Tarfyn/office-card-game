@@ -1,8 +1,7 @@
 [Unit]
 Description=Office Card Game PostgreSQL backup
 After=postgresql.service
-Requires=postgresql.service
-ConditionPathIsExecutable=/usr/local/sbin/ocg-db-helper
+ConditionPathExists=/usr/local/sbin/ocg-db-helper
 
 [Service]
 Type=oneshot

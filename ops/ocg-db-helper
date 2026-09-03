@@ -16,6 +16,7 @@ readonly ADMIN_USER="ocgadmin"
 readonly APP_SERVICE="office-card-game.service"
 readonly PG_SERVICE="postgresql.service"
 readonly BACKUP_TIMER="office-card-game-db-backup.timer"
+readonly BACKUP_SERVICE="office-card-game-db-backup.service"
 readonly BASE_DIR="/srv/office-card-game"
 readonly RELEASE_ROOT="${BASE_DIR}/releases"
 readonly CURRENT_LINK="${BASE_DIR}/current"
@@ -27,6 +28,11 @@ readonly STATE_DIR="/var/lib/office-card-game-db-helper"
 readonly RUN_DIR="/run/office-card-game-db-helper"
 readonly LOCK_FILE="/run/lock/office-card-game-db-helper.lock"
 readonly ENV_FILE="/etc/office-card-game.env"
+readonly TEMPLATE_ROOT="/usr/local/share/office-card-game"
+readonly SERVICE_TEMPLATE="${TEMPLATE_ROOT}/office-card-game-db-backup.service"
+readonly TIMER_TEMPLATE="${TEMPLATE_ROOT}/office-card-game-db-backup.timer"
+readonly SERVICE_UNIT_PATH="/etc/systemd/system/${BACKUP_SERVICE}"
+readonly TIMER_UNIT_PATH="/etc/systemd/system/${BACKUP_TIMER}"
 readonly PG_CONFIG_DIR="/etc/postgresql/${PG_MAJOR}/main"
 readonly PG_MANAGED_CONFIG="${PG_CONFIG_DIR}/conf.d/99-office-card-game.conf"
 readonly PG_HBA_FILE="${PG_CONFIG_DIR}/pg_hba.conf"
@@ -373,6 +379,22 @@ ensure_backup_layout() {
   /usr/bin/install --directory --owner=root --group=root --mode=0700 "${STATE_DIR}"
 }
 
+ensure_backup_templates() {
+  for template in "${SERVICE_TEMPLATE}" "${TIMER_TEMPLATE}"; do
+    [[ -f ${template} && ! -L ${template} ]] || die "Missing immutable backup template: ${template}"
+    [[ $(/usr/bin/stat --format='%u:%g:%a' "${template}") == "0:0:644" ]] ||
+      die "Backup template metadata is unsafe: ${template}"
+  done
+}
+
+install_and_verify_backup_units() {
+  [[ -x /usr/local/sbin/ocg-db-helper ]] || die "Installed helper executable is missing."
+  /usr/bin/install --owner=root --group=root --mode=0644 "${SERVICE_TEMPLATE}" "${SERVICE_UNIT_PATH}"
+  /usr/bin/install --owner=root --group=root --mode=0644 "${TIMER_TEMPLATE}" "${TIMER_UNIT_PATH}"
+  /usr/bin/systemctl daemon-reload
+  /usr/bin/systemd-analyze verify "${SERVICE_UNIT_PATH}" "${TIMER_UNIT_PATH}"
+}
+
 validate_postgres_setup() {
   local listen_addresses=""
   local hba_errors=""
@@ -416,10 +438,7 @@ bootstrap() {
   os_version=$(/usr/bin/sed -n 's/^VERSION_ID=//p' /etc/os-release | /usr/bin/tr -d '"')
   [[ ${os_id} == "ubuntu" && ${os_version} == "26.04" ]] ||
     die "This candidate is pinned to the audited Ubuntu 26.04 VPS."
-  [[ -f /etc/systemd/system/office-card-game-db-backup.service ]] ||
-    die "Install the repository-managed backup service before bootstrap."
-  [[ -f /etc/systemd/system/${BACKUP_TIMER} ]] ||
-    die "Install the repository-managed backup timer before bootstrap."
+  ensure_backup_templates
   install_postgres_packages
   ensure_postgres_cluster
   write_postgres_config
@@ -428,8 +447,9 @@ bootstrap() {
   provision_database
   ensure_backup_layout
   validate_postgres_setup
-  write_state_file "bootstrap-complete" "$(timestamp)"
+  install_and_verify_backup_units
   /usr/bin/systemctl enable --now "${BACKUP_TIMER}" >/dev/null
+  write_state_file "bootstrap-complete" "$(timestamp)"
   printf 'PostgreSQL bootstrap complete: version %s, database %s, role %s, loopback-only.\n' \
     "${PG_MAJOR}" "${DB_NAME}" "${DB_ROLE}"
 }

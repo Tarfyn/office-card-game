@@ -165,17 +165,22 @@ all files in `ops/`, especially the helper and sudoers candidate. From the repos
 sudo bash -n ops/ocg-db-helper
 sudo bash -n ops/install-db-helper.sh
 sudo visudo -cf ops/office-card-game-db.sudoers
-sudo systemd-analyze verify \
-  ops/office-card-game-db-backup.service \
-  ops/office-card-game-db-backup.timer
 sudo bash ops/install-db-helper.sh
 ```
 
-The installer copies only the reviewed helper, exact sudoers file, and backup units. It validates
+The installer copies only the reviewed helper, exact sudoers file, and immutable backup-unit
+templates into `/usr/local/share/office-card-game/`. It does not install either backup unit into
+`/etc/systemd/system`, enable a timer, require `postgresql.service`, install PostgreSQL, or run
+bootstrap. It validates the helper/service template syntax after the helper is installed, while the
+timer and its runtime dependency are intentionally deferred until bootstrap. It also validates
 ownership/modes and verifies that `ocgadmin` has exactly the existing release helper and new DB
-helper as NOPASSWD commands, and cannot run `/usr/bin/true` through `sudo -n`. It does not enable
-the timer, install PostgreSQL, or run bootstrap. Do not grant `ocgadmin` NOPASSWD access to the
-installer, repository paths, or any interpreter.
+helper as NOPASSWD commands, and cannot run `/usr/bin/true` through `sudo -n`. Do not grant
+`ocgadmin` NOPASSWD access to the installer, repository paths, or any interpreter.
+
+The service unit uses the supported `ConditionPathExists=/usr/local/sbin/ocg-db-helper` directive.
+It deliberately has only `After=postgresql.service`; the helper itself checks that PostgreSQL is
+active and ready before taking a backup. This lets the service template be parsed before PostgreSQL
+is installed without weakening runtime safety.
 
 ## Provisioning and backup flow
 
@@ -190,8 +195,17 @@ sudo -n /usr/local/sbin/ocg-db-helper backup-now
 sudo -n /usr/local/sbin/ocg-db-helper backup-status
 ```
 
-Bootstrap is infrastructure preparation, not application cutover. Existing JSON persistence keeps
-running after these commands.
+Bootstrap is infrastructure preparation, not application cutover. It first installs/configures
+PostgreSQL and validates the loopback-only database, then copies the immutable templates into
+`/etc/systemd/system`, runs `systemd-analyze verify` on both final units, reloads systemd, and only
+then enables/starts the backup timer. Any unit verification failure returns non-zero before the
+timer is enabled. Existing JSON persistence keeps running after these commands.
+
+If the human installer is interrupted, rerunning it is safe: fixed destinations are replaced with
+the reviewed root-owned copies, no database or service unit is enabled, and the sudoers rule is
+revalidated. A partial bootstrap is likewise retryable; it may leave packages/configuration in
+place, but the helper will not record bootstrap completion or enable the backup timer until the
+database and final unit verification succeed.
 
 ## Migration and cutover flow
 
