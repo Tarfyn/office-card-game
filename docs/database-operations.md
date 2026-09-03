@@ -3,8 +3,8 @@
 ## Status and scope
 
 The production server remains on `FILE_JSON_LOCAL` until an explicitly approved cutover. The
-repository application foundation now defines the separate `POSTGRES` backend, but merely having
-`DATABASE_URL` present never activates it.
+repository application foundation normalizes the separate PostgreSQL backend to `POSTGRES`, but
+merely having `DATABASE_URL` present never activates it.
 The server fixes mutable state beneath `/srv/office-card-game/runtime` while releases beneath
 `/srv/office-card-game/releases` are immutable after `/usr/local/sbin/ocg-release-helper finalize`.
 The active release is selected by the root-owned `/srv/office-card-game/current` symlink.
@@ -191,9 +191,12 @@ Requires successful bootstrap, a recorded legacy JSON backup, a successful valid
 migration, and a valid post-migration dump. It changes only these managed service-environment keys:
 
 ```text
-PROFILE_STORAGE_BACKEND=POSTGRES
+PROFILE_STORAGE_BACKEND=POSTGRESQL
 DATABASE_REQUIRED=1
 ```
+
+`POSTGRESQL` is the accepted root-helper environment contract. The application normalizes it to
+the internal backend name `POSTGRES`; this does not create a second persistence mode.
 
 It does not restart the service or alter the `current` symlink. The operator must immediately
 activate exactly the release printed by the helper through the existing release helper. The new
@@ -328,11 +331,11 @@ Stop without cutover if any of these is true:
 
 ## Application persistence and Account contract
 
-`PROFILE_STORAGE_BACKEND` accepts only `FILE_JSON_LOCAL` or `POSTGRES` (`POSTGRESQL` remains a
-temporary compatibility alias for an already-installed older helper). `DATABASE_URL` is parsed as
-a fixed loopback connection to database `office_card_game` and role `office_card_game_app`; the
-application never logs or returns it. The Node server uses a bounded `pg` pool (default maximum 10,
-5-second connection timeout, 30-second idle timeout).
+`PROFILE_STORAGE_BACKEND` accepts `FILE_JSON_LOCAL`, the helper-managed value `POSTGRESQL`, or
+`POSTGRES`. Both PostgreSQL spellings normalize to the single internal backend `POSTGRES`.
+`DATABASE_URL` is parsed as a fixed loopback connection to database `office_card_game` and role
+`office_card_game_app`; the application never logs or returns it. The Node server uses a bounded
+`pg` pool (default maximum 10, 5-second connection timeout, 30-second idle timeout).
 
 The first additive migration creates `users`, `sessions`, `player_profiles`, `player_decks`,
 `reward_grants`, `achievement_progress`, and `persistence_metadata`. Account IDs are UUIDs.
