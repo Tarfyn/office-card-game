@@ -86,11 +86,15 @@ export interface MatchCompletionResult {
   mode: RoomMatchMode;
   winnerPlayerId: PlayerId | null;
   reason: string;
+  startedAt: number | null;
   endedAt: number | null;
   seats: Record<PlayerId, {
     profileId: string | null;
     displayName: string | null;
+    deckId: string;
     deckName: string;
+    department: string;
+    finalRep: number | null;
   }>;
 }
 export type RoomErrorCode = "ROOM_NOT_FOUND" | "ROOM_FULL" | "INVALID_TOKEN" | "INVALID_DECK" | "MATCH_NOT_READY" | "REPLAY_NOT_AVAILABLE" | "PROFILE_NOT_IN_ROOM" | "SESSION_SUPERSEDED" | "REMATCH_NOT_READY" | "RATED_REMATCH_DISABLED";
@@ -1192,10 +1196,11 @@ export class RoomService {
       mode: room.settings.mode,
       winnerPlayerId: room.state.winnerId,
       reason: String(room.state.reason ?? "UNKNOWN"),
+      startedAt: room.lifecycle.matchStartedAt,
       endedAt: room.telemetry.endedAt,
       seats: {
-        P1: { profileId: room.host.profileId, displayName: room.host.displayName, deckName: room.host.deckName },
-        P2: { profileId: room.guest.profileId, displayName: room.guest.displayName, deckName: room.guest.deckName }
+        P1: { profileId: room.host.profileId, displayName: room.host.displayName, deckId: room.host.deckId, deckName: room.host.deckName, department: room.host.department, finalRep: room.state.players.P1?.reputation ?? null },
+        P2: { profileId: room.guest.profileId, displayName: room.guest.displayName, deckId: room.guest.deckId, deckName: room.guest.deckName, department: room.guest.department, finalRep: room.state.players.P2?.reputation ?? null }
       }
     });
   }

@@ -166,7 +166,7 @@ const profiles = new PlayerProfileService({
   persistence: profilePersistence,
   playerPersistence,
   credentialPersistence: guestCredentialPersistence,
-  maxHistoryEntries: 30,
+  maxHistoryEntries: 100,
   rankedConfig,
   starterCards: alphaDeckPresets[String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter")]?.cards ?? [],
   startingOfficeCredits: Number(economyConfig.sandbox?.startingOfficeCredits ?? 0),
@@ -208,17 +208,33 @@ function rewardProfileForMode(mode) {
 
 function matchHistoryEntry(view, outcome) {
   const isP1 = view.playerId === "P1";
+  const finishedAt = Number(view.telemetry?.endedAt ?? Date.now());
+  const startedAt = Number(view.lifecycle?.matchStartedAt ?? 0);
+  const player = view.match?.players?.[view.playerId];
+  const opponentId = isP1 ? "P2" : "P1";
+  const opponent = view.match?.players?.[opponentId];
   return {
     roomId: view.roomId,
     matchId: view.match?.matchId ?? `match-${view.roomId}`,
     mode: view.settings?.mode === "RANKED" ? "RANKED" : view.settings?.mode === "TRAINING" ? "TRAINING" : view.settings?.mode === "TUTORIAL" ? "TUTORIAL" : "FRIENDLY",
+    playerSeat: view.playerId,
     outcome,
+    result: outcome === "DRAW" ? "DRAW" : outcome === "WIN" ? "WIN" : "LOSS",
     opponentName: (isP1 ? view.guestDisplayName : view.hostDisplayName) ?? "Opponent",
+    selectedDeckId: (isP1 ? view.hostDeckId : view.guestDeckId) ?? null,
     deckName: (isP1 ? view.hostDeckName : view.guestDeckName) ?? "Unknown Deck",
     opponentDeckName: (isP1 ? view.guestDeckName : view.hostDeckName) ?? "Unknown Deck",
+    primaryDepartment: (isP1 ? view.hostDepartment : view.guestDepartment) ?? "MIXED",
+    opponentDepartment: (isP1 ? view.guestDepartment : view.hostDepartment) ?? null,
     turns: Number(view.match?.turnNumber ?? 0),
+    durationMs: startedAt && finishedAt >= startedAt ? finishedAt - startedAt : null,
+    playerFinalRep: player?.reputation ?? null,
+    opponentFinalRep: opponent?.reputation ?? null,
+    rewardEligible: view.settings?.rewardEligible !== false,
+    completionReason: String(view.match?.reason ?? "UNKNOWN"),
     reason: String(view.match?.reason ?? "UNKNOWN"),
-    finishedAt: Date.now()
+    completedAt: finishedAt,
+    finishedAt
   };
 }
 
@@ -253,8 +269,18 @@ function recordCompletedProfileMatches(completion) {
     const replay = rooms.getReplayForProfile(completion.roomId, seat.profileId);
     const entry = {
       roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, outcome,
+      result: outcome === "DRAW" ? "DRAW" : outcome === "WIN" ? "WIN" : "LOSS",
+      playerSeat:playerId,
       opponentName:opponent?.displayName ?? "Opponent", deckName:seat.deckName, opponentDeckName:opponent?.deckName ?? "Unknown Deck",
-      turns:Number(replay?.turns ?? 0), reason:completion.reason, finishedAt
+      selectedDeckId:seat.deckId,
+      primaryDepartment:seat.department,
+      opponentDepartment:opponent?.department ?? null,
+      turns:Number(replay?.turns ?? 0),
+      durationMs:completion.startedAt && finishedAt >= completion.startedAt ? finishedAt - completion.startedAt : null,
+      playerFinalRep:seat.finalRep,
+      opponentFinalRep:opponent?.finalRep ?? null,
+      rewardEligible:completion.mode === "FRIENDLY" || completion.mode === "RANKED",
+      completionReason:completion.reason, reason:completion.reason, completedAt:finishedAt, finishedAt
     };
     profiles.recordMatchForPlayerId(seat.profileId, entry, progressionEventsForMatch({ roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, playerId, outcome, finishedAt }, replay));
   }
@@ -407,7 +433,7 @@ function adminOpsSnapshot() {
   };
   return {
     generatedAt: now,
-    version: "7.69.44",
+    version: "7.69.45",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
     counts,
@@ -618,8 +644,8 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.44", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.44", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.45", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.45", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
       return json(res, 200, { ops:adminOpsSnapshot() });
@@ -704,6 +730,11 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/profiles/me") {
       const profile = profiles.get(profileTokenFrom(req, url));
       return json(res, 200, { profile, storage:profiles.playerStorageLabel, account:{ playerId:profile.playerId, authMode:profiles.authMode } });
+    }
+
+    if (req.method === "GET" && path === "/api/profiles/me/match-history") {
+      const profile = profiles.get(profileTokenFrom(req, url));
+      return json(res, 200, { history:profile.matchHistory, stats:profile.stats, ranked:profile.ranked });
     }
 
     if (req.method === "GET" && path === "/api/profiles/me/achievements") {
@@ -1169,7 +1200,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.44 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.45 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

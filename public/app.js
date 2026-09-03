@@ -212,6 +212,9 @@ const state = {
   analyticsSelection: null,
   analyticsFilter: { mode:'ALL', department:'ALL', deckId:'ALL', days:'ALL', latest:'ALL' },
   historyFilter: { mode:'ALL', outcome:'ALL' },
+  profileSection: 'OVERVIEW',
+  profileHistoryLimit: 20,
+  profileMessage: null,
   guidance: { enabled:true, seen:{} },
   replay: null,
   replayBusy: false,
@@ -440,6 +443,148 @@ async function enterAchievements() {
     state.achievementBusy = false;
     render();
   }
+}
+
+async function enterPlayerFile(section = 'OVERVIEW') {
+  state.mode = 'PROFILE';
+  state.profileSection = section;
+  state.profileHistoryLimit = 20;
+  state.profileMessage = null;
+  render();
+  try {
+    await refreshServerProfile();
+    const requests = [state.cosmeticPersonnel ? Promise.resolve() : loadCosmeticViews(), api('/api/profiles/me/achievements', { headers:profileAuthHeaders() }).then((value) => { state.achievementData = value; })];
+    await Promise.all(requests);
+  } catch (error) {
+    state.profileMessage = error.message;
+  } finally {
+    render();
+  }
+}
+
+function profileTally(profile, key) {
+  const stats = profile?.stats ?? {};
+  const tally = stats[key] ?? {};
+  return {
+    matches: Number(tally.matches ?? (key === 'pvp' ? stats.matchesPlayed : key === 'ranked' ? stats.rankedMatches : 0)),
+    wins: Number(tally.wins ?? (key === 'pvp' ? stats.wins : 0)),
+    losses: Number(tally.losses ?? (key === 'pvp' ? stats.losses : 0)),
+    draws: Number(tally.draws ?? (key === 'pvp' ? stats.draws : 0))
+  };
+}
+
+function profileRankLabel(profile) {
+  const ranked = profile?.ranked ?? {};
+  const tier = ranked.tierId ? t(`ranked.tiers.${String(ranked.tierId).toLowerCase()}`, {}, ranked.tierId) : t('playerFile.unrated');
+  return ranked.division ? `${tier} ${ranked.division}` : tier;
+}
+
+function profileDate(value) {
+  const timestamp = Number(value);
+  if (!timestamp) return '—';
+  return new Intl.DateTimeFormat(currentLocale(), { dateStyle:'medium', timeStyle:'short' }).format(new Date(timestamp));
+}
+
+function profileDuration(value) {
+  const totalSeconds = Math.max(0, Math.floor(Number(value ?? 0) / 1000));
+  if (!totalSeconds) return null;
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${minutes}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+function profileModeLabel(mode) {
+  return t(`playerFile.modes.${String(mode ?? 'FRIENDLY').toLowerCase()}`, {}, mode ?? 'FRIENDLY');
+}
+
+function profileResultLabel(record) {
+  const result = record?.result ?? (record?.outcome === 'RESIGN_LOSS' ? 'LOSS' : record?.outcome ?? 'DRAW');
+  return t(`playerFile.results.${String(result).toLowerCase()}`, {}, result);
+}
+
+function profileCosmeticName(slot) {
+  const id = state.serverProfile?.meta?.cosmetics?.loadout?.[slot];
+  if (!id) return null;
+  const item = (state.cosmeticPersonnel?.owned ?? []).find((entry) => entry.definition?.id === id);
+  return item?.definition ? cosmeticText(item.definition, 'name') : null;
+}
+
+function renderPlayerFileHeader(profile) {
+  const loadout = profile?.meta?.cosmetics?.loadout ?? {};
+  const avatarId = loadout.avatarId ?? 'COS-AVA-001';
+  const avatarAsset = cosmeticAvatarAsset(avatarId);
+  const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
+  const progression = profile?.meta?.progression ?? {};
+  const step = Math.max(1, Number(state.economyConfig?.progression?.levelXpStep ?? 100));
+  const xp = Number(progression.xp ?? 0);
+  const xpIntoLevel = xp % step;
+  const xpPercent = Math.max(0, Math.min(100, Math.round((xpIntoLevel / step) * 100)));
+  const pvp = profileTally(profile, 'pvp');
+  const title = profileCosmeticName('titleId');
+  const badge = profileCosmeticName('badgeId');
+  return `<header class="player-file-header"><div class="player-file-header-main"><div class="player-file-avatar">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(profile?.displayName) })}</div><div class="player-file-name"><span>${esc(t('playerFile.kicker'))}</span><h1>${esc(profile?.displayName ?? 'Player')}</h1><p>${title ? esc(title) : esc(t('playerFile.noTitle'))}${badge ? ` · ${esc(badge)}` : ''}</p><small>${esc(profileCosmeticName('avatarId') ?? t('playerFile.defaultAvatar'))}${frameAsset ? ` · ${esc(profileCosmeticName('avatarFrameId') ?? t('playerFile.framed'))}` : ''}</small></div></div><div class="player-file-header-stats"><div><span>${esc(t('playerFile.level'))}</span><strong>${esc(progression.level ?? 1)}</strong><div class="player-file-xp"><i style="width:${xpPercent}%"></i></div><small>${esc(t('playerFile.xpProgress',{ current:xpIntoLevel, total:step }))}</small></div><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong><small>${esc(profile?.ranked?.seasonId ?? '—')} · ${esc(profile?.ranked?.rating ?? '—')} MMR</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(pvp.wins)}–${esc(pvp.losses)}–${esc(pvp.draws)}</strong><small>${esc(t('playerFile.matchesCount',{ count:pvp.matches }))}</small></div></div></header>`;
+}
+
+function renderPlayerFileHistoryRow(record) {
+  const result = record?.result ?? (record?.outcome === 'RESIGN_LOSS' ? 'LOSS' : record?.outcome ?? 'DRAW');
+  const rating = record?.ratingDelta == null ? '' : `<b class="player-file-rating ${Number(record.ratingDelta) >= 0 ? 'up' : 'down'}">${Number(record.ratingDelta) >= 0 ? '+' : ''}${esc(record.ratingDelta)} MMR</b>`;
+  const reps = record?.playerFinalRep == null ? '' : `<span>${esc(record.playerFinalRep)} REP${record?.opponentFinalRep == null ? '' : ` · ${esc(record.opponentFinalRep)} REP`}</span>`;
+  const duration = profileDuration(record?.durationMs);
+  const reason = record?.completionReason ? matchEndReasonLabel(record.completionReason) : '';
+  return `<article class="player-file-history-row ${String(result).toLowerCase()}"><div class="player-file-result"><strong>${esc(profileResultLabel(record))}</strong><small>${esc(profileModeLabel(record.mode))}</small></div><div class="player-file-history-main"><strong>${esc(t('playerFile.vsOpponent',{ name:record?.opponentName ?? t('playerFile.opponent') }))}</strong><span>${esc(record?.deckName ?? t('playerFile.unknownDeck'))} · ${esc(profileDate(record?.completedAt ?? record?.finishedAt))}</span><small>${esc(record?.primaryDepartment ?? 'MIXED')} · ${esc(record?.turns ?? 0)} ${esc(t('playerFile.turns'))}${duration ? ` · ${esc(duration)} ${esc(t('playerFile.duration'))}` : ''}${reason ? ` · ${esc(reason)}` : ''}</small></div><div class="player-file-history-meta">${reps}${rating}</div></article>`;
+}
+
+function renderPlayerFileOverview(profile) {
+  const pvp = profileTally(profile, 'pvp');
+  const ranked = profile?.ranked ?? {};
+  const progression = profile?.meta?.progression ?? {};
+  const achievements = Object.values(profile?.meta?.achievements ?? {});
+  const completedAchievements = achievements.filter((item) => item?.completedAt).length;
+  const recent = (profile?.matchHistory ?? []).filter((item) => item.mode === 'FRIENDLY' || item.mode === 'RANKED').slice(0,5);
+  const competitiveResults = recent.map((item) => `<b class="${String(item.result ?? item.outcome).toLowerCase()}">${esc(item.result ?? (item.outcome === 'RESIGN_LOSS' ? 'LOSS' : item.outcome))}</b>`).join('');
+  const topDeck = Object.values(profile?.stats?.deckUsage ?? {}).sort((a,b) => Number(b.matches ?? 0) - Number(a.matches ?? 0))[0];
+  const topDepartment = Object.entries(profile?.stats?.departmentUsage ?? {}).sort(([,a],[,b]) => Number(b.matches ?? 0) - Number(a.matches ?? 0))[0];
+  return `<div class="player-file-overview"><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.progression'))}</span><h2>${esc(t('playerFile.levelHeadline',{ level:progression.level ?? 1 }))}</h2><p>${esc(t('playerFile.xpDetail',{ xp:progression.xp ?? 0 }))}</p><button class="player-file-link" data-profile-section="RANKED">${esc(t('playerFile.viewRanked'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.record'))}</span><h2>${esc(t('playerFile.recordHeadline',{ wins:pvp.wins, losses:pvp.losses, draws:pvp.draws }))}</h2><p>${esc(t('playerFile.winRate',{ rate:pvp.matches ? Math.round(pvp.wins / pvp.matches * 100) : 0 }))}</p><button class="player-file-link" data-profile-section="STATS">${esc(t('playerFile.viewStats'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.achievements'))}</span><h2>${esc(t('playerFile.achievementHeadline',{ completed:completedAchievements, total:achievements.length }))}</h2><p>${esc(t('playerFile.achievementDetail'))}</p><button class="player-file-link" data-profile-section="ACHIEVEMENTS">${esc(t('playerFile.viewAchievements'))}</button></article></section><section class="player-file-panel player-file-recent"><div class="player-file-panel-heading"><div><span>${esc(t('playerFile.recentForm'))}</span><h2>${esc(t('playerFile.competitiveForm'))}</h2></div><button class="player-file-link" data-profile-section="MATCH_HISTORY">${esc(t('playerFile.viewHistory'))}</button></div><div class="player-file-form">${competitiveResults || `<small>${esc(t('playerFile.noCompetitiveMatches'))}</small>`}</div>${recent.length ? `<div class="player-file-mini-history">${recent.slice(0,3).map(renderPlayerFileHistoryRow).join('')}</div>` : ''}</section><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.ranked'))}</span><h2>${esc(profileRankLabel(profile))}</h2><p>${esc(t('playerFile.mmrPeak',{ current:ranked.rating ?? 1000, peak:ranked.peakRating ?? ranked.rating ?? 1000 }))}</p></article><article class="player-file-panel"><span>${esc(t('playerFile.favorites'))}</span><h2>${esc(topDeck?.deckName ?? t('playerFile.noDeck'))}</h2><p>${esc(topDepartment ? t('playerFile.departmentUsage',{ department:topDepartment[0], count:topDepartment[1].matches ?? 0 }) : t('playerFile.noDepartment'))}</p></article></section></div>`;
+}
+
+function renderPlayerFileHistory(profile) {
+  const source = Array.isArray(profile?.matchHistory) ? profile.matchHistory : [];
+  const filtered = source.filter((entry) => {
+    const mode = state.historyFilter.mode;
+    if (mode === 'PVP' && !['FRIENDLY','RANKED'].includes(entry.mode)) return false;
+    if (mode !== 'ALL' && mode !== 'PVP' && entry.mode !== mode) return false;
+    if (state.historyFilter.outcome !== 'ALL' && (entry.result ?? (entry.outcome === 'RESIGN_LOSS' ? 'LOSS' : entry.outcome)) !== state.historyFilter.outcome) return false;
+    return true;
+  });
+  const rows = filtered.slice(0, state.profileHistoryLimit);
+  return `<section class="player-file-history"><div class="player-file-toolbar"><div><span>${esc(t('playerFile.historyKicker'))}</span><h2>${esc(t('playerFile.matchHistory'))}</h2></div><small>${esc(t('playerFile.storedCount',{ count:source.length }))}</small></div><div class="player-file-filters"><label>${esc(t('playerFile.mode'))}<select id="profileHistoryMode"><option value="ALL" ${state.historyFilter.mode==='ALL'?'selected':''}>${esc(t('playerFile.filters.all'))}</option><option value="PVP" ${state.historyFilter.mode==='PVP'?'selected':''}>${esc(t('playerFile.filters.pvp'))}</option><option value="FRIENDLY" ${state.historyFilter.mode==='FRIENDLY'?'selected':''}>${esc(t('playerFile.filters.friendly'))}</option><option value="RANKED" ${state.historyFilter.mode==='RANKED'?'selected':''}>${esc(t('playerFile.filters.ranked'))}</option><option value="TRAINING" ${state.historyFilter.mode==='TRAINING'?'selected':''}>${esc(t('playerFile.filters.training'))}</option></select></label><label>${esc(t('playerFile.result'))}<select id="profileHistoryOutcome"><option value="ALL" ${state.historyFilter.outcome==='ALL'?'selected':''}>${esc(t('playerFile.filters.allResults'))}</option><option value="WIN" ${state.historyFilter.outcome==='WIN'?'selected':''}>${esc(t('playerFile.filters.wins'))}</option><option value="LOSS" ${state.historyFilter.outcome==='LOSS'?'selected':''}>${esc(t('playerFile.filters.losses'))}</option><option value="DRAW" ${state.historyFilter.outcome==='DRAW'?'selected':''}>${esc(t('playerFile.filters.draws'))}</option></select></label></div><div class="player-file-history-list">${rows.length ? rows.map(renderPlayerFileHistoryRow).join('') : `<div class="player-file-empty"><strong>${esc(source.length ? t('playerFile.noFilteredMatches') : t('playerFile.noMatches'))}</strong><small>${esc(source.length ? t('playerFile.resetFilters') : t('playerFile.completeMatch'))}</small></div>`}</div>${filtered.length > rows.length ? `<button class="player-file-load-more" id="profileLoadMore">${esc(t('playerFile.loadMore'))}</button>` : ''}</section>`;
+}
+
+function renderPlayerFileRanked(profile) {
+  const ranked = profile?.ranked ?? {};
+  const tally = profileTally(profile, 'ranked');
+  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.rankedKicker'))}</span><h2>${esc(t('playerFile.rankedProgression'))}</h2><p>${esc(ranked.seasonId ?? '—')} · ${esc(ranked.phase ?? 'PRESEASON')}</p></div><div class="player-file-stat-grid"><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong></div><div><span>MMR</span><strong>${esc(ranked.rating ?? 1000)}</strong><small>${esc(t('playerFile.peak',{ value:ranked.peakRating ?? ranked.rating ?? 1000 }))}</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(t('playerFile.wld',{ wins:tally.wins, losses:tally.losses, draws:tally.draws }))}</strong></div><div><span>${esc(t('playerFile.placements'))}</span><strong>${esc(ranked.placementsPlayed ?? 0)} / ${esc(ranked.placementsRequired ?? 5)}</strong></div></div><p class="player-file-note">${esc(t('playerFile.rankedNote'))}</p></section>`;
+}
+
+function renderPlayerFileAchievements(profile) {
+  const items = state.achievementData?.achievements ?? [];
+  const completed = items.filter((item) => item.progress?.completedAt).length || Object.values(profile?.meta?.achievements ?? {}).filter((item) => item?.completedAt).length;
+  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.achievementKicker'))}</span><h2>${esc(t('playerFile.achievementSummary',{ completed, total:items.length || Object.keys(profile?.meta?.achievements ?? {}).length }))}</h2><p>${esc(t('playerFile.achievementProfileNote'))}</p></div><div class="player-file-achievement-list">${items.slice(0,4).map((item) => `<div><strong>${esc(item.progress?.completedAt ? (item.titleKey ? t(item.titleKey) : item.id) : t('achievements.inProgress'))}</strong><span>${esc(item.progress?.completedAt ? t('achievements.completed') : `${item.progress?.value ?? 0}/${item.target ?? 1}`)}</span></div>`).join('') || `<div class="player-file-empty"><strong>${esc(t('playerFile.achievementsLoad'))}</strong></div>`}</div><button class="player-file-link" id="profileOpenAchievements">${esc(t('playerFile.openAchievements'))}</button></section>`;
+}
+
+function renderPlayerFileStats(profile) {
+  const pvp = profileTally(profile, 'pvp');
+  const training = profileTally(profile, 'training');
+  const tutorial = profileTally(profile, 'tutorial');
+  const departments = Object.entries(profile?.stats?.departmentUsage ?? {}).sort(([,a],[,b]) => Number(b.matches ?? 0) - Number(a.matches ?? 0));
+  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.statsKicker'))}</span><h2>${esc(t('playerFile.statsTitle'))}</h2><p>${esc(t('playerFile.statsNote'))}</p></div><div class="player-file-stat-grid"><div><span>${esc(t('playerFile.pvp'))}</span><strong>${esc(pvp.matches)}</strong><small>${esc(t('playerFile.wld',{ wins:pvp.wins, losses:pvp.losses, draws:pvp.draws }))}</small></div><div><span>${esc(t('playerFile.training'))}</span><strong>${esc(training.matches)}</strong><small>${esc(t('playerFile.wld',{ wins:training.wins, losses:training.losses, draws:training.draws }))}</small></div><div><span>${esc(t('playerFile.tutorial'))}</span><strong>${esc(tutorial.matches)}</strong><small>${esc(t('playerFile.wld',{ wins:tutorial.wins, losses:tutorial.losses, draws:tutorial.draws }))}</small></div><div><span>${esc(t('playerFile.turnsPlayed'))}</span><strong>${esc(profile?.stats?.totalTurnsPlayed ?? 0)}</strong><small>${esc(t('playerFile.serverCounted'))}</small></div></div><div class="player-file-breakdown"><h3>${esc(t('playerFile.departmentUsageTitle'))}</h3>${departments.length ? departments.map(([department,value]) => `<div><strong>${esc(department)}</strong><span>${esc(value.matches ?? 0)} · ${esc(t('playerFile.wld',{ wins:value.wins ?? 0, losses:value.losses ?? 0, draws:value.draws ?? 0 }))}</span></div>`).join('') : `<p>${esc(t('playerFile.noDepartment'))}</p>`}</div></section>`;
+}
+
+function renderPlayerFile() {
+  const profile = state.serverProfile;
+  if (!profile) return `<section class="player-file-shell"><div class="player-file-empty"><strong>${esc(t('playerFile.loadFailed'))}</strong></div></section>`;
+  const sections = [['OVERVIEW','playerFile.tabs.overview'],['MATCH_HISTORY','playerFile.tabs.history'],['RANKED','playerFile.tabs.ranked'],['ACHIEVEMENTS','playerFile.tabs.achievements'],['STATS','playerFile.tabs.stats']];
+  const body = state.profileSection === 'MATCH_HISTORY' ? renderPlayerFileHistory(profile) : state.profileSection === 'RANKED' ? renderPlayerFileRanked(profile) : state.profileSection === 'ACHIEVEMENTS' ? renderPlayerFileAchievements(profile) : state.profileSection === 'STATS' ? renderPlayerFileStats(profile) : renderPlayerFileOverview(profile);
+  return `<section class="player-file-shell">${renderPlayerFileHeader(profile)}<nav class="player-file-tabs" aria-label="${esc(t('playerFile.tabsLabel'))}">${sections.map(([id,key]) => `<button class="${state.profileSection===id?'active':''}" data-profile-section="${id}">${esc(t(key))}</button>`).join('')}</nav>${state.profileMessage ? `<div class="player-file-message" role="status">${esc(state.profileMessage)}</div>` : ''}<main class="player-file-body">${body}</main><footer class="player-file-footer"><button class="ghost" id="playerFileBack">${esc(t('nav.backToLobby'))}</button><button class="player-file-link" id="playerFilePersonnel">${esc(t('playerFile.openPersonnel'))}</button></footer></section>`;
 }
 
 function renderAchievements() {
@@ -5942,6 +6087,7 @@ function renderLobby() {
            <button id="startTraining" class="desk-file-button bot-nav-button" type="button"><span>${esc(t('training.modeLabel'))}</span><strong>${esc(t('training.title'))}</strong><small>${esc(t('training.description'))}</small></button>
            <button id="startTutorial" class="desk-file-button bot-nav-button" type="button"><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><small>${esc(t('tutorial.description'))}</small></button>
            <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
+          <button id="openPlayerFile" class="desk-file-button profile-nav-button" type="button"><span>${esc(t('playerFile.kicker'))}</span><strong>${esc(t('playerFile.title'))}</strong><small>${esc(t('playerFile.shortDescription'))}</small></button>
           <button id="openPersonnel" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.ownedCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.personnel'))}</strong><small>${esc(t('cosmetics.equip'))}</small></button>
           <button id="openStore" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.shopCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.shop'))}</strong><small>${esc(t('cosmetics.buy'))}</small></button>
           <button id="openAchievements" class="desk-file-button progression-nav-button" type="button"><span>${esc(t('achievements.kicker'))}</span><strong>${esc(t('achievements.title'))}</strong><small>${esc(t('achievements.shortDescription'))}</small></button>
@@ -6029,6 +6175,7 @@ function renderLobby() {
   document.querySelector('#abandonRecentRoom')?.addEventListener('click', abandonRecentWaitingRoom);
   document.querySelector('#forgetRecentRoom')?.addEventListener('click', forgetRecentSession);
   document.querySelector('#openCollection').onclick = async () => { await enterAlphaDeckbuilder(); };
+  document.querySelector('#openPlayerFile')?.addEventListener('click',()=>enterPlayerFile());
   document.querySelector('#openPersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
   document.querySelector('#openStore')?.addEventListener('click',()=>enterCosmeticSurface('SHOP'));
   document.querySelector('#openAchievements')?.addEventListener('click', enterAchievements);
@@ -7002,6 +7149,17 @@ function render() {
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
   if (!state.session && state.mode === 'PERSONNEL') { app.innerHTML=renderPersonnelFile(); bindCosmeticSurface(); return; }
   if (!state.session && state.mode === 'SHOP') { app.innerHTML=renderCompanyStore(); bindCosmeticSurface(); return; }
+  if (!state.session && state.mode === 'PROFILE') {
+    app.innerHTML=renderPlayerFile();
+    document.querySelector('#playerFileBack')?.addEventListener('click',()=>{ state.mode='PLAY'; render(); });
+    document.querySelector('#playerFilePersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
+    document.querySelectorAll('[data-profile-section]').forEach((button)=>button.addEventListener('click',()=>{ state.profileSection=button.dataset.profileSection; render(); }));
+    document.querySelector('#profileHistoryMode')?.addEventListener('change',(event)=>{ state.historyFilter.mode=event.target.value; render(); });
+    document.querySelector('#profileHistoryOutcome')?.addEventListener('change',(event)=>{ state.historyFilter.outcome=event.target.value; render(); });
+    document.querySelector('#profileLoadMore')?.addEventListener('click',()=>{ state.profileHistoryLimit += 20; render(); });
+    document.querySelector('#profileOpenAchievements')?.addEventListener('click',enterAchievements);
+    return;
+  }
   if (!state.session && state.mode === 'ACHIEVEMENTS') { app.innerHTML=renderAchievements(); document.querySelector('#achievementsBack')?.addEventListener('click',()=>{ state.mode='PLAY'; render(); }); document.querySelector('#retryAchievements')?.addEventListener('click',enterAchievements); return; }
   if (!state.session) return renderLobby();
   if (!state.view) {

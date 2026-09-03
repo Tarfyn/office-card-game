@@ -7,7 +7,7 @@ const app = root("public/app.js");
 const css = root("public/styles.css");
 const packageJson = JSON.parse(root("package.json"));
 
-assert.equal(packageJson.version, "7.69.44");
+assert.equal(packageJson.version, "7.69.45");
 assert.match(app, /finishBadgePlacement = 'type-strip'/);
 assert.match(app, /finishBadgePlacement === 'artwork' \? finishBadge : ''/);
 assert.match(app, /renderCollectionCard[\s\S]*finishBadgePlacement:'artwork'/);

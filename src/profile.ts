@@ -4,32 +4,12 @@ import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedContentConfig, normalizeRankedProfile, rankedK, rankedStanding, ratingDelta, type PlayerRankedProfile, type RankedContentConfig, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
 import { normalizeProgressionConfig, processProgressionEvents, rewardGrantFromRewardItems, type ProgressionConfig, type ProgressionEvent } from "./progression.js";
 import { assertDeckInput, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
+import { createEmptyPlayerStats, DEFAULT_MATCH_HISTORY_LIMIT, normalizeMatchHistoryRecord, normalizePlayerStats, type MatchHistoryInput, type MatchHistoryRecord, type PlayerStats } from "./match-history.js";
 import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
 
-export type MatchHistoryOutcome = "WIN" | "LOSS" | "DRAW" | "RESIGN_LOSS";
-
-export interface PlayerMatchHistoryEntry {
-  roomId: string;
-  matchId: string;
-  mode: "FRIENDLY" | "RANKED" | "TRAINING" | "TUTORIAL";
-  outcome: MatchHistoryOutcome;
-  opponentName: string;
-  deckName: string;
-  opponentDeckName: string;
-  turns: number;
-  reason: string;
-  finishedAt: number;
-}
-
-export interface PlayerProfileStats {
-  matchesPlayed: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  resignLosses: number;
-  friendlyMatches: number;
-  rankedMatches: number;
-}
+export type MatchHistoryOutcome = import("./match-history.js").MatchHistoryOutcome;
+export type PlayerMatchHistoryEntry = MatchHistoryRecord;
+export type PlayerProfileStats = PlayerStats;
 
 export interface ServerPlayerProfile {
   /** Stable account identity. Credentials may rotate without changing this id. */
@@ -49,7 +29,7 @@ export interface ServerPlayerProfile {
   updatedAt: number;
 }
 
-type RawPersistedPlayerProfile = Partial<Omit<ServerPlayerProfile, "playerId" | "ranked">> & { playerId?: string; ranked?: Partial<PlayerRankedProfile> };
+type RawPersistedPlayerProfile = Omit<Partial<ServerPlayerProfile>, "playerId" | "ranked" | "stats" | "matchHistory"> & { playerId?: string; ranked?: Partial<PlayerRankedProfile>; stats?: Partial<PlayerStats>; matchHistory?: Array<Partial<MatchHistoryRecord>> };
 
 /** v3.7-v4.5 combined token+profile record, retained only for migration/back-compat. */
 export interface PersistedPlayerProfileRecord {
@@ -129,17 +109,6 @@ function cleanName(value: string | undefined, fallback: string): string {
   return name || fallback;
 }
 
-function emptyStats(): PlayerProfileStats {
-  return { matchesPlayed:0, wins:0, losses:0, draws:0, resignLosses:0, friendlyMatches:0, rankedMatches:0 };
-}
-
-function normalizeStats(value: Partial<PlayerProfileStats> | undefined): PlayerProfileStats {
-  const defaults = emptyStats();
-  const next = { ...defaults, ...(value ?? {}) };
-  for (const key of Object.keys(defaults) as Array<keyof PlayerProfileStats>) next[key] = Math.max(0, Number(next[key] ?? 0));
-  return next;
-}
-
 function normalizeProfile(profile: RawPersistedPlayerProfile, rankedConfig: RankedSystemConfig): ServerPlayerProfile {
   const playerId = String(profile.playerId ?? profile.profileId ?? "");
   const now = Number(profile.updatedAt) || Date.now();
@@ -148,9 +117,9 @@ function normalizeProfile(profile: RawPersistedPlayerProfile, rankedConfig: Rank
     profileId: playerId,
     displayName: cleanName(profile.displayName, `Employee ${playerId.slice(-4).toUpperCase() || "0001"}`),
     meta: normalizePlayerMetaProfile(profile.meta),
-    stats: normalizeStats(profile.stats),
+    stats: normalizePlayerStats(profile.stats, Number(rankedConfig.initialRating)),
     ranked: normalizeRankedProfile(profile.ranked, rankedConfig),
-    matchHistory: Array.isArray(profile.matchHistory) ? profile.matchHistory.map((entry) => structuredClone(entry)) : [],
+    matchHistory: Array.isArray(profile.matchHistory) ? profile.matchHistory.map((entry) => normalizeMatchHistoryRecord(entry as Partial<MatchHistoryRecord>)) : [],
     decks: Array.isArray(profile.decks) ? profile.decks.map((deck, index) => normalizePlayerDeck(deck, `deck-restored-${index + 1}`, now)) : [],
     selectedDeckId: profile.selectedDeckId == null ? null : String(profile.selectedDeckId),
     createdAt: Number(profile.createdAt) || now,
@@ -208,7 +177,7 @@ export class PlayerProfileService {
     this.legacyPersistence = options.persistence ?? null;
     this.playerPersistence = options.playerPersistence ?? null;
     this.credentialPersistence = options.credentialPersistence ?? null;
-    this.maxHistoryEntries = Math.max(1, Number(options.maxHistoryEntries ?? 30));
+    this.maxHistoryEntries = Math.max(1, Number(options.maxHistoryEntries ?? DEFAULT_MATCH_HISTORY_LIMIT));
     this.rankedConfig = normalizeRankedConfig(options.rankedConfig);
     this.starterCards = structuredClone(options.starterCards ?? []);
     this.startingOfficeCredits = Math.max(0, Math.floor(Number(options.startingOfficeCredits) || 0));
@@ -263,7 +232,7 @@ export class PlayerProfileService {
       profileId: playerId,
       displayName: cleanName(requestedName, `Employee ${suffix}`),
       meta,
-      stats: emptyStats(),
+      stats: createEmptyPlayerStats(this.rankedConfig.initialRating),
       ranked: createRankedProfile(this.rankedConfig),
       matchHistory: [],
       decks: [],
@@ -456,33 +425,57 @@ export class PlayerProfileService {
     return { profileToken:nextToken, profile:structuredClone(profile) };
   }
 
-  recordMatch(profileToken: string, entry: PlayerMatchHistoryEntry, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
+  recordMatch(profileToken: string, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
     return this.recordMatchForProfile(this.requireByToken(profileToken), entry, progressionEvents);
   }
 
-  recordMatchForPlayerId(playerId: string, entry: PlayerMatchHistoryEntry, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
+  recordMatchForPlayerId(playerId: string, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
     const profile = this.playersById.get(String(playerId));
     if (!profile) throw new Error("PLAYER_NOT_FOUND");
     return this.recordMatchForProfile(profile, entry, progressionEvents);
   }
 
-  private recordMatchForProfile(profile: ServerPlayerProfile, entry: PlayerMatchHistoryEntry, progressionEvents: ProgressionEvent[]): ServerPlayerProfile {
-    if (profile.matchHistory.some((existing) => existing.roomId === entry.roomId)) return structuredClone(profile);
-    profile.matchHistory.unshift(structuredClone(entry));
+  private recordMatchForProfile(profile: ServerPlayerProfile, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[]): ServerPlayerProfile {
+    const record = normalizeMatchHistoryRecord(entry);
+    if (profile.matchHistory.some((existing) => existing.matchId === record.matchId || existing.roomId === record.roomId)) return structuredClone(profile);
+    profile.matchHistory.unshift(structuredClone(record));
     profile.matchHistory = profile.matchHistory.slice(0, this.maxHistoryEntries);
-    if (entry.mode === "TRAINING" || entry.mode === "TUTORIAL") {
+    const bucket = record.mode === "TRAINING" ? profile.stats.training : record.mode === "TUTORIAL" ? profile.stats.tutorial : record.mode === "RANKED" ? profile.stats.ranked : profile.stats.pvp;
+    bucket.matches += 1;
+    if (record.result === "WIN") bucket.wins += 1;
+    else if (record.result === "DRAW") bucket.draws += 1;
+    else bucket.losses += 1;
+    profile.stats.totalTurnsPlayed += record.turns;
+    profile.stats.totalDurationMs += record.durationMs ?? 0;
+    const department = record.primaryDepartment || "MIXED";
+    const departmentTally = profile.stats.departmentUsage[department] ?? (profile.stats.departmentUsage[department] = { matches:0, wins:0, losses:0, draws:0 });
+    departmentTally.matches += 1;
+    if (record.result === "WIN") departmentTally.wins += 1;
+    else if (record.result === "DRAW") departmentTally.draws += 1;
+    else departmentTally.losses += 1;
+    const deckKey = record.selectedDeckId ?? `name:${record.deckName}`;
+    const deckTally = profile.stats.deckUsage[deckKey] ?? (profile.stats.deckUsage[deckKey] = { matches:0, wins:0, losses:0, draws:0, deckId:record.selectedDeckId, deckName:record.deckName });
+    deckTally.matches += 1;
+    if (record.result === "WIN") deckTally.wins += 1;
+    else if (record.result === "DRAW") deckTally.draws += 1;
+    else deckTally.losses += 1;
+    if (record.mode === "TRAINING" || record.mode === "TUTORIAL") {
       profile.updatedAt = this.nowFactory();
       this.persist();
       return structuredClone(profile);
     }
     profile.meta = processProgressionEvents(profile.meta, progressionEvents, this.progressionConfig, this.nowFactory()).profile;
     profile.stats.matchesPlayed += 1;
-    if (entry.outcome === "WIN") profile.stats.wins += 1;
-    else if (entry.outcome === "DRAW") profile.stats.draws += 1;
+    if (record.result === "WIN") profile.stats.wins += 1;
+    else if (record.result === "DRAW") profile.stats.draws += 1;
     else profile.stats.losses += 1;
-    if (entry.outcome === "RESIGN_LOSS") profile.stats.resignLosses += 1;
-    if (entry.mode === "RANKED") profile.stats.rankedMatches += 1;
-    else if (entry.mode === "FRIENDLY") profile.stats.friendlyMatches += 1;
+    if (record.outcome === "RESIGN_LOSS") profile.stats.resignLosses += 1;
+    if (record.mode === "RANKED") profile.stats.rankedMatches += 1;
+    else if (record.mode === "FRIENDLY") profile.stats.friendlyMatches += 1;
+    profile.stats.pvp.matches = profile.stats.matchesPlayed;
+    profile.stats.pvp.wins = profile.stats.wins;
+    profile.stats.pvp.losses = profile.stats.losses;
+    profile.stats.pvp.draws = profile.stats.draws;
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
@@ -532,6 +525,23 @@ export class PlayerProfileService {
       const nextStanding = rankedStanding(after, this.rankedContentConfig);
       ranked.tierId = nextStanding.tierId;
       ranked.division = nextStanding.division;
+      const rankLabel = (standing:{ tierId:string; division:string | null }) => standing.division ? `${standing.tierId} ${standing.division}` : standing.tierId;
+      const rankedStats = profile.stats.ranked;
+      rankedStats.currentMMR = after;
+      rankedStats.peakMMR = Math.max(rankedStats.peakMMR, after);
+      rankedStats.currentRank = rankLabel(nextStanding);
+      const nextRankOrder = this.rankedContentConfig.ranks.find((item) => item.id === nextStanding.tierId)?.order ?? 0;
+      const peakRankOrder = this.rankedContentConfig.ranks.find((item) => item.id === (rankedStats.peakRank?.split(" ")[0] ?? ""))?.order ?? 0;
+      if (!rankedStats.peakRank || nextRankOrder > peakRankOrder) rankedStats.peakRank = rankLabel(nextStanding);
+      const history = profile.matchHistory.find((item) => item.roomId === result.roomId || item.matchId === result.roomId);
+      if (history) {
+        history.ratingBefore = before;
+        history.ratingAfter = after;
+        history.ratingDelta = after - before;
+        history.rankBefore = rankLabel(previousStanding);
+        history.rankAfter = rankLabel(nextStanding);
+        history.seasonId = ranked.seasonId;
+      }
       const standingChanged = previousStanding.tierId !== nextStanding.tierId || previousStanding.division !== nextStanding.division;
       if (standingChanged) ranked.lastRankChangedAt = settledAt;
       const rankConfig = this.rankedContentConfig.ranks.find((item) => item.id === nextStanding.tierId);
@@ -621,7 +631,8 @@ export class PlayerProfileService {
         if (this.alphaPlaytest) profile = { ...profile, meta: applyAlphaPlaytestCosmeticGrant(profile.meta, this.nowFactory()) };
         const grantsBeforeMilestones = profile.meta.rewardGrants.length;
         profile = { ...profile, meta: applyLevelMilestoneRewards(profile.meta, this.levelMilestones, 0, profile.meta.progression.level, this.nowFactory()).profile };
-        migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length || profile.meta.rewardGrants.length !== grantsBeforeMilestones;
+        profile.matchHistory = profile.matchHistory.slice(0, this.maxHistoryEntries);
+        migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length || profile.meta.rewardGrants.length !== grantsBeforeMilestones || profile.matchHistory.length !== normalized.matchHistory.length;
         if (!profile.playerId) continue;
         this.normalizeRankedStanding(profile);
         this.playersById.set(profile.playerId, profile);
@@ -651,7 +662,8 @@ export class PlayerProfileService {
        if (this.alphaPlaytest) profile = { ...profile, meta: applyAlphaPlaytestCosmeticGrant(profile.meta, this.nowFactory()) };
        const grantsBeforeMilestones = profile.meta.rewardGrants.length;
        profile = { ...profile, meta: applyLevelMilestoneRewards(profile.meta, this.levelMilestones, 0, profile.meta.progression.level, this.nowFactory()).profile };
-       migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length || profile.meta.rewardGrants.length !== grantsBeforeMilestones;
+       profile.matchHistory = profile.matchHistory.slice(0, this.maxHistoryEntries);
+       migrated ||= profile.meta.profileVersion !== normalized.meta.profileVersion || profile.meta.rewardGrants.length !== normalized.meta.rewardGrants.length || profile.meta.rewardGrants.length !== grantsBeforeMilestones || profile.matchHistory.length !== normalized.matchHistory.length;
       if (!profile.playerId) continue;
       this.normalizeRankedStanding(profile);
       this.playersById.set(profile.playerId, profile);
