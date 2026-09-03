@@ -75,6 +75,7 @@
 // Regression compatibility marker: rooms.connectSeat(roomId, token)
 // Regression compatibility marker for earlier source-wiring tests: version: "4.0.0"
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,6 +97,9 @@ import { projectAchievements, normalizeProgressionConfig } from "../dist/src/pro
 import { aggregatePlaytestAnalytics, filterPlaytestRecords, normalizePlaytestFilter, playtestAnalyticsDimensions, playtestRecordsCsv, playtestCardActivityCsv } from "../dist/src/playtest-analytics.js";
 import { localJsonPersistence } from "./storage/local-json.mjs";
 import { PlaytestFeedbackStore } from "../dist/src/playtest-feedback.js";
+import { AccountError, PostgresAccountService, constantTimeEqualText, sessionCookie, sessionTokenFromRequest } from "./account-service.mjs";
+import { normalizePersistenceBackend } from "./storage/database-url.mjs";
+import { buildOperationsOverview, operationsSection } from "./operations-status.mjs";
 
 function cliValue(name) {
   const prefix = `--${name}=`;
@@ -111,6 +115,8 @@ const SERVER_MODE = PUBLIC_BASE_URL || !["127.0.0.1", "localhost", "::1"].includ
 // Explicit local Alpha QA switch; never accepted from a request and never enabled for NETWORK mode.
 const ALPHA_QA_EXECUTIVE_MATCH = SERVER_MODE === "LOCAL" && process.env.OCG_ALPHA_QA_EXECUTIVE === "1";
 const ADMIN_TOKEN = String(process.env.ADMIN_TOKEN ?? "").trim();
+const PROFILE_STORAGE_BACKEND = normalizePersistenceBackend(process.env.PROFILE_STORAGE_BACKEND);
+const DATABASE_REQUIRED = ["1","true","yes"].includes(String(process.env.DATABASE_REQUIRED ?? "0").toLowerCase());
 const TRUST_PROXY = ["1","true","yes"].includes(String(process.env.TRUST_PROXY ?? "").toLowerCase());
 const REQUIRE_HTTPS = ["1","true","yes"].includes(String(process.env.REQUIRE_HTTPS ?? (PUBLIC_BASE_URL.startsWith("https://") ? "1" : "0")).toLowerCase());
 const SSE_HEARTBEAT_MS = Math.max(5_000, Number(process.env.SSE_HEARTBEAT_MS ?? 15_000));
@@ -128,6 +134,7 @@ if (SERVER_MODE === "NETWORK" && PUBLIC_BASE_URL && !ADMIN_TOKEN) {
   throw new Error("ADMIN_TOKEN is required when PUBLIC_BASE_URL enables public server mode.");
 }
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
+const CUTOVER_MARKER_PATH = fileURLToPath(new URL("../deploy/postgres-persistence-ready", import.meta.url));
 const dataDir = fileURLToPath(new URL("../data/", import.meta.url));
 const economyConfig = JSON.parse(await readFile(join(dataDir, "economy.json"), "utf8"));
 const matchSettings = JSON.parse(await readFile(join(dataDir, "match-settings.json"), "utf8"));
@@ -159,7 +166,7 @@ const roomPersistence = localJsonPersistence(roomStorePath, "FILE_JSON_LOCAL");
 const matchmakingPersistence = localJsonPersistence(matchmakingStorePath, "FILE_JSON_LOCAL");
 const playtestFeedbackPersistence = localJsonPersistence(playtestFeedbackStorePath, "FILE_JSON_LOCAL");
 const playtestFeedback = new PlaytestFeedbackStore(playtestFeedbackPersistence);
-const profiles = new PlayerProfileService({
+const profileServiceOptions = {
   playerIdFactory: () => `player-${randomBytes(8).toString("hex")}`,
   tokenFactory: () => randomBytes(32).toString("base64url"),
   // Regression compatibility marker: persistence: profilePersistence
@@ -177,12 +184,101 @@ const profiles = new PlayerProfileService({
   ,progressionConfig: achievementConfig
   ,rankedContentConfig
   ,levelMilestones:economyConfig.progression?.levelMilestones ?? []
-});
+};
+const PRESERVED_PROFILE_MUTATION_ERRORS = new Set([
+  "COSMETIC_NOT_FOUND", "COSMETIC_NOT_IN_SHOP", "COSMETIC_ALREADY_OWNED", "COSMETIC_INSUFFICIENT_CREDITS",
+  "COSMETIC_NOT_OWNED", "COSMETIC_WRONG_SLOT", "COSMETIC_SLOT_INVALID", "COSMETIC_REQUIRED",
+  "DECK_UNKNOWN_CARD", "DECK_UNKNOWN_VARIANT", "DECK_MALFORMED", "DECK_COPY_LIMIT", "DECK_NOT_FOUND", "DECK_NOT_VALID", "DECK_NOT_OWNED", "DECK_CONFLICT",
+  "CARD_VARIANT_INVALID", "COLLECTION_FLOOR", "DECKS_AFFECTED_BY_SCRAP", "INSUFFICIENT_FUNDS", "PROFILE_MISMATCH",
+  "PLAYER_NOT_FOUND", "RANKED_SETTLEMENT_INCONSISTENT"
+]);
+// Once POSTGRES is explicitly enabled, legacy player JSON is archive material.
+// Guest Alpha profiles remain available in memory and may be re-seeded from the
+// browser, but this process never reads from or writes to the legacy stores.
+const guestProfileServiceOptions = PROFILE_STORAGE_BACKEND === "POSTGRES"
+  ? { ...profileServiceOptions, persistence:undefined, playerPersistence:undefined, credentialPersistence:undefined }
+  : profileServiceOptions;
+const profiles = new PlayerProfileService(guestProfileServiceOptions);
+
+function accountProfileScope(profile) {
+  const internalToken = "account-transaction-token";
+  let savedProfile = structuredClone(profile);
+  const scoped = new PlayerProfileService({
+    ...profileServiceOptions,
+    playerPersistence:{
+      storageLabel:"POSTGRES_TRANSACTION",
+      load:() => ({ version:3, players:[structuredClone(savedProfile)] }),
+      save:(snapshot) => { savedProfile = structuredClone(snapshot.players[0]); }
+    },
+    credentialPersistence:{
+      storageLabel:"POSTGRES_TRANSACTION",
+      load:() => ({ version:1, credentials:[{ kind:"GUEST_LOCAL", profileToken:internalToken, playerId:profile.playerId, createdAt:profile.createdAt, lastUsedAt:profile.updatedAt }] }),
+      save:() => {}
+    },
+    persistence:undefined,
+    playerIdFactory:() => profile.playerId,
+    tokenFactory:() => internalToken
+  });
+  return { service:scoped, token:internalToken, profile:() => scoped.get(internalToken) };
+}
+
+function accountProfilesScope(profileMap) {
+  const savedProfiles = new Map([...profileMap.entries()].map(([id, profile]) => [id, structuredClone(profile)]));
+  const credentials = [...savedProfiles.keys()].map((id) => ({
+    kind:"GUEST_LOCAL",
+    profileToken:`account-transaction-${id}`,
+    playerId:id,
+    createdAt:savedProfiles.get(id).createdAt,
+    lastUsedAt:savedProfiles.get(id).updatedAt
+  }));
+  const scoped = new PlayerProfileService({
+    ...profileServiceOptions,
+    persistence:undefined,
+    playerPersistence:{
+      storageLabel:"POSTGRES_TRANSACTION",
+      load:() => ({ version:3, players:[...savedProfiles.values()].map(structuredClone) }),
+      save:(snapshot) => {
+        savedProfiles.clear();
+        for (const profile of snapshot.players) savedProfiles.set(profile.playerId, structuredClone(profile));
+      }
+    },
+    credentialPersistence:{ storageLabel:"POSTGRES_TRANSACTION", load:() => ({ version:1, credentials }), save:() => {} }
+  });
+  return { service:scoped, profiles:() => new Map([...savedProfiles.entries()].map(([id, profile]) => [id, structuredClone(profile)])) };
+}
+
+function createFreshAccountProfile(userId) {
+  const memory = new PlayerProfileService({
+    ...profileServiceOptions,
+    persistence:undefined,
+    playerPersistence:undefined,
+    credentialPersistence:undefined,
+    playerIdFactory:() => userId
+  });
+  const profile = memory.create().profile;
+  profile.selectedDeckId = String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter");
+  return profile;
+}
+
+const accountService = PROFILE_STORAGE_BACKEND === "POSTGRES"
+  ? await new PostgresAccountService({
+      databaseUrl:String(process.env.DATABASE_URL ?? ""),
+      testDatabase:process.env.NODE_ENV === "test",
+      databaseRequired:DATABASE_REQUIRED,
+      migrationDir:fileURLToPath(new URL("../db/migrations/", import.meta.url)),
+      profileFactory:(userId) => createFreshAccountProfile(userId),
+      preserveMutationError:(error) => PRESERVED_PROFILE_MUTATION_ERRORS.has(error instanceof Error ? error.message : ""),
+      poolMax:Number(process.env.DB_POOL_MAX ?? 10),
+      connectionTimeoutMs:Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 5000),
+      idleTimeoutMs:Number(process.env.DB_IDLE_TIMEOUT_MS ?? 30000)
+    }).initialize()
+  : null;
 const matchmaking = new MatchmakingQueue({
   ticketIdFactory: () => `mm-${randomBytes(6).toString("hex")}`,
   persistence: matchmakingPersistence,
   candidateScore: (ticket, candidate, now) => {
     if (ticket.mode !== "RANKED") return 0;
+    if (ticket.payload?.storageKind !== candidate.payload?.storageKind) return null;
     const firstRating = Number(ticket.payload?.rankedRating ?? rankedConfig.initialRating);
     const secondRating = Number(candidate.payload?.rankedRating ?? rankedConfig.initialRating);
     const waitMs = Math.max(0, now - Math.min(ticket.createdAt, candidate.createdAt));
@@ -259,7 +355,7 @@ function progressionEventsForMatch({ roomId, matchId, mode, playerId, outcome, f
   return events;
 }
 
-function recordCompletedProfileMatches(completion) {
+async function recordCompletedProfileMatches(completion) {
   for (const playerId of ["P1", "P2"]) {
     const seat = completion.seats[playerId];
     if (!seat?.profileId) continue;
@@ -282,34 +378,88 @@ function recordCompletedProfileMatches(completion) {
       rewardEligible:completion.mode === "FRIENDLY" || completion.mode === "RANKED",
       completionReason:completion.reason, reason:completion.reason, completedAt:finishedAt, finishedAt
     };
-    profiles.recordMatchForPlayerId(seat.profileId, entry, progressionEventsForMatch({ roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, playerId, outcome, finishedAt }, replay));
+    await recordProfileForPlayerId(seat.profileId, (service) => ({
+      profile:service.recordMatchForPlayerId(seat.profileId, entry, progressionEventsForMatch({ roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, playerId, outcome, finishedAt }, replay))
+    }));
   }
 }
 
-function profileFromToken(profileToken) {
+async function profileForRequest(req, profileToken) {
+  const accountToken = accountService ? sessionTokenFromRequest(req) : "";
+  if (accountToken) return (await accountService.session(accountToken)).profile;
+  return profiles.get(String(profileToken ?? ""));
+}
+
+async function optionalProfileForRequest(req, profileToken) {
+  const accountToken = accountService ? sessionTokenFromRequest(req) : "";
+  if (accountToken) return (await accountService.session(accountToken)).profile;
   if (!profileToken) return null;
   return profiles.get(String(profileToken));
 }
 
-function profileIdentity(body) {
-  const profile = profileFromToken(body?.profileToken);
-  return profile ? { profileId: profile.playerId, displayName: profile.displayName, cosmeticLoadout:profile.meta?.cosmetics?.loadout ?? null } : {};
+async function mutateProfileForRequest(req, profileToken, mutation) {
+  const accountToken = accountService ? sessionTokenFromRequest(req) : "";
+  if (accountToken) {
+    return accountService.mutateProfile(accountToken, (profile) => {
+      const scope = accountProfileScope(profile);
+      const result = mutation(scope.service, scope.token);
+      return { ...result, profile:scope.profile() };
+    });
+  }
+  return mutation(profiles, String(profileToken ?? ""));
+}
+
+async function recordProfileForPlayerId(playerId, mutation) {
+  // Regression compatibility marker for the original guest flow: profiles.recordMatch
+  try {
+    const profile = profiles.getByPlayerId(playerId);
+    const tokenRecord = profiles.credentialSnapshot().credentials.find((credential) => credential.playerId === profile.playerId);
+    if (!tokenRecord) throw new Error("PLAYER_NOT_FOUND");
+    return mutation(profiles, tokenRecord.profileToken);
+  } catch (error) {
+    if ((error instanceof Error ? error.message : "") !== "PLAYER_NOT_FOUND" || !accountService) throw error;
+    return accountService.mutateProfileByPlayerId(playerId, (profile) => {
+      const scope = accountProfileScope(profile);
+      const result = mutation(scope.service, scope.token);
+      return { ...result, profile:scope.profile() };
+    });
+  }
 }
 
 function profileIdentityForProfile(profile) {
   return profile ? { profileId:profile.playerId, displayName:profile.displayName, cosmeticLoadout:profile.meta?.cosmetics?.loadout ?? null } : {};
 }
 
-function metaContext(body) {
-  const profile = profileFromToken(body?.profileToken);
-  if (profile) return { meta: profile.meta, commit: (meta) => profiles.updateMeta(String(body.profileToken), meta), serverProfile: profile };
-  if (body?.profile && typeof body.profile === "object") return { meta: body.profile, commit: null, serverProfile: null };
-  throw new Error("PROFILE_REQUIRED");
+async function mutateMetaForRequest(req, body, mutation) {
+  // Regression compatibility marker for the former v3.6 helper call: metaContext(body)
+  const hasPersistentIdentity = Boolean((accountService && sessionTokenFromRequest(req)) || body?.profileToken);
+  if (!hasPersistentIdentity) {
+    if (!body?.profile || typeof body.profile !== "object") throw new Error("PROFILE_REQUIRED");
+    return mutation({ meta:body.profile, serverProfile:null, service:null, token:null, commit:(meta) => ({ profile:meta, serverProfile:null }) });
+  }
+  return mutateProfileForRequest(req, body?.profileToken, (service, token) => {
+    const serverProfile = service.get(token);
+    return mutation({
+      meta:serverProfile.meta,
+      serverProfile,
+      service,
+      token,
+      commit:(meta) => {
+        const updated = service.updateMeta(token, meta);
+        return { profile:updated.meta, serverProfile:updated };
+      }
+    });
+  });
 }
 
-function commitMetaContext(context, meta) {
-  const serverProfile = context.commit ? context.commit(meta) : null;
-  return { profile: meta, serverProfile };
+async function roomSeatProfileForRequest(req, playerId) {
+  const accountToken = accountService ? sessionTokenFromRequest(req) : "";
+  if (accountToken) {
+    const current = await accountService.session(accountToken);
+    return current.profile.playerId === playerId ? current.profile : null;
+  }
+  try { return profiles.getByPlayerId(playerId); }
+  catch { return null; }
 }
 
 function matchmakingMode(value) {
@@ -330,15 +480,22 @@ const rooms = new RoomService({
   firstPlayerFactory: () => randomInt(2) === 0 ? "P1" : "P2",
   persistence: roomPersistence,
   timerProfiles: matchSettings.timerProfiles ?? [],
-  onMatchCompleted: recordCompletedProfileMatches
+  onMatchCompleted:(completion) => {
+    void recordCompletedProfileMatches(completion).catch((error) => console.error("Profile match completion failed", error instanceof AccountError ? error.code : "PROFILE_MATCH_COMPLETION_FAILED"));
+  }
 });
 
-const timerSweepInterval = setInterval(() => { rooms.tickTimers(); settleRankedRooms(); }, Number(matchSettings.timerRuntime?.sweepIntervalMs ?? 250));
+const sessionCleanupInterval = accountService ? setInterval(() => {
+  void accountService.cleanupExpiredSessions().catch((error) => console.error("Expired session cleanup failed", error instanceof AccountError ? error.code : "SESSION_CLEANUP_FAILED"));
+}, 60 * 60_000) : null;
+sessionCleanupInterval?.unref?.();
+
+const timerSweepInterval = setInterval(() => { rooms.tickTimers(); void settleRankedRooms(); }, Number(matchSettings.timerRuntime?.sweepIntervalMs ?? 250));
 const timerCheckpointInterval = setInterval(() => rooms.checkpointTimers(), Number(matchSettings.timerRuntime?.checkpointIntervalMs ?? 5000));
 timerSweepInterval.unref?.();
 timerCheckpointInterval.unref?.();
 
-function settleRankedRooms() {
+async function settleRankedRooms() {
   if (!rankedConfig.enabled) return;
   for (const result of rooms.listFinishedRankedResults()) {
     try {
@@ -352,7 +509,24 @@ function settleRankedRooms() {
       });
     } catch (error) {
       const code = error instanceof Error ? error.message : String(error);
-      if (!["PLAYER_NOT_FOUND"].includes(code)) console.error("Ranked settlement failed", result.roomId, error);
+      if (code === "PLAYER_NOT_FOUND" && accountService) {
+        try {
+          await accountService.mutateProfilesByPlayerIds([result.p1ProfileId, result.p2ProfileId], (profileMap) => {
+            const scope = accountProfilesScope(profileMap);
+            const receipt = scope.service.recordRankedMatch({
+              roomId:result.roomId,
+              p1PlayerId:result.p1ProfileId,
+              p2PlayerId:result.p2ProfileId,
+              winnerPlayerId:result.winnerProfileId,
+              reason:result.reason,
+              settledAt:result.endedAt ?? Date.now()
+            });
+            return { ...receipt, profiles:scope.profiles() };
+          });
+        } catch (accountError) {
+          console.error("Ranked account settlement failed", result.roomId, accountError instanceof AccountError ? accountError.code : "RANKED_SETTLEMENT_FAILED");
+        }
+      } else if (code !== "PLAYER_NOT_FOUND") console.error("Ranked settlement failed", result.roomId, code);
     }
   }
 }
@@ -361,13 +535,14 @@ function rankedResultForRoom(profile, roomId) {
   return profile?.ranked?.recentResults?.find((item) => item.roomId === roomId) ?? null;
 }
 
-function matchmakingPayload(profile, deckSelection, mode) {
+function matchmakingPayload(profile, deckSelection, mode, storageKind) {
   return {
     deckSelection,
     displayName:profile.displayName,
     cosmeticLoadout:structuredClone(profile.meta?.cosmetics?.loadout ?? null),
     rankedRating: mode === "RANKED" ? Number(profile.ranked?.rating ?? rankedConfig.initialRating) : null,
-    rankedStatus: mode === "RANKED" ? String(profile.ranked?.status ?? "PLACEMENT") : null
+    rankedStatus: mode === "RANKED" ? String(profile.ranked?.status ?? "PLACEMENT") : null,
+    storageKind
   };
 }
 
@@ -391,6 +566,7 @@ function securityHeaders() {
 }
 
 const rateBuckets = new Map();
+const authRateBuckets = new Map();
 function forwardedHeader(req, name) {
   const value = String(req.headers[name] ?? "").split(",")[0]?.trim();
   return TRUST_PROXY ? value : "";
@@ -412,6 +588,23 @@ function enforceRateLimit(req, path) {
   bucket.count += 1;
   if (bucket.count > limit) throw new RoomError("RATE_LIMITED", "Too many requests. Please wait a moment and retry.");
 }
+function enforceAuthRateLimit(req, path) {
+  const policy = path === "/api/auth/register"
+    ? { limit:5, windowMs:15 * 60_000 }
+    : path === "/api/auth/login"
+      ? { limit:10, windowMs:10 * 60_000 }
+      : null;
+  if (!policy) return;
+  const key = `${clientIp(req)}:${path}`;
+  const now = Date.now();
+  const bucket = authRateBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    authRateBuckets.set(key, { count:1, resetAt:now + policy.windowMs });
+    return;
+  }
+  bucket.count += 1;
+  if (bucket.count > policy.limit) throw new RoomError("RATE_LIMITED", "Too many authentication attempts. Please wait and retry.");
+}
 function validateRequestOrigin(req) {
   if (SERVER_MODE !== "NETWORK") return;
   const host = requestHost(req);
@@ -419,7 +612,22 @@ function validateRequestOrigin(req) {
   const origin = String(req.headers.origin ?? "");
   if (origin && ALLOWED_ORIGINS.size && !ALLOWED_ORIGINS.has(origin)) throw new RoomError("ORIGIN_NOT_ALLOWED", "Request origin is not allowed.");
 }
-function adminOpsSnapshot() {
+function validateAuthenticatedMutation(req, path) {
+  if (["GET","HEAD","OPTIONS"].includes(req.method ?? "GET")) return;
+  const usesAccountCookie = Boolean(accountService && sessionTokenFromRequest(req));
+  const isAuthWrite = path === "/api/auth/register" || path === "/api/auth/login";
+  if (!usesAccountCookie && !isAuthWrite) return;
+  const contentType = String(req.headers["content-type"] ?? "").toLowerCase();
+  if (!contentType.startsWith("application/json")) throw new RoomError("CONTENT_TYPE_REQUIRED", "JSON content type is required.");
+  if (SERVER_MODE !== "NETWORK") return;
+  const source = String(req.headers.origin ?? req.headers.referer ?? "");
+  if (!source) throw new RoomError("ORIGIN_REQUIRED", "A same-origin request is required.");
+  let sourceOrigin = "";
+  try { sourceOrigin = new URL(source).origin; } catch { throw new RoomError("ORIGIN_NOT_ALLOWED", "Request origin is not allowed."); }
+  const expectedOrigin = PUBLIC_BASE_URL ? new URL(PUBLIC_BASE_URL).origin : `${requestProto(req)}://${requestHost(req)}`;
+  if (!expectedOrigin || sourceOrigin !== expectedOrigin) throw new RoomError("ORIGIN_NOT_ALLOWED", "Request origin is not allowed.");
+}
+async function adminOpsSnapshot() {
   const now = Date.now();
   const records = rooms.listPlaytestRecords();
   const tickets = matchmaking.snapshot().tickets;
@@ -429,13 +637,29 @@ function adminOpsSnapshot() {
     endedMatches: records.filter((room) => room.status === "ENDED").length,
     queuedFriendly: tickets.filter((ticket) => ticket.status === "WAITING" && ticket.mode === "FRIENDLY").length,
     queuedRanked: tickets.filter((ticket) => ticket.status === "WAITING" && ticket.mode === "RANKED").length,
-    profiles: profiles.playerSnapshot().players.length
+    guestProfiles: profiles.playerSnapshot().players.length
   };
+  const persistence = accountService
+    ? await accountService.operationsStatus()
+    : {
+        backend:"FILE_JSON_LOCAL",
+        database:{ reachable:null, version:null },
+        migrations:{ current:null, applied:null, required:null },
+        readiness:{ ok:!shuttingDown, status:shuttingDown ? "SHUTTING_DOWN" : "READY" },
+        legacyImport:{ state:"NOT_REQUIRED_ALPHA_RESET" },
+        counts:{ accounts:null, profiles:null },
+        diagnostics:[]
+      };
   return {
     generatedAt: now,
     version: "7.69.50",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
-    server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), runtimeDir:RUNTIME_DIR, publicBaseUrl:PUBLIC_BASE_URL || null, shuttingDown },
+    server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
+    persistence:{
+      ...persistence,
+      backups:{ legacyLastSuccessfulAt:null, postgresLastSuccessfulAt:null, retentionDays:30, timerStatus:"UNAVAILABLE_TO_APPLICATION" },
+      cutover:{ state:PROFILE_STORAGE_BACKEND === "POSTGRES" ? (persistence.readiness.ok ? "POSTGRES_ACTIVE" : "POSTGRES_NOT_READY") : "FILE_JSON_AUTHORITATIVE", databaseRequired:DATABASE_REQUIRED }
+    },
     counts,
     rooms: records.slice().sort((a,b) => b.createdAt-a.createdAt).slice(0,60).map((room) => ({ roomId:room.roomId, matchId:room.matchId, status:room.status, mode:room.mode, createdAt:room.createdAt, startedAt:room.startedAt, endedAt:room.endedAt, turns:room.turns, winnerId:room.winnerId, reason:room.reason, seats:room.seats })),
     queue: tickets.filter((ticket) => ticket.status === "WAITING").sort((a,b) => a.createdAt-b.createdAt).map((ticket) => ({ ticketId:ticket.ticketId, mode:ticket.mode, status:ticket.status, createdAt:ticket.createdAt, waitMs:Math.max(0,now-ticket.createdAt) }))
@@ -445,16 +669,48 @@ function adminOpsSnapshot() {
 function requireAdmin(req) {
   if (SERVER_MODE === "LOCAL" && !ADMIN_TOKEN) return;
   const supplied = bearerToken(req) || String(req.headers["x-admin-token"] ?? "");
-  if (!ADMIN_TOKEN || supplied !== ADMIN_TOKEN) throw new RoomError("ADMIN_REQUIRED", "Administrator authorization is required.");
+  if (!ADMIN_TOKEN || !constantTimeEqualText(supplied, ADMIN_TOKEN)) throw new RoomError("ADMIN_REQUIRED", "Administrator authorization is required.");
 }
 
-function json(res, status, body) {
+async function operationsOverview() {
+  const persistence = accountService
+    ? await accountService.operationsStatus()
+    : {
+        backend:"FILE_JSON_LOCAL",
+        database:{ configured:false, reachable:null, version:null, schemaReady:null, pool:{ active:null, idle:null, waiting:null, max:null } },
+        migrations:{ current:null, applied:null, required:null, pending:[], changed:[], unknown:[] },
+        readiness:{ ok:!shuttingDown, status:shuttingDown ? "SHUTTING_DOWN" : "READY" },
+        legacyImport:{ state:"NOT_REQUIRED_ALPHA_RESET" },
+        accounts:{ total:null, profiles:null, activeSessions:null, expiredSessions:null, revokedSessions:null, disabled:null, registrationsLast7Days:null, recent:[], recentProfiles:[] },
+        progression:{ levels:[], rankedTiers:[], achievementsCompleted:null, rewardGrants:null, economy:{ officeCredits:null, scrap:null } },
+        diagnostics:[]
+      };
+  return buildOperationsOverview({
+    generatedAt:Date.now(), version:"7.69.46", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
+    shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
+    legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
+    cutoverMarkerPresent:existsSync(CUTOVER_MARKER_PATH),
+    backups:{
+      database:{ status:"UNAVAILABLE" }, legacy:{ status:"UNAVAILABLE" },
+      retentionDays:30, timerStatus:"UNAVAILABLE"
+    }
+  });
+}
+
+async function requireOperationsAccount(req) {
+  if (!accountService) throw new AccountError("AUTH_REQUIRED", "Sign in with an Operations account.");
+  return accountService.requireOperationsSession(sessionTokenFromRequest(req));
+}
+
+function json(res, status, body, extraHeaders = {}) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(payload),
     "cache-control": "no-store",
-    ...securityHeaders()
+    ...securityHeaders(),
+    ...extraHeaders
   });
   res.end(payload);
 }
@@ -472,14 +728,19 @@ function text(res, status, body, contentType = "text/plain; charset=utf-8", extr
 }
 
 function errorResponse(res, error) {
+  if (error instanceof AccountError) {
+    const status = ["AUTH_REQUIRED","AUTH_INVALID"].includes(error.code) ? 401 : error.code === "OPS_FORBIDDEN" ? 403 : error.code === "AUTH_BUSY" ? 429 : error.code === "EMAIL_ALREADY_REGISTERED" ? 409 : ["EMAIL_INVALID","PASSWORD_INVALID"].includes(error.code) ? 400 : error.code === "PLAYER_NOT_FOUND" ? 404 : 503;
+    return json(res, status, { error:{ code:error.code, message:error.message } });
+  }
   if (error instanceof RoomError) {
-    const status = error.code === "ROOM_NOT_FOUND" ? 404 : ["INVALID_TOKEN","ADMIN_REQUIRED"].includes(error.code) ? 401 : ["PROFILE_NOT_IN_ROOM","HOST_NOT_ALLOWED","ORIGIN_NOT_ALLOWED","HTTPS_REQUIRED"].includes(error.code) ? 403 : error.code === "RATE_LIMITED" ? 429 : error.code === "REPLAY_NOT_AVAILABLE" ? 409 : error.code === "SESSION_SUPERSEDED" ? 409 : 400;
+    const status = error.code === "ROOM_NOT_FOUND" ? 404 : ["INVALID_TOKEN","ADMIN_REQUIRED"].includes(error.code) ? 401 : ["PROFILE_NOT_IN_ROOM","HOST_NOT_ALLOWED","ORIGIN_REQUIRED","ORIGIN_NOT_ALLOWED","HTTPS_REQUIRED"].includes(error.code) ? 403 : error.code === "RATE_LIMITED" ? 429 : error.code === "REPLAY_NOT_AVAILABLE" ? 409 : error.code === "SESSION_SUPERSEDED" ? 409 : 400;
     json(res, status, { error: { code: error.code, message: error.message } });
     return;
   }
   const code = error instanceof Error ? error.message : "";
   if (["INVALID_PROFILE_TOKEN", "PROFILE_REQUIRED"].includes(code)) return json(res, 401, { error:{ code, message: code === "PROFILE_REQUIRED" ? "A playtest profile is required." : "Profile token is invalid or expired." } });
-  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","DECK_CONFLICT"].includes(code)) return json(res, code === "DECK_CONFLICT" ? 409 : 400, { error:{ code, message: code } });
+  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_UNKNOWN_VARIANT","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","CARD_VARIANT_INVALID","COLLECTION_FLOOR","INSUFFICIENT_FUNDS"].includes(code)) return json(res, 400, { error:{ code, message:code } });
+  if (["DECK_CONFLICT","DECKS_AFFECTED_BY_SCRAP","RANKED_SETTLEMENT_INCONSISTENT"].includes(code)) return json(res, 409, { error:{ code, message:code } });
   if (code === "PROFILE_MISMATCH") return json(res, 403, { error:{ code, message:"This room seat belongs to a different playtest profile." } });
   if (code === "MATCHMAKING_TICKET_NOT_FOUND") return json(res, 404, { error:{ code, message:"Matchmaking ticket not found." } });
   if (code === "MATCHMAKING_TICKET_FORBIDDEN") return json(res, 403, { error:{ code, message:"This matchmaking ticket belongs to another profile." } });
@@ -642,13 +903,67 @@ const server = createServer(async (req, res) => {
     enforceHttps(req);
     validateRequestOrigin(req);
     enforceRateLimit(req, path);
+    enforceAuthRateLimit(req, path);
+    validateAuthenticatedMutation(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.50", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, runtimeDir:RUNTIME_DIR, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
-    if (req.method === "GET" && path === "/api/ready") return json(res, shuttingDown ? 503 : 200, { ok:!shuttingDown, version:"7.69.50", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : "READY", roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.50", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/ready") {
+      const database = accountService ? await accountService.checkReadiness() : null;
+      const ok = !shuttingDown && (!accountService || database.ok);
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.50", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+    }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
-      return json(res, 200, { ops:adminOpsSnapshot() });
+      return json(res, 200, { ops:await adminOpsSnapshot() });
+    }
+    if (req.method === "GET" && path === "/api/ops/overview") {
+      await requireOperationsAccount(req);
+      return json(res, 200, { ops:await operationsOverview() });
+    }
+    const opsSectionMatch = /^\/api\/ops\/(system|persistence|database|backups|accounts|progression|diagnostics|cutover)$/.exec(path);
+    if (req.method === "GET" && opsSectionMatch) {
+      await requireOperationsAccount(req);
+      return json(res, 200, operationsSection(await operationsOverview(), opsSectionMatch[1]));
+    }
+    if (req.method === "GET" && path === "/ops") {
+      await requireOperationsAccount(req);
+      return serveStatic(req, res, "/");
+    }
+    if (req.method === "GET" && path === "/api/auth/current") {
+      if (!accountService) return json(res, 200, { mode:"GUEST", account:null, accountPersistenceConfigured:false, accountPersistenceAvailable:false });
+      const token = sessionTokenFromRequest(req);
+      if (!token) return json(res, 200, { mode:"GUEST", account:null, accountPersistenceConfigured:true, accountPersistenceAvailable:accountService.readyState.ok === true });
+      try {
+        const current = await accountService.session(token);
+        return json(res, 200, { mode:"ACCOUNT", account:current.account, profile:current.profile, expiresAt:current.session.expiresAt, accountPersistenceConfigured:true, accountPersistenceAvailable:true });
+      } catch (error) {
+        if (!(error instanceof AccountError) || error.code !== "AUTH_REQUIRED") throw error;
+        return json(res, 200, { mode:"GUEST", account:null, expired:true, accountPersistenceConfigured:true, accountPersistenceAvailable:true }, { "set-cookie":sessionCookie("", { clear:true, secure:SERVER_MODE === "NETWORK" }) });
+      }
+    }
+    if (req.method === "POST" && path === "/api/auth/register") {
+      if (!accountService) throw new AccountError("ACCOUNT_PERSISTENCE_UNAVAILABLE", "Account registration is not enabled on this server.");
+      const body = await readJson(req);
+      const created = await accountService.register(body?.email, body?.password);
+      return json(res, 201, { mode:"ACCOUNT", account:created.account, profile:created.profile, expiresAt:created.expiresAt }, { "set-cookie":sessionCookie(created.sessionToken, { secure:SERVER_MODE === "NETWORK" }) });
+    }
+    if (req.method === "POST" && path === "/api/auth/login") {
+      if (!accountService) throw new AccountError("ACCOUNT_PERSISTENCE_UNAVAILABLE", "Account login is not enabled on this server.");
+      const body = await readJson(req);
+      let loggedIn;
+      try { loggedIn = await accountService.login(body?.email, body?.password); }
+      catch (error) {
+        console.warn("Account login rejected", error instanceof AccountError ? error.code : "AUTH_SUBSYSTEM_FAILURE");
+        throw error;
+      }
+      const current = await accountService.session(loggedIn.sessionToken, { touch:false });
+      return json(res, 200, { mode:"ACCOUNT", account:loggedIn.account, profile:current.profile, expiresAt:loggedIn.expiresAt }, { "set-cookie":sessionCookie(loggedIn.sessionToken, { secure:SERVER_MODE === "NETWORK" }) });
+    }
+    if (req.method === "POST" && path === "/api/auth/logout") {
+      const token = accountService ? sessionTokenFromRequest(req) : "";
+      if (accountService && token) await accountService.logout(token);
+      return json(res, 200, { mode:"GUEST", account:null }, { "set-cookie":sessionCookie("", { clear:true, secure:SERVER_MODE === "NETWORK" }) });
     }
     if (req.method === "GET" && path === "/api/presets") return json(res, 200, { presets: rooms.listPresets() });
     if (req.method === "GET" && path === "/api/catalog") return json(res, 200, { cards: publicCatalog() });
@@ -660,13 +975,13 @@ const server = createServer(async (req, res) => {
 
     const feedbackMatch = /^\/api\/playtest\/feedback\/([^/]+)$/.exec(path);
     if (feedbackMatch && req.method === "GET") {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       rooms.getReplayForProfile(feedbackMatch[1].toUpperCase(), profile.playerId);
       return json(res, 200, { feedback:playtestFeedback.get(feedbackMatch[1], profile.playerId) });
     }
     if (feedbackMatch && req.method === "POST") {
       const body = await readJson(req);
-      const profile = profiles.get(String(body.profileToken ?? ""));
+      const profile = await profileForRequest(req, body?.profileToken);
       const replay = rooms.getReplayForProfile(feedbackMatch[1].toUpperCase(), profile.playerId);
       const feedback = playtestFeedback.upsert(replay.roomId, profile.playerId, body.feedback ?? {});
       return json(res, 200, { feedback });
@@ -728,44 +1043,54 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && path === "/api/profiles/me") {
-      const profile = profiles.get(profileTokenFrom(req, url));
-      return json(res, 200, { profile, storage:profiles.playerStorageLabel, account:{ playerId:profile.playerId, authMode:profiles.authMode } });
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
+      const authenticated = Boolean(accountService && sessionTokenFromRequest(req));
+      return json(res, 200, { profile, storage:authenticated ? "POSTGRES" : profiles.playerStorageLabel, account:{ playerId:profile.playerId, authMode:authenticated ? "ACCOUNT_SESSION" : profiles.authMode } });
     }
 
     if (req.method === "GET" && path === "/api/profiles/me/match-history") {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       return json(res, 200, { history:profile.matchHistory, stats:profile.stats, ranked:profile.ranked });
     }
 
     if (req.method === "GET" && path === "/api/profiles/me/achievements") {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       return json(res, 200, { achievements:projectAchievements(achievementConfig, profile.meta), profile:profile.meta.achievements, ranked:profile.ranked });
     }
 
     if (req.method === "GET" && path === "/api/profiles/me/decks") {
       const profileToken = profileTokenFrom(req, url);
-      profiles.get(profileToken);
-      return json(res, 200, profiles.listDecks(profileToken));
+      const profile = await profileForRequest(req, profileToken);
+      const scope = accountProfileScope(profile);
+      return json(res, 200, scope.service.listDecks(scope.token));
     }
 
     if (req.method === "POST" && path === "/api/profiles/me/decks") {
       const body = await readJson(req);
       const profileToken = profileTokenFrom(req, url, body);
-      const profile = profiles.createDeck(profileToken, { id:body?.id, name:body?.name, cards:body?.cards, source:body?.source === "import" ? "import" : "player" });
-      return json(res, 201, { profile, decks:profiles.listDecks(profileToken) });
+      const result = await mutateProfileForRequest(req, profileToken, (service, token) => {
+        const profile = service.createDeck(token, { id:body?.id, name:body?.name, cards:body?.cards, source:body?.source === "import" ? "import" : "player" });
+        return { profile, decks:service.listDecks(token) };
+      });
+      return json(res, 201, result);
     }
 
     if (req.method === "POST" && path === "/api/profiles/me/decks/import") {
       const body = await readJson(req);
       const profileToken = profileTokenFrom(req, url, body);
-      const result = profiles.importDecks(profileToken, Array.isArray(body?.decks) ? body.decks : []);
-      return json(res, 200, { ...result, decks:profiles.listDecks(profileToken) });
+      const result = await mutateProfileForRequest(req, profileToken, (service, token) => {
+        const imported = service.importDecks(token, Array.isArray(body?.decks) ? body.decks : []);
+        return { ...imported, decks:service.listDecks(token) };
+      });
+      return json(res, 200, result);
     }
 
     const deckValidateMatch = /^\/api\/profiles\/me\/decks\/([^/]+)\/validate$/.exec(path);
     if (req.method === "GET" && deckValidateMatch) {
       const profileToken = profileTokenFrom(req, url);
-      const listed = profiles.listDecks(profileToken);
+      const profile = await profileForRequest(req, profileToken);
+      const scope = accountProfileScope(profile);
+      const listed = scope.service.listDecks(scope.token);
       const deck = listed.decks.find((item) => item.id === decodeURIComponent(deckValidateMatch[1]));
       if (!deck) return json(res, 404, { error:{ code:"DECK_NOT_FOUND", message:"Saved deck not found." } });
       return json(res, 200, { deck });
@@ -775,10 +1100,13 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && deckDuplicateMatch) {
       const body = await readJson(req);
       const profileToken = profileTokenFrom(req, url, body);
-      const source = profiles.get(profileToken).decks.find((item) => item.id === decodeURIComponent(deckDuplicateMatch[1]));
-      if (!source) return json(res, 404, { error:{ code:"DECK_NOT_FOUND", message:"Saved deck not found." } });
-      const profile = profiles.createDeck(profileToken, { name:body?.name ?? `${source.name} Copy`, cards:source.cards, source:"player" });
-      return json(res, 201, { profile, decks:profiles.listDecks(profileToken) });
+      const result = await mutateProfileForRequest(req, profileToken, (service, token) => {
+        const source = service.get(token).decks.find((item) => item.id === decodeURIComponent(deckDuplicateMatch[1]));
+        if (!source) throw new Error("DECK_NOT_FOUND");
+        const profile = service.createDeck(token, { name:body?.name ?? `${source.name} Copy`, cards:source.cards, source:"player" });
+        return { profile, decks:service.listDecks(token) };
+      });
+      return json(res, 201, result);
     }
 
     const deckMatch = /^\/api\/profiles\/me\/decks\/([^/]+)$/.exec(path);
@@ -787,67 +1115,79 @@ const server = createServer(async (req, res) => {
       const body = req.method === "DELETE" ? {} : await readJson(req);
       const profileToken = profileTokenFrom(req, url, body);
       if (req.method === "DELETE") {
-        const profile = profiles.deleteDeck(profileToken, deckId);
-        return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
+        const result = await mutateProfileForRequest(req, profileToken, (service, token) => {
+          const profile = service.deleteDeck(token, deckId);
+          return { profile, decks:service.listDecks(token) };
+        });
+        return json(res, 200, result);
       }
-      const current = profiles.get(profileToken).decks.find((item) => item.id === deckId);
-      if (!current) return json(res, 404, { error:{ code:"DECK_NOT_FOUND", message:"Saved deck not found." } });
-      const profile = profiles.updateDeck(profileToken, deckId, { name:body?.name, cards:body?.cards }, body?.expectedRevision);
-      return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
+      const result = await mutateProfileForRequest(req, profileToken, (service, token) => {
+        const profile = service.updateDeck(token, deckId, { name:body?.name, cards:body?.cards }, body?.expectedRevision);
+        return { profile, decks:service.listDecks(token) };
+      });
+      return json(res, 200, result);
     }
 
     if (req.method === "POST" && path === "/api/profiles/me/decks/select") {
       const body = await readJson(req);
       const profileToken = profileTokenFrom(req, url, body);
       const deckId = String(body?.deckId ?? "");
-      const current = profiles.get(profileToken);
-      if (current.decks.some((deck) => deck.id === deckId)) {
-        const profile = profiles.selectDeck(profileToken, deckId);
-        return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
-      }
-      if (!alphaDeckPresets[deckId]) throw new RoomError("INVALID_DECK", "Unknown deck preset.");
-      validateOwnedDeck(current, deckId);
-      const profile = profiles.setSelectedDeck(profileToken, deckId);
-      return json(res, 200, { profile, decks:profiles.listDecks(profileToken) });
+      const result = await mutateProfileForRequest(req, profileToken, (service, token) => {
+        const current = service.get(token);
+        if (current.decks.some((deck) => deck.id === deckId)) {
+          const profile = service.selectDeck(token, deckId);
+          return { profile, decks:service.listDecks(token) };
+        }
+        if (!alphaDeckPresets[deckId]) throw new RoomError("INVALID_DECK", "Unknown deck preset.");
+        validateOwnedDeck(current, deckId);
+        const profile = service.setSelectedDeck(token, deckId);
+        return { profile, decks:service.listDecks(token) };
+      });
+      return json(res, 200, result);
     }
 
     if (req.method === "GET" && path === "/api/cosmetics/personnel") {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       const cosmetics = profile.meta.cosmetics;
       const owned = sortCosmeticItems(cosmetics.owned.map((grant) => ({ ...grant, definition:COSMETIC_CATALOG[grant.cosmeticId] })).filter((item) => item.definition), rankedContentConfig.ranks);
       return json(res, 200, { owned, loadout:cosmetics.loadout, officeCredits:Number(profile.meta.balances.OFFICE_CREDITS ?? 0) });
     }
 
     if (req.method === "GET" && path === "/api/cosmetics/shop") {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       const ownedIds = new Set(profile.meta.cosmetics.owned.map((grant) => grant.cosmeticId));
       const items = COSMETIC_SHOP_CATALOG.map((entry) => ({ ...entry, owned:ownedIds.has(entry.cosmeticId), definition:COSMETIC_CATALOG[entry.cosmeticId] })).filter((item) => item.definition);
       return json(res, 200, { items, loadout:profile.meta.cosmetics.loadout, officeCredits:Number(profile.meta.balances.OFFICE_CREDITS ?? 0) });
     }
 
+    // Regression compatibility markers for the pre-account guest wiring:
+    // profiles.purchaseCosmetic / profiles.equipCosmetic
     if (req.method === "POST" && path === "/api/cosmetics/shop/purchase") {
       const body = await readJson(req);
-      const profile = profiles.purchaseCosmetic(String(body?.profileToken ?? profileTokenFrom(req, url)), String(body?.cosmeticId ?? ""));
+      const result = await mutateProfileForRequest(req, body?.profileToken ?? profileTokenFrom(req, url), (service, token) => ({ profile:service.purchaseCosmetic(token, String(body?.cosmeticId ?? "")) }));
       const shop = COSMETIC_SHOP_CATALOG.find((entry) => entry.cosmeticId === String(body?.cosmeticId ?? ""));
-      return json(res, 200, { profile, cosmeticId:String(body?.cosmeticId ?? ""), price:shop?.price ?? null });
+      return json(res, 200, { ...result, cosmeticId:String(body?.cosmeticId ?? ""), price:shop?.price ?? null });
     }
 
     if (req.method === "POST" && path === "/api/cosmetics/equip") {
       const body = await readJson(req);
-      const profile = profiles.equipCosmetic(String(body?.profileToken ?? profileTokenFrom(req, url)), String(body?.slot ?? "") , body?.cosmeticId == null ? null : String(body.cosmeticId));
-      return json(res, 200, { profile, loadout:profile.meta.cosmetics.loadout });
+      const result = await mutateProfileForRequest(req, body?.profileToken ?? profileTokenFrom(req, url), (service, token) => {
+        const profile = service.equipCosmetic(token, String(body?.slot ?? ""), body?.cosmeticId == null ? null : String(body.cosmeticId));
+        return { profile, loadout:profile.meta.cosmetics.loadout };
+      });
+      return json(res, 200, result);
     }
 
     const replayMatch = /^\/api\/profiles\/me\/matches\/([^/]+)\/replay$/.exec(path);
     if (req.method === "GET" && replayMatch) {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       const replay = rooms.getReplayForProfile(replayMatch[1].toUpperCase(), profile.playerId);
       return json(res, 200, { replay });
     }
 
     const replayExportMatch = /^\/api\/profiles\/me\/matches\/([^/]+)\/replay\/export$/.exec(path);
     if (req.method === "GET" && replayExportMatch) {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       const replay = rooms.getReplayForProfile(replayExportMatch[1].toUpperCase(), profile.playerId);
       const payload = JSON.stringify({ exportedAt:Date.now(), replay }, null, 2);
       return text(res, 200, payload, "application/json; charset=utf-8", { "content-disposition": `attachment; filename="office-card-game-replay-${replay.roomId}-v4.4.json"` });
@@ -855,81 +1195,87 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && path === "/api/profiles/me/guest-credential/rotate") {
       const body = await readJson(req);
+      if (accountService && sessionTokenFromRequest(req)) return json(res, 400, { error:{ code:"ACCOUNT_SESSION_ACTIVE", message:"Account sessions are managed with login and logout." } });
       const rotated = profiles.rotateGuestCredential(String(body?.profileToken ?? ""));
       return json(res, 200, { ...rotated, storage:profiles.playerStorageLabel, account:{ playerId:rotated.profile.playerId, authMode:profiles.authMode } });
     }
 
     if (req.method === "POST" && path === "/api/profiles/me/name") {
       const body = await readJson(req);
-      const profile = profiles.updateName(String(body?.profileToken ?? ""), String(body?.displayName ?? ""));
-      return json(res, 200, { profile, storage:profiles.playerStorageLabel });
+      const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => ({ profile:service.updateName(token, String(body?.displayName ?? "")) }));
+      return json(res, 200, { ...result, storage:accountService && sessionTokenFromRequest(req) ? "POSTGRES" : profiles.playerStorageLabel });
     }
 
     if (req.method === "POST" && path === "/api/profiles/me/collection-mode") {
       const body = await readJson(req);
-      const current = profiles.get(String(body?.profileToken ?? ""));
-      current.meta.collectionMode = body?.collectionMode === "OWNED_COPIES" ? "OWNED_COPIES" : "SANDBOX_ALL_AVAILABLE";
-      const profile = profiles.updateMeta(String(body?.profileToken ?? ""), current.meta);
-      return json(res, 200, { profile, storage:profiles.playerStorageLabel });
+      const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => {
+        const current = service.get(token);
+        current.meta.collectionMode = body?.collectionMode === "OWNED_COPIES" ? "OWNED_COPIES" : "SANDBOX_ALL_AVAILABLE";
+        return { profile:service.updateMeta(token, current.meta) };
+      });
+      return json(res, 200, { ...result, storage:accountService && sessionTokenFromRequest(req) ? "POSTGRES" : profiles.playerStorageLabel });
     }
 
     if (req.method === "POST" && path === "/api/economy/sandbox/start") {
       const body = await readJson(req);
-      const context = metaContext(body);
-      let profile = createEconomySandboxProfile(Number(economyConfig.sandbox?.startingOfficeCredits ?? 500));
-      const starterDeckId = String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter");
-      const starter = alphaDeckPresets[starterDeckId];
-      if (starter) profile = seedOwnedCollection(profile, starter.cards);
-      const committed = commitMetaContext(context, profile);
-      return json(res, 200, { ...committed, sandbox: true, starterDeckId: starter?.id ?? null, starterDeckName: starter?.name ?? null });
+      const result = await mutateMetaForRequest(req, body, (context) => {
+        let profile = createEconomySandboxProfile(Number(economyConfig.sandbox?.startingOfficeCredits ?? 500));
+        const starterDeckId = String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter");
+        const starter = alphaDeckPresets[starterDeckId];
+        if (starter) profile = seedOwnedCollection(profile, starter.cards);
+        return { ...context.commit(profile), sandbox:true, starterDeckId:starter?.id ?? null, starterDeckName:starter?.name ?? null };
+      });
+      return json(res, 200, result);
     }
 
     if (req.method === "POST" && path === "/api/economy/sandbox/refill") {
       const body = await readJson(req);
-      const context = metaContext(body);
-      const profile = structuredClone(context.meta);
-      profile.balances.OFFICE_CREDITS = Number(economyConfig.sandbox?.startingOfficeCredits ?? 500);
-      const committed = commitMetaContext(context, profile);
-      return json(res, 200, { ...committed, sandbox:true });
+      const result = await mutateMetaForRequest(req, body, (context) => {
+        const profile = structuredClone(context.meta);
+        profile.balances.OFFICE_CREDITS = Number(economyConfig.sandbox?.startingOfficeCredits ?? 500);
+        return { ...context.commit(profile), sandbox:true };
+      });
+      return json(res, 200, result);
     }
 
     if (req.method === "POST" && path === "/api/economy/sandbox/reset") {
       const body = await readJson(req);
-      const context = metaContext(body);
-      const profile = createAlphaMetaProfile();
-      const committed = commitMetaContext(context, profile);
-      return json(res, 200, { ...committed, sandbox:true });
+      const result = await mutateMetaForRequest(req, body, (context) => ({ ...context.commit(createAlphaMetaProfile()), sandbox:true }));
+      return json(res, 200, result);
     }
 
     if (req.method === "POST" && path === "/api/economy/booster/open") {
       const body = await readJson(req);
       const pack = economyConfig.boosters?.packs?.find((item) => item.id === body?.packId);
       if (!pack || pack.status !== "TEST_SANDBOX") return json(res, 400, { error:{ code:"PACK_NOT_AVAILABLE", message:"Sandbox booster is not available." } });
-      const context = metaContext(body);
-      const result = openSandboxBooster(context.meta, Object.values(alphaDefinitions), {
-        price: Number(pack.price),
-        cardCount: Number(pack.cardCount),
-        guaranteedTiers: pack.rarityDistribution?.guaranteed ?? [],
-        flexSlotWeights: pack.rarityDistribution?.flexSlotWeights ?? {},
-        executiveEditionChancePerPack: Number(pack.executiveEditionChancePerPack ?? 0),
-        executiveEditionPool: Object.values(alphaDefinitions)
-      }, randomInt(1, 0x7fffffff));
-      let committed = commitMetaContext(context, result.profile);
-      if (context.serverProfile) {
-        const serverProfile = profiles.recordProgressionEvents(String(body.profileToken), [{ id:`booster:${context.serverProfile.playerId}:${Date.now()}`, type:"BOOSTER_OPENED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ packId:pack.id, cardCount:result.cardIds?.length ?? 0 } }]);
-        committed = { profile:serverProfile.meta, serverProfile };
-      }
-      return json(res, 200, { ...result, ...committed, packId: pack.id });
+      const response = await mutateMetaForRequest(req, body, (context) => {
+        const opened = openSandboxBooster(context.meta, Object.values(alphaDefinitions), {
+          price:Number(pack.price),
+          cardCount:Number(pack.cardCount),
+          guaranteedTiers:pack.rarityDistribution?.guaranteed ?? [],
+          flexSlotWeights:pack.rarityDistribution?.flexSlotWeights ?? {},
+          executiveEditionChancePerPack:Number(pack.executiveEditionChancePerPack ?? 0),
+          executiveEditionPool:Object.values(alphaDefinitions)
+        }, randomInt(1, 0x7fffffff));
+        let committed = context.commit(opened.profile);
+        if (context.serverProfile && context.service) {
+          const serverProfile = context.service.recordProgressionEvents(context.token, [{ id:`booster:${context.serverProfile.playerId}:${Date.now()}`, type:"BOOSTER_OPENED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ packId:pack.id, cardCount:opened.cardIds?.length ?? 0 } }]);
+          committed = { profile:serverProfile.meta, serverProfile };
+        }
+        return { ...opened, ...committed, packId:pack.id };
+      });
+      return json(res, 200, response);
     }
 
     if (req.method === "POST" && path === "/api/economy/pack/open") {
       const body = await readJson(req);
       const pack = economyConfig.boosters?.packs?.find((item) => item.id === body?.packId);
       if (!pack || pack.id !== "EXECUTIVE_EDITION_PACK" || pack.status !== "REWARD_ONLY") return json(res, 400, { error:{ code:"PACK_NOT_AVAILABLE", message:"This reward pack is not available." } });
-      const context = metaContext(body);
-      const result = openExecutiveEditionPack(context.meta, Object.values(alphaDefinitions), pack.id, randomInt(1, 0x7fffffff));
-      const committed = commitMetaContext(context, result.profile);
-      return json(res, 200, { ...result, ...committed, packId: pack.id });
+      const response = await mutateMetaForRequest(req, body, (context) => {
+        const opened = openExecutiveEditionPack(context.meta, Object.values(alphaDefinitions), pack.id, randomInt(1, 0x7fffffff));
+        return { ...opened, ...context.commit(opened.profile), packId:pack.id };
+      });
+      return json(res, 200, response);
     }
 
     if (req.method === "POST" && path === "/api/economy/scrap") {
@@ -939,26 +1285,28 @@ const server = createServer(async (req, res) => {
       const tier = sandboxRarityTier(card);
       const tierConfig = economyConfig.rarityTiers.find((item) => item.id === tier);
       if (tierConfig?.scrapValue == null) return json(res, 400, { error:{ code:"SCRAP_NOT_AVAILABLE", message:"No sandbox scrap value for this card." } });
-      const context = metaContext(body);
-      const copies = Number(body?.copies ?? 1);
-      const variantId = body?.variantId ? String(body.variantId) : null;
-      if (variantId && variantId !== executiveEditionVariantId(card.id)) return json(res, 400, { error:{ code:"CARD_VARIANT_INVALID", message:"This card finish is not valid." } });
-      const eligibility = variantId
-        ? scrapEligibility(context.meta, card.id, copies, alphaScrapRules, variantId)
-        : scrapEligibility(context.meta, card.id, copies, alphaScrapRules);
-      if (!eligibility.allowed) return json(res, 400, { error:{ code:"COLLECTION_FLOOR", message:eligibility.reason }, eligibility });
-      const remainingOwned = variantId
-        ? Number(context.meta.ownedCardVariants?.[variantId] ?? 0) - copies
-        : Number(context.meta.ownedCards?.[card.id] ?? 0) - copies;
-      const affectedDecks = context.serverProfile?.decks?.filter((deck) => deck.cards.some((entry) => entry.definitionId === card.id && (entry.variantId ? entry.variantId === variantId && entry.copies > remainingOwned : !variantId && entry.copies > remainingOwned))).map((deck) => ({ id:deck.id, name:deck.name })) ?? [];
-      if (affectedDecks.length && body?.confirmDeckImpact !== true) return json(res, 409, { error:{ code:"DECKS_AFFECTED_BY_SCRAP", message:"Recycling this card will make saved decks invalid." }, affectedDecks, eligibility });
-      const profile = applyScrap(context.meta, card.id, copies, Number(tierConfig.scrapValue), alphaScrapRules, variantId);
-      let committed = commitMetaContext(context, profile);
-      if (context.serverProfile) {
-        const serverProfile = profiles.recordProgressionEvents(String(body.profileToken), [{ id:`scrap:${context.serverProfile.playerId}:${Date.now()}`, type:"CARD_RECYCLED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ cardId:card.id, department:card.department, tier, copies } }]);
-        committed = { profile:serverProfile.meta, serverProfile };
-      }
-      return json(res, 200, { ...committed, definitionId:card.id, tier, scrapValueEach:tierConfig.scrapValue, eligibility, affectedDecks });
+      const response = await mutateMetaForRequest(req, body, (context) => {
+        const copies = Number(body?.copies ?? 1);
+        const variantId = body?.variantId ? String(body.variantId) : null;
+        if (variantId && variantId !== executiveEditionVariantId(card.id)) throw new Error("CARD_VARIANT_INVALID");
+        const eligibility = variantId
+          ? scrapEligibility(context.meta, card.id, copies, alphaScrapRules, variantId)
+          : scrapEligibility(context.meta, card.id, copies, alphaScrapRules);
+        if (!eligibility.allowed) throw new Error("COLLECTION_FLOOR");
+        const remainingOwned = variantId
+          ? Number(context.meta.ownedCardVariants?.[variantId] ?? 0) - copies
+          : Number(context.meta.ownedCards?.[card.id] ?? 0) - copies;
+        const affectedDecks = context.serverProfile?.decks?.filter((deck) => deck.cards.some((entry) => entry.definitionId === card.id && (entry.variantId ? entry.variantId === variantId && entry.copies > remainingOwned : !variantId && entry.copies > remainingOwned))).map((deck) => ({ id:deck.id, name:deck.name })) ?? [];
+        if (affectedDecks.length && body?.confirmDeckImpact !== true) throw new Error("DECKS_AFFECTED_BY_SCRAP");
+        const profile = applyScrap(context.meta, card.id, copies, Number(tierConfig.scrapValue), alphaScrapRules, variantId);
+        let committed = context.commit(profile);
+        if (context.serverProfile && context.service) {
+          const serverProfile = context.service.recordProgressionEvents(context.token, [{ id:`scrap:${context.serverProfile.playerId}:${Date.now()}`, type:"CARD_RECYCLED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ cardId:card.id, department:card.department, tier, copies } }]);
+          committed = { profile:serverProfile.meta, serverProfile };
+        }
+        return { ...committed, definitionId:card.id, tier, scrapValueEach:tierConfig.scrapValue, eligibility, affectedDecks };
+      });
+      return json(res, 200, response);
     }
 
     if (req.method === "POST" && path === "/api/economy/craft") {
@@ -968,15 +1316,17 @@ const server = createServer(async (req, res) => {
       const tier = sandboxRarityTier(card);
       const tierConfig = economyConfig.rarityTiers.find((item) => item.id === tier);
       if (tierConfig?.craftCost == null) return json(res, 400, { error:{ code:"CRAFT_NOT_AVAILABLE", message:"No sandbox craft cost for this card." } });
-      const context = metaContext(body);
       if (body?.variantId) return json(res, 400, { error:{ code:"PREMIUM_VARIANT_NOT_CRAFTABLE", message:"Executive Edition variants cannot be crafted." } });
-      const profile = applyCraft(context.meta, card.id, Number(body?.copies ?? 1), Number(tierConfig.craftCost));
-      let committed = commitMetaContext(context, profile);
-      if (context.serverProfile) {
-        const serverProfile = profiles.recordProgressionEvents(String(body.profileToken), [{ id:`craft:${context.serverProfile.playerId}:${Date.now()}`, type:"CARD_CRAFTED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ cardId:card.id, department:card.department, tier, copies:Number(body?.copies ?? 1) } }]);
-        committed = { profile:serverProfile.meta, serverProfile };
-      }
-      return json(res, 200, { ...committed, definitionId:card.id, tier, craftCostEach:tierConfig.craftCost });
+      const response = await mutateMetaForRequest(req, body, (context) => {
+        const profile = applyCraft(context.meta, card.id, Number(body?.copies ?? 1), Number(tierConfig.craftCost));
+        let committed = context.commit(profile);
+        if (context.serverProfile && context.service) {
+          const serverProfile = context.service.recordProgressionEvents(context.token, [{ id:`craft:${context.serverProfile.playerId}:${Date.now()}`, type:"CARD_CRAFTED", playerId:context.serverProfile.playerId, timestamp:Date.now(), payload:{ cardId:card.id, department:card.department, tier, copies:Number(body?.copies ?? 1) } }]);
+          committed = { profile:serverProfile.meta, serverProfile };
+        }
+        return { ...committed, definitionId:card.id, tier, craftCostEach:tierConfig.craftCost };
+      });
+      return json(res, 200, response);
     }
 
     const rewardMatch = /^\/api\/rooms\/([^/]+)\/reward$/.exec(path);
@@ -984,49 +1334,50 @@ const server = createServer(async (req, res) => {
       const roomId = rewardMatch[1].toUpperCase();
       const token = tokenFrom(req, url);
       const view = rooms.getView(roomId, token, 0);
-      settleRankedRooms();
+      await settleRankedRooms();
       const outcome = matchRewardOutcome(view);
       if (!outcome) return json(res, 409, { error:{ code:"MATCH_NOT_ENDED", message:"Match rewards can only be claimed after the match ends." } });
       if (view.settings?.rewardEligible === false || view.settings?.mode === "TRAINING" || view.settings?.mode === "TUTORIAL") return json(res, 409, { error:{ code:"REWARD_NOT_ELIGIBLE", message:"This match mode does not grant progression rewards." } });
       const rewardConfig = rewardProfileForMode(view.settings?.mode);
       if (!economyConfig.progression?.matchRewards?.sandboxEnabled || !rewardConfig) return json(res, 409, { error:{ code:"REWARD_NOT_AVAILABLE", message:"Sandbox match rewards are not available." } });
       const body = await readJson(req);
-      const context = metaContext(body);
       const seatIdentity = rooms.getSeatIdentity(roomId, token);
-      if (seatIdentity.profileId && context.serverProfile?.playerId !== seatIdentity.profileId) throw new Error("PROFILE_MISMATCH");
       if (!profiles.progressionEnabled) return json(res, 409, { error:{ code:"PROGRESSION_DISABLED", message:"Progression is currently disabled." } });
-      const previewReward = applyMatchReward(context.meta, outcome, rewardConfig, Number(economyConfig.progression?.levelXpStep ?? 100));
-      const alreadyClaimed = (context.meta.claimedRewardRooms ?? []).includes(roomId);
-      if (alreadyClaimed) {
-        let recordedProfile = context.serverProfile ?? null;
-        if (context.serverProfile) recordedProfile = profiles.recordMatch(String(body.profileToken), matchHistoryEntry(view, outcome), []);
-        return json(res, 200, { outcome:previewReward.outcome, officeCredits:previewReward.officeCredits, xp:previewReward.xp, profile:context.meta, serverProfile:recordedProfile, rankedResult:rankedResultForRoom(recordedProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:true });
-      }
-      let preview = previewReward;
-      const milestoneReceipt = applyLevelMilestoneRewards(previewReward.profile, economyConfig.progression?.levelMilestones ?? [], context.meta.progression?.level ?? 0, previewReward.profile.progression.level, Date.now());
-      preview = { ...previewReward, profile:milestoneReceipt.profile };
-      preview.profile.claimedRewardRooms = [...new Set([...(preview.profile.claimedRewardRooms ?? []), roomId])];
-      const committed = commitMetaContext(context, preview.profile);
-      let recordedProfile = committed.serverProfile ?? null;
-      if (context.serverProfile) recordedProfile = profiles.recordMatch(String(body.profileToken), matchHistoryEntry(view, outcome), []);
-      const receipt = { ...preview, ...committed, serverProfile:recordedProfile ?? committed.serverProfile, rankedResult:rankedResultForRoom(recordedProfile ?? committed.serverProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:false };
+      const receipt = await mutateMetaForRequest(req, body, (context) => {
+        if (seatIdentity.profileId && context.serverProfile?.playerId !== seatIdentity.profileId) throw new Error("PROFILE_MISMATCH");
+        const previewReward = applyMatchReward(context.meta, outcome, rewardConfig, Number(economyConfig.progression?.levelXpStep ?? 100));
+        const alreadyClaimed = (context.meta.claimedRewardRooms ?? []).includes(roomId);
+        if (alreadyClaimed) {
+          let recordedProfile = context.serverProfile ?? null;
+          if (context.serverProfile && context.service) recordedProfile = context.service.recordMatch(context.token, matchHistoryEntry(view, outcome), []);
+          return { outcome:previewReward.outcome, officeCredits:previewReward.officeCredits, xp:previewReward.xp, profile:context.meta, serverProfile:recordedProfile, rankedResult:rankedResultForRoom(recordedProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:true };
+        }
+        const milestoneReceipt = applyLevelMilestoneRewards(previewReward.profile, economyConfig.progression?.levelMilestones ?? [], context.meta.progression?.level ?? 0, previewReward.profile.progression.level, Date.now());
+        const preview = { ...previewReward, profile:milestoneReceipt.profile };
+        preview.profile.claimedRewardRooms = [...new Set([...(preview.profile.claimedRewardRooms ?? []), roomId])];
+        const committed = context.commit(preview.profile);
+        let recordedProfile = committed.serverProfile ?? null;
+        if (context.serverProfile && context.service) recordedProfile = context.service.recordMatch(context.token, matchHistoryEntry(view, outcome), []);
+        return { ...preview, ...committed, serverProfile:recordedProfile ?? committed.serverProfile, rankedResult:rankedResultForRoom(recordedProfile ?? committed.serverProfile, roomId), roomId, playerId:view.playerId, mode:view.settings?.mode ?? "FRIENDLY", replayed:false };
+      });
       return json(res, 200, receipt);
     }
 
     if (req.method === "POST" && path === "/api/matchmaking/enqueue") {
       const body = await readJson(req);
-      const profile = profiles.get(String(body?.profileToken ?? ""));
+      const profile = await profileForRequest(req, body?.profileToken);
       const mode = matchmakingMode(body?.mode);
       const deckSelection = validateQueuedDeck(deckSelectionForProfile(body, profile));
       validateOwnedDeck(profile, deckSelection);
-      const enqueued = matchmaking.enqueue(profile.playerId, mode, matchmakingPayload(profile, deckSelection, mode));
+      const storageKind = accountService && sessionTokenFromRequest(req) ? "POSTGRES" : "FILE_JSON_LOCAL";
+      const enqueued = matchmaking.enqueue(profile.playerId, mode, matchmakingPayload(profile, deckSelection, mode, storageKind));
       if (!enqueued.opponent) return json(res, 202, { ticket:enqueued.ticket, ranked:mode === "RANKED" ? profile.ranked : null });
       const matched = pairQueuedTickets(enqueued.opponent, enqueued.ticket, profile, deckSelection, mode);
       return json(res, 200, { ticket:matched.second, ranked:mode === "RANKED" ? profile.ranked : null });
     }
 
     if (req.method === "GET" && path === "/api/matchmaking/status") {
-      const profile = profiles.get(profileTokenFrom(req, url));
+      const profile = await profileForRequest(req, profileTokenFrom(req, url));
       let ticket = matchmaking.get(String(url.searchParams.get("ticketId") ?? ""), profile.playerId);
       if (ticket.status === "WAITING") {
         const opponent = matchmaking.findOpponent(ticket.ticketId, profile.playerId);
@@ -1036,44 +1387,44 @@ const server = createServer(async (req, res) => {
           ticket = matched.second;
         }
       }
-      return json(res, 200, { ticket, ranked:ticket.mode === "RANKED" ? profiles.getByPlayerId(profile.playerId).ranked : null });
+      return json(res, 200, { ticket, ranked:ticket.mode === "RANKED" ? profile.ranked : null });
     }
 
     if (req.method === "POST" && path === "/api/matchmaking/cancel") {
       const body = await readJson(req);
-      const profile = profiles.get(String(body?.profileToken ?? ""));
+      const profile = await profileForRequest(req, body?.profileToken);
       const ticket = matchmaking.cancel(String(body?.ticketId ?? ""), profile.playerId);
       return json(res, 200, { ticket });
     }
 
     if (req.method === "POST" && path === "/api/rooms") {
       const body = await readJson(req);
-      const profile = body?.profileToken ? profiles.get(String(body.profileToken)) : null;
+      const profile = await optionalProfileForRequest(req, body?.profileToken);
       const deckSelection = deckSelectionForProfile(body, profile);
       validateOwnedDeck(profile, deckSelection);
-      const result = rooms.createRoom(deckSelection, { mode: body?.mode, timerProfileId: body?.timerProfileId }, profileIdentity(body));
+      const result = rooms.createRoom(deckSelection, { mode: body?.mode, timerProfileId: body?.timerProfileId }, profileIdentityForProfile(profile));
       return json(res, 201, result);
     }
 
     if (req.method === "POST" && path === "/api/rooms/bot") {
       const body = await readJson(req);
-      const profile = profiles.get(String(body?.profileToken ?? ""));
+      const profile = await profileForRequest(req, body?.profileToken);
       const deckSelection = deckSelectionForProfile(body, profile);
       validateOwnedDeck(profile, deckSelection);
       const mode = body?.mode === "TUTORIAL" ? "TUTORIAL" : "TRAINING";
       const botDeck = alphaDeckPresets[String(body?.botDeckId ?? "it-starter")] ? String(body?.botDeckId ?? "it-starter") : "it-starter";
       const qaSetup = ALPHA_QA_EXECUTIVE_MATCH && mode === "TRAINING" ? { forceOpeningHandVariantId: executiveEditionVariantId("CS-001") } : undefined;
-      const result = rooms.createBotRoom(deckSelection, { mode }, profileIdentity(body), botDeck, mode === "TUTORIAL" ? "Office Coach" : "Training Bot", qaSetup);
+      const result = rooms.createBotRoom(deckSelection, { mode }, profileIdentityForProfile(profile), botDeck, mode === "TUTORIAL" ? "Office Coach" : "Training Bot", qaSetup);
       return json(res, 201, result);
     }
 
     const joinMatch = /^\/api\/rooms\/([^/]+)\/join$/.exec(path);
     if (req.method === "POST" && joinMatch) {
       const body = await readJson(req);
-      const profile = body?.profileToken ? profiles.get(String(body.profileToken)) : null;
+      const profile = await optionalProfileForRequest(req, body?.profileToken);
       const deckSelection = deckSelectionForProfile(body, profile);
       validateOwnedDeck(profile, deckSelection);
-      const result = rooms.joinRoom(joinMatch[1].toUpperCase(), deckSelection, profileIdentity(body));
+      const result = rooms.joinRoom(joinMatch[1].toUpperCase(), deckSelection, profileIdentityForProfile(profile));
       return json(res, 200, result);
     }
 
@@ -1108,7 +1459,7 @@ const server = createServer(async (req, res) => {
 
     const stateMatch = /^\/api\/rooms\/([^/]+)\/state$/.exec(path);
     if (req.method === "GET" && stateMatch) {
-      settleRankedRooms();
+      await settleRankedRooms();
       const after = Number(url.searchParams.get("after") ?? 0);
       return json(res, 200, rooms.getView(stateMatch[1].toUpperCase(), tokenFrom(req, url), Number.isFinite(after) ? after : 0, url.searchParams.get("clientId") ?? undefined));
     }
@@ -1119,11 +1470,13 @@ const server = createServer(async (req, res) => {
       const roomId = intentMatch[1].toUpperCase();
       const token = tokenFrom(req, url);
       const result = rooms.submitIntent(roomId, token, body);
-      if (result.response.accepted) settleRankedRooms();
+      if (result.response.accepted) await settleRankedRooms();
       let serverProfile = null;
       if (result.view?.settings?.ratingActive) {
         const seat = rooms.getSeatIdentity(roomId, token);
-        if (seat.profileId) serverProfile = profiles.getByPlayerId(seat.profileId);
+        if (seat.profileId) {
+          serverProfile = await roomSeatProfileForRequest(req, seat.profileId);
+        }
       }
       return json(res, result.response.accepted ? 200 : 409, { ...result, serverProfile });
     }
@@ -1147,7 +1500,7 @@ const server = createServer(async (req, res) => {
       res.write("retry: 2000\n\n");
       const push = () => {
         try {
-          settleRankedRooms();
+          void settleRankedRooms();
           const view = rooms.getView(roomId, token, lastSeq, clientId);
           lastSeq = view.match?.lastEventSeq ?? lastSeq;
           sseWrite(res, "state", view);
@@ -1186,11 +1539,13 @@ async function gracefulShutdown(signal) {
   try { rooms.checkpointTimers(); } catch (error) { console.error("Timer checkpoint during shutdown failed", error); }
   clearInterval(timerSweepInterval);
   clearInterval(timerCheckpointInterval);
+  if (sessionCleanupInterval) clearInterval(sessionCleanupInterval);
   const forceTimer = setTimeout(() => process.exit(1), 10_000);
   forceTimer.unref?.();
-  server.close((error) => {
+  server.close(async (error) => {
     clearTimeout(forceTimer);
     if (error) { console.error("Server close failed", error); process.exit(1); }
+    try { await accountService?.close(); } catch (closeError) { console.error("PostgreSQL pool close failed", closeError instanceof Error ? closeError.message : "unknown"); }
     console.log("Office Card Game server stopped cleanly.");
     process.exit(0);
   });

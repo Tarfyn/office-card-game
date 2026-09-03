@@ -809,7 +809,7 @@ enable_postgres() {
   [[ ${legacy_backup} == "${LEGACY_BACKUP_DIR}/"* && -d ${legacy_backup} ]] || die "Recorded legacy backup is missing."
   [[ ${post_backup} == "${PG_BACKUP_DIR}/"* && -f ${post_backup} ]] || die "Recorded PostgreSQL backup is missing."
   /usr/bin/pg_restore --list "${post_backup}" >/dev/null || die "Recorded PostgreSQL backup is invalid."
-  upsert_env_value "PROFILE_STORAGE_BACKEND" "POSTGRESQL"
+  upsert_env_value "PROFILE_STORAGE_BACKEND" "POSTGRES"
   upsert_env_value "DATABASE_REQUIRED" "1"
   write_state_file "postgres-enabled-release" "${migrated_release}"
   printf 'PostgreSQL persistence is configured for %s on the next service start.\n' "${migrated_release}"

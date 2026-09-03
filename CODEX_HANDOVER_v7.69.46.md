@@ -174,3 +174,59 @@ The release QA matrix is 1920x1080, 3840x2160, 390x844 and 844x390. Check profil
 localized labels, empty/populated history, filters, framed identity, no horizontal overflow and no
 browser console errors. Required automated checks remain build, full test suite, localization audit,
 artwork audit, diff check, `/api/ready`, `/api/health`, and Ranked timer disabled.
+
+## Account and PostgreSQL persistence candidate
+
+The active implementation branch adds the first-party Account foundation without changing the
+released 7.69.46 version or production state. `PROFILE_STORAGE_BACKEND` is explicit:
+`FILE_JSON_LOCAL` keeps Guest player state authoritative; `POSTGRES` enables Account registration,
+login, logout, opaque cookie sessions, and PostgreSQL-backed player profiles. `DATABASE_URL` alone
+never changes the backend. Existing hosted Room, Matchmaking, and playtest-feedback operational
+snapshots remain JSON-backed in this first cutover.
+
+Email lookup trims and lowercases addresses. Passwords are Argon2id hashes (64 MiB, three
+iterations, one lane), with two concurrent password jobs and a bounded queue of 20 to protect the
+Alpha server from trivial memory exhaustion. Account cookies are `HttpOnly`, `SameSite=Lax`, `Path=/`, 30-day, and
+`Secure` in network mode; only SHA-256 token hashes are stored. Authenticated writes require JSON
+and same-origin Origin/Referer validation in network mode. Register is limited to 5 attempts per IP
+per 15 minutes and login to 10 per IP per 10 minutes. Email verification, password reset, social
+login, and account linking are intentionally not implemented yet.
+
+Authenticated profile reads and mutations derive ownership only from the server session. PostgreSQL
+stores the canonical normalized profile JSONB and transactional Deck, RewardGrant, and Achievement
+projections. A locked profile row serializes economy and profile mutations across devices/processes;
+two-profile Ranked settlement locks UUIDs in stable order. Stable Deck IDs, revisions,
+`DECK_CONFLICT`, RewardGrant sourceRef idempotency, Cosmetics/Loadout, collection, currencies,
+Achievements, Ranked, history, and Alpha grants retain the current domain service semantics.
+
+Guest mode remains an explicitly temporary testing path. In `POSTGRES` mode its server identity is
+memory-only and can be re-seeded from browser state, so archived legacy player/credential JSON is
+not read or written. Creating an Account always starts a fresh default profile. Old Alpha Guest
+Cards, Decks, Cosmetics, currencies, Achievements, Ranked data, and Rewards are intentionally not
+migrated or claimed. Legacy files are backed up and retained, not deleted.
+
+Migrations live in `db/migrations` and run only through `scripts/db-migrate.mjs`: filenames and
+checksums are validated, one advisory lock serializes runners, and each migration is transactional.
+Missing or checksum-changed required migrations fail closed. Additional migration records from a
+newer release remain visible but are accepted as forward-compatible under the mandatory additive
+migration contract, allowing code rollback. `/api/ready` requires reachability, compatible current
+migrations, and core schema when `POSTGRES` is selected. The root-owned helper performs pre/post
+dumps and refuses activation when migration or marker validation fails. Migrations are additive/
+forward-only; code rollback cannot automatically undo schema.
+
+The dedicated `/ops` route and every `/api/ops/*` endpoint require a DB-backed Account role of
+`OPS` or `ADMIN` (401 without a session, 403 for `PLAYER`). Phase 1 is read-only and exposes only
+safe structured System, Persistence, Database, Backup, Cutover, Account, bounded recent-profile,
+Progression, and diagnostic status. It provides no SQL, shell, sudo, helper, restore, migration,
+deploy, role, or game-state
+mutation capability. Root-only backup/timer details remain `UNAVAILABLE`; the application receives
+no elevated OS privilege. Future admin mutations require a WHO/WHEN/ACTION/TARGET/BEFORE/AFTER/
+REASON audit log first.
+The first reviewed operator/admin is designated only by the human-root-run
+`scripts/account-role.mjs grant-ops|grant-admin <email>` CLI; it accepts no generic role, SQL, path,
+or credential argument and has no web equivalent.
+
+Before cutover, run `npm run test:db` with a disposable `office_card_game_test*` database, perform
+two-browser same-Account persistence QA, and complete 1920×1080, 3840×2160, 390×844, and 844×390
+visual checks. Do not add `deploy/postgres-persistence-ready`, call `enable-postgres`, migrate
+production, tag, merge, or deploy until those gates pass and explicit approval is given.

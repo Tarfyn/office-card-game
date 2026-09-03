@@ -220,7 +220,7 @@ export function awardCurrency(profile: PlayerMetaProfile, currency: CurrencyId, 
 }
 
 export function spendCurrency(profile: PlayerMetaProfile, currency: CurrencyId, amount: number): PlayerMetaProfile {
-  if (!canSpendCurrency(profile, currency, amount)) throw new Error(`Insufficient ${currency}.`);
+  if (!canSpendCurrency(profile, currency, amount)) throw new Error("INSUFFICIENT_FUNDS");
   const next = structuredClone(profile);
   next.balances[currency] -= amount;
   return next;

@@ -615,6 +615,41 @@ For visual issues, "fixed" means:
 
 Passing tests alone are not sufficient for visual tasks.
 
+## PostgreSQL privileged operations
+
+Production PostgreSQL administration must use the reviewed, root-owned
+`/usr/local/sbin/ocg-db-helper` installed from the repository `ops/` artifacts. Its sudoers grant
+must remain exactly:
+
+```text
+ocgadmin ALL=(root) NOPASSWD: /usr/local/sbin/ocg-db-helper
+```
+
+Do not grant passwordless access to package managers, PostgreSQL clients, `systemctl`, shells,
+editors, or general filesystem commands. Do not modify `/usr/local/sbin/ocg-release-helper` for
+database work. The DB helper may operate only on its fixed Office Card Game database, role,
+environment, runtime, backup, state, and validated immutable release paths.
+
+PostgreSQL must remain loopback/Unix-socket only. Production migrations are forward-only,
+versioned, additive, checksum-recorded, and must succeed before release activation. A legacy JSON
+snapshot and a validated PostgreSQL dump are mandatory before the first persistence cutover. A
+database restore, helper installation/replacement, firewall change, or emergency environment
+rollback remains human-root-only. See `docs/database-operations.md` for the exact workflow and
+NO-GO conditions.
+
+Authenticated Account identity must resolve exclusively from an opaque server session cookie;
+never trust client-supplied user, player, profile, or role identifiers for authorization. Store only
+modern password hashes and hashed session tokens, never log or return authentication material, and
+keep Account profile/economy/deck mutations transactional and safe across processes. Guest identity
+must remain visibly separate and must not become a parallel authoritative Account store.
+
+The internal `/ops` surface and every `/api/ops/*` endpoint require an authenticated database-backed
+`OPS` or `ADMIN` role on the server. Operations Phase 1 is read-only: never expose arbitrary SQL,
+shell/root/helper execution, environment dumps, credentials, hashes, tokens, unrestricted paths, or
+log-file reads. Do not give the web service sudo/systemd access for observability; unavailable
+infrastructure-only state must remain unavailable. Add an attributable Admin Audit Log before any
+future Ops mutation endpoint.
+
 ## Git and Release Workflow
 
 - Work directly in the local repository.

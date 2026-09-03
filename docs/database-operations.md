@@ -2,7 +2,9 @@
 
 ## Status and scope
 
-The deployed v7.69.44 server still uses `GUEST_LOCAL` credentials and JSON snapshot persistence.
+The production server remains on `FILE_JSON_LOCAL` until an explicitly approved cutover. The
+repository application foundation now defines the separate `POSTGRES` backend, but merely having
+`DATABASE_URL` present never activates it.
 The server fixes mutable state beneath `/srv/office-card-game/runtime` while releases beneath
 `/srv/office-card-game/releases` are immutable after `/usr/local/sbin/ocg-release-helper finalize`.
 The active release is selected by the root-owned `/srv/office-card-game/current` symlink.
@@ -18,12 +20,17 @@ The current JSON files are:
   be absent on current installations.
 
 `server/storage/local-json.mjs` writes snapshots through a same-directory temporary file and atomic
-rename. The PostgreSQL account implementation will replace authenticated player persistence only;
-the existing JSON files remain untouched until an explicitly approved cutover.
+rename. PostgreSQL is authoritative only for authenticated Account player state when the explicit
+backend is `POSTGRES`. At that point Guest profiles use process memory plus the existing browser
+snapshot behavior and do not read or write the legacy player/credential JSON files; hosted rooms,
+matchmaking state, and playtest feedback keep their separate JSON operational stores. The existing
+player JSON files remain untouched until an explicitly approved cutover and old Alpha Guest
+progress is intentionally not imported.
 
-This repository change installs no software and performs no production operation. It prepares a
-candidate helper for the audited Ubuntu 26.04 VPS, where PostgreSQL 18 is the available supported
-package.
+Repository implementation and tests install no PostgreSQL packages and perform no production
+operation. The recorded VPS infrastructure baseline is Ubuntu 26.04 with PostgreSQL 18.6,
+loopback-only listeners, a working daily backup timer, and 30-day dump retention; this state still
+requires an explicit release/cutover review.
 
 ## Target architecture
 
@@ -184,7 +191,7 @@ Requires successful bootstrap, a recorded legacy JSON backup, a successful valid
 migration, and a valid post-migration dump. It changes only these managed service-environment keys:
 
 ```text
-PROFILE_STORAGE_BACKEND=POSTGRESQL
+PROFILE_STORAGE_BACKEND=POSTGRES
 DATABASE_REQUIRED=1
 ```
 
@@ -318,6 +325,136 @@ Stop without cutover if any of these is true:
 - the candidate does not make `/api/ready` depend on PostgreSQL;
 - standard, DB integration, concurrency, desktop/mobile, or cross-browser QA is incomplete;
 - explicit production cutover approval has not been given.
+
+## Application persistence and Account contract
+
+`PROFILE_STORAGE_BACKEND` accepts only `FILE_JSON_LOCAL` or `POSTGRES` (`POSTGRESQL` remains a
+temporary compatibility alias for an already-installed older helper). `DATABASE_URL` is parsed as
+a fixed loopback connection to database `office_card_game` and role `office_card_game_app`; the
+application never logs or returns it. The Node server uses a bounded `pg` pool (default maximum 10,
+5-second connection timeout, 30-second idle timeout).
+
+The first additive migration creates `users`, `sessions`, `player_profiles`, `player_decks`,
+`reward_grants`, `achievement_progress`, and `persistence_metadata`. Account IDs are UUIDs.
+Passwords use Argon2id with 64 MiB memory, three iterations, and one lane. The server admits at
+most two Argon2 operations concurrently and queues at most 20 more; excess work fails with a
+retryable 429 instead of multiplying the memory work factor without bound. Browser sessions use a
+32-byte random opaque token in an `HttpOnly`, `SameSite=Lax`, `Path=/` cookie that is `Secure` in
+network/production mode; PostgreSQL stores only SHA-256 token hashes. Sessions expire after 30 days,
+are revoked immediately on logout, update `last_used_at`, and are periodically cleaned after a
+seven-day diagnostic retention window.
+
+All Account profile mutations resolve the user from the session cookie, lock that user's
+`player_profiles` row, run the existing game-domain normalization/validation, and update the JSONB
+profile plus normalized Deck/RewardGrant/Achievement projections in one short transaction. Multi-
+profile Ranked settlement locks UUID rows in stable sorted order. This preserves Deck revisions and
+`DECK_CONFLICT`, RewardGrant/sourceRef idempotency, and prevents two processes/devices from spending
+the same balance snapshot concurrently. PostgreSQL is never an automatic fallback: when it is the
+selected backend and is unavailable or stale, `/api/ready` returns 503.
+
+Readiness treats additional migration records from a newer release as forward-compatible because
+all production migrations are required to be additive; this keeps code rollback possible. It still
+fails closed for a missing required migration or any checksum change. The Ops response reports
+newer/unknown records separately, and exact migration-set equality remains observable.
+
+Account endpoints are `POST /api/auth/register`, `POST /api/auth/login`,
+`POST /api/auth/logout`, and `GET /api/auth/current`. Register/login accept JSON only, normalize
+email by trimming and lowercasing, enforce a 254-character basic email shape, and accept passwords
+of 10–128 characters. Network-mode cookie-authenticated writes require a matching Origin/Referer;
+cookies add a second same-origin barrier. Registration is limited to 5 attempts per IP per 15
+minutes and login to 10 attempts per IP per 10 minutes. Passwords, password hashes, raw session
+tokens, and token hashes are never returned or logged.
+
+Guest mode remains available for low-friction Alpha testing and keeps browser-bound Alpha state.
+Under `FILE_JSON_LOCAL`, the existing Guest server persistence remains unchanged. Under `POSTGRES`,
+Guest server identity is deliberately memory-only so the archived legacy player/credential files
+remain unwritten; a process restart may create a new Guest identity from the browser snapshot. It
+is visibly labeled temporary and has no cross-device guarantee.
+Registering creates a fresh server-defined Account profile; Guest cards, Decks, currencies,
+cosmetics, Ranked state, achievements, and rewards are not claimed or migrated. The legacy JSON
+archive remains available for safety/debugging only after cutover.
+Authenticated Account metadata and Decks are never written into the Guest localStorage keys; the
+pre-existing Guest cache is preserved separately and restored only after logout. It is neither an
+Account cache nor an authorization source.
+
+Email verification, password reset, social login, account linking, and an account-management
+dashboard are future work.
+
+## Operations cockpit
+
+`/ops` is a dedicated read-only internal cockpit. The HTML route and every
+`GET /api/ops/{overview,system,persistence,database,backups,accounts,progression,diagnostics,cutover}`
+endpoint independently resolve the opaque Account session and require the database-backed role
+`OPS` or `ADMIN`. An unauthenticated request receives 401; a normal `PLAYER` receives 403. Hiding
+the Lobby link is not an authorization boundary, and client/profile role fields are ignored.
+
+New registrations always receive `PLAYER`. Because email verification is not yet implemented,
+there is intentionally no email allowlist that silently grants Ops authority. After the reviewed
+Account has registered, a human root administrator must verify its identity and run the narrowly
+scoped repository CLI through a transient service that reads the existing root-managed environment:
+
+```bash
+sudo /usr/bin/systemd-run --wait --pipe --collect \
+  --property=User=officecardgame \
+  --property=Group=officecardgame \
+  --property=WorkingDirectory=/srv/office-card-game/current \
+  --property=EnvironmentFile=/etc/office-card-game.env \
+  /usr/bin/node /srv/office-card-game/current/scripts/account-role.mjs \
+  grant-ops reviewed-operator@example.com
+```
+
+For the separately reviewed initial administrator, replace `grant-ops` with `grant-admin`. The CLI
+accepts exactly one of those two commands and one normalized email address. It uses parameterized
+SQL, requires an existing active `PLAYER`, refuses a different existing privileged role, and is
+idempotent when the requested role is already present. It never accepts SQL, a database URL, a
+filesystem path, a generic role value, or a password as an argument and never prints credentials.
+
+This remains human-root-only; it is not an `ocg-db-helper` action, receives no `NOPASSWD` grant,
+and the web application exposes no role mutation endpoint. Normal Ops use requires no arbitrary SQL.
+
+The cockpit reports application/runtime state, explicit source of truth, PostgreSQL reachability
+and version, schema/migration counts, pool pressure, Account/Profile/Session aggregates, recent
+protected Account identities, a bounded recent-profile support sample, progression aggregates,
+Alpha reset/cutover state, and structured
+non-secret diagnostic categories. Queries are cached for 15 seconds. It never exposes environment
+values, connection strings, passwords, hashes, session tokens, Guest credentials, stack traces,
+arbitrary paths, SQL, logs, shell commands, helper invocation, restore, migration, or deployment
+controls.
+
+The application service has no sudo/root/systemd access. The current helper/timer writes no
+application-readable status record, so last backup timestamps, dump sizes, timer next-run state,
+and root-helper state display as `UNAVAILABLE`. Retention displays the fixed 30-day policy. A future
+helper revision may atomically publish a deliberately non-secret root-owned/readable summary file;
+do not grant the Node service helper or systemd privileges for this purpose.
+
+Phase 1 is visibility-only. Any future session invalidation, grant, progression correction,
+cosmetic grant, or account suspension must first introduce an Admin Audit Log recording WHO, WHEN,
+ACTION, TARGET, BEFORE, AFTER, and REASON.
+
+## Local and isolated database verification
+
+Normal source/build checks do not silently emulate PostgreSQL. Static Account/Auth/Ops tests run via
+`npm run test:account`. The real integration suite requires a disposable database whose name starts
+with `office_card_game_test`:
+
+```bash
+OCG_TEST_DATABASE_URL='postgresql://test_role:test_password@127.0.0.1:5432/office_card_game_test_accounts' npm run test:db
+```
+
+For a fully disposable local run, `npm run test:db:docker` verifies that `127.0.0.1:5432` is free,
+starts `postgres:18` with a test-only database and credential bound only to that loopback address,
+runs `test:db`, and stops/removes its uniquely named container in a `finally` cleanup. It refuses to
+reuse an occupied port and never reads `DATABASE_URL`.
+
+The URL guard rejects the production database name. The suite drops only its validated test tables,
+runs migrations concurrently and repeatedly, exercises registration/login/logout/expiry and Ops
+authorization, persists the complete representative profile domains across a new pool, and tests
+duplicate rewards, double spending, concurrent mutations, stale Deck revisions, stale migration
+history, transactional migration failure, and secret-free Ops responses. Missing
+`OCG_TEST_DATABASE_URL` is a hard failure, not a skipped green test.
+
+The cutover marker must remain absent until this database suite plus browser cross-context and
+responsive QA have passed against the release candidate.
 
 ## PostgreSQL references
 
