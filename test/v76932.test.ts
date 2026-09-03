@@ -28,4 +28,4 @@ assert.match(css, /mask-image:var\(--avatar-frame-mask\)/);
 assert.match(css, /\.avatar-composition\.has-avatar-frame[\s\S]*border:0/);
 assert.doesNotMatch(css, /inset:-4%|width:108%|height:108%/);
 
-console.log("\n1/1 v7.69.42 avatar composition tests passed.");
+console.log("\n1/1 v7.69.43 avatar composition tests passed.");

@@ -102,4 +102,4 @@ test("Silver is the Silver-tier reward and remains out of the Shop", () => {
   assert.equal(COSMETIC_SHOP_CATALOG.some((entry) => String(entry.cosmeticId) === "COS-FRAME-006"), false);
 });
 
-console.log(`\n${passed}/${passed} v7.69.42 cosmetic asset tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.43 cosmetic asset tests passed.`);

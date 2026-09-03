@@ -35,4 +35,14 @@ test("v7.42 keeps reduced-motion fallback",()=>{
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css,/transition:none !important/);
 });
-console.log(`${passed}/6 v7.42 tests passed.`);
+test("v7.69.43 removes the obsolete T1 silver corner treatment",()=>{
+  assert.doesNotMatch(css,/\.card\.tier-t1:not\(\.hidden-card\)::before|\.catalog-card-face\.tier-t1::before/);
+  assert.match(css,/\.card\.tier-t1 \.card-name[\s\S]*background:linear-gradient\(180deg,#456066/);
+});
+test("v7.69.43 gives T1/T2/T3 restrained metallic typography",()=>{
+  assert.match(css,/\.card\.tier-t2 \.card-name[\s\S]*background:linear-gradient\(180deg,#a97924/);
+  assert.match(css,/-webkit-background-clip:text/);
+  assert.match(css,/-webkit-text-fill-color:transparent/);
+  assert.match(css,/text-shadow:0 1px rgba\(255,244,196,.72\)/);
+});
+console.log(`${passed}/8 v7.42/v7.69.43 tests passed.`);

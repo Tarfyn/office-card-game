@@ -6049,26 +6049,21 @@ button.primary {
 
 /* Rarity finishes. No explicit rarity label is added to the live battlefield. */
 .card.tier-t1 .card-name,.catalog-card-face.tier-t1 .catalog-name-row > strong {
-  color:#525c60;
-  text-shadow:0 1px #fff,0 0 7px rgba(164,184,192,.20);
-}
-.card.tier-t1:not(.hidden-card)::before,.catalog-card-face.tier-t1::before {
-  content:'';
-  position:absolute;
-  right:3px;
-  top:3px;
-  width:18px;
-  height:18px;
-  z-index:3;
-  pointer-events:none;
-  background:linear-gradient(135deg,#f6f8f7,#7b8b91 48%,#dbe3e4 52%,transparent 54%);
-  clip-path:polygon(100% 0,100% 100%,0 0);
-  opacity:.78;
+  color:#53666b;
+  background:linear-gradient(180deg,#456066 0%,#223338 48%,#4f686d 56%,#30464b 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+  text-shadow:0 1px rgba(255,255,255,.38),0 -0.5px rgba(255,255,255,.18),0 1px 3px rgba(36,52,56,.28);
 }
 .card.tier-t2 .card-name,.card.tier-t3 .card-name,
 .catalog-card-face.tier-t2 .catalog-name-row > strong,.catalog-card-face.tier-t3 .catalog-name-row > strong {
-  color:#775311;
-  text-shadow:0 1px #fff4c7,0 0 7px rgba(214,167,55,.20);
+  color:#704d0d;
+  background:linear-gradient(180deg,#a97924 0%,#563607 46%,#c28d2e 56%,#70450a 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  -webkit-text-fill-color:transparent;
+  text-shadow:0 1px rgba(255,244,196,.72),0 -0.5px rgba(255,255,255,.28),0 1px 3px rgba(69,39,4,.24);
 }
 .card.tier-t2:not(.hidden-card),.catalog-card-face.tier-t2 {
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.75),inset 0 0 0 3px rgba(170,124,31,.09),0 7px 18px rgba(0,0,0,.20);
