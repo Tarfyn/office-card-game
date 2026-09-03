@@ -124,4 +124,4 @@ test("phase divider exposes localized phase labels and a non-color turn-owner cu
   assert.match(de, /opponentTurn: "GEGNERISCHER ZUG"/);
 });
 
-console.log(`\n${passed}/${passed} v7.69.43 phase-flow tests passed.`);
+console.log(`\n${passed}/${passed} v7.69.44 phase-flow tests passed.`);

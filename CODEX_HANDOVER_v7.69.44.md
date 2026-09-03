@@ -1,14 +1,14 @@
-# Office Card Game - Codex Handover v7.69.43
+# Office Card Game - Codex Handover v7.69.44
 
 ## Baseline
 
-- Version: `v7.69.43`
-- Commit: release commit for annotated tag v7.69.43
+- Version: `v7.69.44`
+- Commit: release commit for annotated tag v7.69.44
 - Ranked timer: disabled
 - Local development URL: `http://127.0.0.1:8787/`
 - Public deployment URL: `https://office-card-game-185-94-29-30.nip.io/`
 
-The v7.69.43 release includes the full-width desktop board, desktop gameplay scale, normalized
+The v7.69.44 release includes the full-width desktop board, desktop gameplay scale, normalized
 field tracks, permanent 3.25deg desktop perspective, safe hosted phase auto-advance, turn-owner
 phase visuals, cosmetic collection/shop surfaces, explicit card ownership, configurable Achievement
 and Ranked progression, level milestone rewards, the Silver Ranked frame, and the Bot/Training/
@@ -17,6 +17,13 @@ Tutorial foundation.
 The release also removes the obsolete T1 silver corner accent and applies restrained metallic
 silver/gold typography to T1-T3 card names across the shared card renderer. Executive Edition
 material and foil styling remain unchanged.
+
+The Deckbuilder's large 4K card grid now applies `content-visibility:auto` with a measured
+`contain-intrinsic-size:322px` to offscreen card items at viewport widths of 2000px and above.
+This reduces unnecessary desktop paint/raster work while preserving normal card realization when
+scrolling. The 1920px and mobile render paths remain unchanged. Warm scroll-action measurements
+improved from approximately 32.3ms average / 87ms worst to 25.8-30.9ms average / 37-61ms worst;
+these are relative action timings, not formal FPS or browser paint-trace measurements.
 
 The release also adds four explicit shop-only Board cosmetics: Soft Office, Midnight Circuit,
 Executive Steel and Concrete Minimal. They reuse the shared Board Skin architecture, remain

@@ -967,6 +967,13 @@ button:disabled { opacity:.42; cursor:not-allowed; transform:none; }
 .collection-filters > span { align-self:center; justify-self:end; font-size:10px; color:#7c756c; }
 .collection-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(156px,1fr)); gap:9px; }
 .collection-card { --collection-type:#777; min-height:245px; display:flex; flex-direction:column; gap:5px; padding:8px; border:2px solid color-mix(in srgb,var(--collection-type) 30%,#cfc7bc); border-top:6px solid var(--collection-type); border-radius:11px; background:#fffdf9; box-shadow:0 4px 12px rgba(40,32,20,.05); }
+/* Desktop Deckbuilder keeps the measured 322px card footprint while skipping offscreen card subtrees. */
+@media (min-width:2000px) {
+  .collection-card {
+    content-visibility:auto;
+    contain-intrinsic-size:322px;
+  }
+}
 .collection-card.type-employee { --collection-type:#1765b5; }
 .collection-card.type-incident { --collection-type:#b9433d; }
 .collection-card.type-action { --collection-type:#3a8752; }
