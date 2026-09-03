@@ -46,6 +46,15 @@ prepared as `root:root` mode `0700` and do not require PostgreSQL packages, a `p
 as `postgres:postgres` mode `0750`, only during bootstrap after package installation has created and
 validated the PostgreSQL system identity.
 
+Bootstrap installs/requires Ubuntu's `acl` package and adds only the named access ACL
+`user:postgres:--x` to `/srv`, `/srv/office-card-game`, and
+`/srv/office-card-game/backups`. `--no-mask` preserves the existing ACL mask and therefore preserves
+the effective permissions of existing entries, including the established `ocgadmin` access model.
+The named entry gives `postgres` path traversal without directory listing or parent-directory write
+access. It does not add a default ACL. `postgres` has normal owner access only inside
+`/srv/office-card-game/backups/postgresql`; `legacy-json` remains `root:root` mode `0700` with no
+`postgres` ACL and is neither readable, writable, nor traversable by that user.
+
 The application role owns only its dedicated database. It is explicitly `NOSUPERUSER`,
 `NOCREATEDB`, `NOCREATEROLE`, `NOINHERIT`, and `NOREPLICATION`. Owning the dedicated database lets
 the same role apply application migrations without cluster-wide privileges.
@@ -118,7 +127,15 @@ Idempotently installs the fixed PostgreSQL 18 server/client packages when absent
 `18/main`, writes only the helper-managed PostgreSQL/HBA include files, enables and restarts the
 PostgreSQL service, creates or validates the fixed database and role, generates/synchronizes the
 credential, writes `DATABASE_URL`, creates backup/state directories, validates loopback-only
-operation, and enables the fixed daily backup timer.
+operation, validates the restricted PostgreSQL backup path as the `postgres` Unix user, and enables
+the fixed daily backup timer.
+
+The backup-path validation confirms that every protected parent has the exact execute-only named
+ACL, that `postgres` cannot read/list or write those parents, and that the PostgreSQL dump directory
+is owned by `postgres:postgres` mode `0750`. It creates and immediately removes a fixed-template
+probe file as `postgres` to prove actual write access, and fails if an existing `legacy-json`
+directory is readable, writable, or traversable by `postgres`. Bootstrap records completion and
+enables the timer only after these checks pass. Reapplying the same named ACL is idempotent.
 
 It does not set `PROFILE_STORAGE_BACKEND`, restart the game service, migrate schema, alter UFW, or
 cut over persistence.
@@ -140,8 +157,8 @@ directory and only when their names match `office_card_game-*.dump`.
 
 ### `backup-status`
 
-Read-only. Reports the configured directories, retention, state markers, and up to ten recent
-PostgreSQL and legacy backups.
+Read-only. Reports the configured directories, retention, state markers, PostgreSQL backup-path ACL
+readiness, and up to ten recent PostgreSQL and legacy backups.
 
 ### `migrate <validated-release>`
 
@@ -221,6 +238,12 @@ the reviewed root-owned copies, no database or service unit is enabled, and the 
 revalidated. A partial bootstrap is likewise retryable; it may leave packages/configuration in
 place, but the helper will not record bootstrap completion or enable the backup timer until the
 database and final unit verification succeed.
+
+After installing a helper revision that introduces or repairs this ACL contract on an already
+bootstrapped host, rerun `bootstrap` before `backup-now`. The idempotent bootstrap reapplies the one
+fixed named ACL per protected parent and performs the real-user access probe before returning
+success. `backup-now` also revalidates the same policy through `require_bootstrap` and fails closed
+if the ACL chain later regresses.
 
 ## Migration and cutover flow
 

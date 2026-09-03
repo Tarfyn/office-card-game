@@ -116,11 +116,38 @@ const backupStatus = shellFunction("backup_status");
 const audit = shellFunction("audit");
 const bootstrap = shellFunction("bootstrap");
 const backupNow = shellFunction("backup_now");
+const backupAccessPolicy = shellFunction("postgres_backup_access_policy_valid");
+const validateBackupAccess = shellFunction("validate_postgres_backup_access");
 assert.doesNotMatch(backupRootLayout, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
 assert.match(legacyLayout, /ensure_backup_root_layout/);
 assert.doesNotMatch(legacyLayout, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
 assert.match(postgresLayout, /id -u postgres/);
 assert.match(postgresLayout, /PG_BACKUP_DIR/);
+assert.match(helper, /PG_BACKUP_TRAVERSE_DIRS=\(\n  "\/srv"\n  "\$\{BASE_DIR\}"\n  "\$\{BACKUP_ROOT\}"\n\)/);
+assert.match(postgresLayout, /setfacl --no-mask --modify='user:postgres:--x' -- "\$\{directory\}"/);
+assert.doesNotMatch(postgresLayout, /setfacl[^\n]*(?:rw|wx|rwx|default:)/);
+assert.doesNotMatch(postgresLayout, /setfacl[^\n]*(?:remove|delete|restore|set-file)/);
+assert.equal((postgresLayout.match(/setfacl/g) ?? []).length, 1, "ACL bootstrap must idempotently update one fixed entry");
+assert.match(legacyLayout, /install --directory --owner=root --group=root --mode=0700 "\$\{LEGACY_BACKUP_DIR\}"/);
+assert.doesNotMatch(legacyLayout, /setfacl|postgres/);
+assert.match(backupAccessPolicy, /getfacl --absolute-names --omit-header -- "\$\{directory\}"/);
+assert.match(backupAccessPolicy, /grep --fixed-strings --line-regexp --quiet 'user:postgres:--x'/);
+assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -x "\$\{directory\}"/);
+assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -r "\$\{directory\}"/);
+assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -w "\$\{directory\}"/);
+assert.match(backupAccessPolicy, /stat --format='%U:%G:%a' "\$\{PG_BACKUP_DIR\}"\) == "postgres:postgres:750"/);
+assert.match(backupAccessPolicy, /runuser --user=postgres -- \/usr\/bin\/test -w "\$\{PG_BACKUP_DIR\}"/);
+for (const permission of ["r", "w", "x"]) {
+  assert.match(
+    backupAccessPolicy,
+    new RegExp(`runuser --user=postgres -- \\/usr\\/bin\\/test -${permission} "\\$\\{LEGACY_BACKUP_DIR\\}"`)
+  );
+}
+assert.match(validateBackupAccess, /runuser --user=postgres -- \/usr\/bin\/mktemp/);
+assert.match(validateBackupAccess, /rm --force -- "\$\{access_probe\}"/);
+assert.match(validateBackupAccess, /trap cleanup_access_probe EXIT/);
+assert.match(helper, /apt-get install --yes --no-install-recommends[\s\\]+[\s\S]* acl/);
+assert.match(backupStatus, /postgres_backup_access_state/);
 assert.doesNotMatch(copyLegacySnapshot, /postgres|PG_BACKUP_DIR|DATABASE_URL/);
 assert.match(legacyBackup, /ensure_legacy_backup_layout/);
 assert.doesNotMatch(legacyBackup, /postgres|PG_BACKUP_DIR|DATABASE_URL|ensure_postgres_backup_layout/);
@@ -130,6 +157,14 @@ assert.match(audit, /if postgres_installed; then[\s\S]*postgres_scalar/);
 assert.ok(
   bootstrap.indexOf("install_postgres_packages") < bootstrap.indexOf("ensure_postgres_backup_layout"),
   "bootstrap must install PostgreSQL before preparing its backup directory"
+);
+assert.ok(
+  bootstrap.indexOf("ensure_postgres_backup_layout") < bootstrap.indexOf("validate_postgres_setup"),
+  "bootstrap must apply its idempotent ACL before validating PostgreSQL"
+);
+assert.ok(
+  bootstrap.indexOf("validate_postgres_setup") < bootstrap.indexOf("systemctl enable --now"),
+  "bootstrap must validate backup access before enabling the backup timer"
 );
 assert.ok(
   backupNow.indexOf("require_bootstrap") < backupNow.indexOf("runuser --user=postgres"),

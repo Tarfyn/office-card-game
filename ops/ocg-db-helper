@@ -43,6 +43,12 @@ readonly MIGRATION_RUNNER_REL="scripts/db-migrate.mjs"
 readonly CUTOVER_MARKER_REL="deploy/postgres-persistence-ready"
 readonly RETENTION_DAYS="30"
 
+readonly -a PG_BACKUP_TRAVERSE_DIRS=(
+  "/srv"
+  "${BASE_DIR}"
+  "${BACKUP_ROOT}"
+)
+
 readonly -a LEGACY_FILES=(
   "profiles.local.json"
   "players.local.json"
@@ -246,6 +252,12 @@ postgres_cluster_exists() {
     /usr/bin/awk -v major="${PG_MAJOR}" '$1 == major && $2 == "main" { found=1 } END { exit(found ? 0 : 1) }'
 }
 
+acl_tools_installed() {
+  /usr/bin/dpkg-query --show --showformat='${Status}' acl 2>/dev/null |
+    /usr/bin/grep --quiet '^install ok installed$' &&
+    [[ -x /usr/bin/setfacl && -x /usr/bin/getfacl ]]
+}
+
 ensure_listener_classifier() {
   [[ -f ${LISTENER_CLASSIFIER} && ! -L ${LISTENER_CLASSIFIER} ]] ||
     die "Missing immutable listener classifier: ${LISTENER_CLASSIFIER}"
@@ -282,14 +294,17 @@ ufw_allows_postgres() {
 }
 
 install_postgres_packages() {
-  if postgres_installed; then
+  if postgres_installed && acl_tools_installed; then
     return 0
   fi
   (
     export DEBIAN_FRONTEND=noninteractive
     /usr/bin/apt-get update
-    /usr/bin/apt-get install --yes --no-install-recommends "postgresql-${PG_MAJOR}" "postgresql-client-${PG_MAJOR}"
+    /usr/bin/apt-get install --yes --no-install-recommends \
+      "postgresql-${PG_MAJOR}" "postgresql-client-${PG_MAJOR}" acl
   )
+  postgres_installed || die "PostgreSQL package installation did not complete."
+  acl_tools_installed || die "Required POSIX ACL tooling is unavailable."
 }
 
 ensure_postgres_cluster() {
@@ -409,9 +424,85 @@ ensure_legacy_backup_layout() {
 }
 
 ensure_postgres_backup_layout() {
+  local directory=""
   /usr/bin/id -u postgres >/dev/null 2>&1 || die "PostgreSQL Unix user is missing after package installation."
+  acl_tools_installed || die "Required POSIX ACL tooling is unavailable."
   ensure_backup_root_layout
+  for directory in "${PG_BACKUP_TRAVERSE_DIRS[@]}"; do
+    [[ -d ${directory} && ! -L ${directory} ]] || die "Unsafe PostgreSQL backup ancestor: ${directory}"
+    /usr/bin/setfacl --no-mask --modify='user:postgres:--x' -- "${directory}" ||
+      die "Could not grant execute-only PostgreSQL backup traversal on ${directory}."
+  done
   /usr/bin/install --directory --owner=postgres --group=postgres --mode=0750 "${PG_BACKUP_DIR}"
+}
+
+postgres_backup_access_policy_valid() {
+  local directory=""
+  /usr/bin/id -u postgres >/dev/null 2>&1 || return 1
+  acl_tools_installed || return 1
+  [[ -d ${PG_BACKUP_DIR} && ! -L ${PG_BACKUP_DIR} ]] || return 1
+  [[ $(/usr/bin/stat --format='%U:%G:%a' "${PG_BACKUP_DIR}") == "postgres:postgres:750" ]] || return 1
+  for directory in "${PG_BACKUP_TRAVERSE_DIRS[@]}"; do
+    [[ -d ${directory} && ! -L ${directory} ]] || return 1
+    /usr/bin/getfacl --absolute-names --omit-header -- "${directory}" 2>/dev/null |
+      /usr/bin/grep --fixed-strings --line-regexp --quiet 'user:postgres:--x' || return 1
+    /usr/sbin/runuser --user=postgres -- /usr/bin/test -x "${directory}" || return 1
+    if /usr/sbin/runuser --user=postgres -- /usr/bin/test -r "${directory}"; then
+      return 1
+    fi
+    if /usr/sbin/runuser --user=postgres -- /usr/bin/test -w "${directory}"; then
+      return 1
+    fi
+  done
+  /usr/sbin/runuser --user=postgres -- /usr/bin/test -r "${PG_BACKUP_DIR}" || return 1
+  /usr/sbin/runuser --user=postgres -- /usr/bin/test -w "${PG_BACKUP_DIR}" || return 1
+  /usr/sbin/runuser --user=postgres -- /usr/bin/test -x "${PG_BACKUP_DIR}" || return 1
+  if [[ -e ${LEGACY_BACKUP_DIR} || -L ${LEGACY_BACKUP_DIR} ]]; then
+    [[ -d ${LEGACY_BACKUP_DIR} && ! -L ${LEGACY_BACKUP_DIR} ]] || return 1
+    if /usr/sbin/runuser --user=postgres -- /usr/bin/test -r "${LEGACY_BACKUP_DIR}" ||
+      /usr/sbin/runuser --user=postgres -- /usr/bin/test -w "${LEGACY_BACKUP_DIR}" ||
+      /usr/sbin/runuser --user=postgres -- /usr/bin/test -x "${LEGACY_BACKUP_DIR}"; then
+      return 1
+    fi
+  fi
+}
+
+postgres_backup_access_state() {
+  if ! /usr/bin/id -u postgres >/dev/null 2>&1; then
+    printf 'not-available (postgres user absent)'
+  elif ! acl_tools_installed; then
+    printf 'not-ready (ACL tools absent)'
+  elif postgres_backup_access_policy_valid; then
+    printf 'ready'
+  else
+    printf 'not-ready (ACL or directory permissions invalid)'
+  fi
+}
+
+validate_postgres_backup_access() {
+  (
+    local access_probe=""
+    cleanup_access_probe() {
+      local status=$?
+      trap - EXIT
+      if [[ ${access_probe} =~ ^/srv/office-card-game/backups/postgresql/\.ocg-db-helper-access-check\.[A-Za-z0-9]{6}$ ]]; then
+        /usr/bin/rm --force -- "${access_probe}" || status=1
+      fi
+      exit "${status}"
+    }
+    trap cleanup_access_probe EXIT
+    postgres_backup_access_policy_valid || die "PostgreSQL backup path access policy is invalid."
+    if ! access_probe=$(/usr/sbin/runuser --user=postgres -- /usr/bin/mktemp \
+      "${PG_BACKUP_DIR}/.ocg-db-helper-access-check.XXXXXX"); then
+      die "PostgreSQL Unix user cannot create a file in the backup directory."
+    fi
+    [[ ${access_probe} =~ ^/srv/office-card-game/backups/postgresql/\.ocg-db-helper-access-check\.[A-Za-z0-9]{6}$ ]] ||
+      die "PostgreSQL backup access probe returned an unexpected fixed path."
+    /usr/bin/rm --force -- "${access_probe}"
+    [[ ! -e ${access_probe} && ! -L ${access_probe} ]] || die "PostgreSQL backup access probe cleanup failed."
+    access_probe=""
+    trap - EXIT
+  )
 }
 
 ensure_backup_templates() {
@@ -462,6 +553,7 @@ validate_postgres_setup() {
   require_managed_database_url >/dev/null
   [[ $(/usr/bin/stat --format='%U:%G:%a' "${ENV_FILE}") == "root:root:600" ]] ||
     die "${ENV_FILE} must remain root:root mode 0600."
+  validate_postgres_backup_access
 }
 
 bootstrap() {
@@ -591,6 +683,7 @@ backup_status() {
   last_db=$(state_value_or_none "last-db-backup")
   last_legacy=$(state_value_or_none "last-legacy-backup")
   printf 'PostgreSQL backup directory: %s\n' "${PG_BACKUP_DIR}"
+  printf 'PostgreSQL backup path access: %s\n' "$(postgres_backup_access_state)"
   printf 'Retention: %s days\n' "${RETENTION_DAYS}"
   printf 'Last PostgreSQL backup: %s\n' "${last_db}"
   printf 'Last legacy JSON backup: %s\n' "${last_legacy}"
