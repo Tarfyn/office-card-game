@@ -86,7 +86,7 @@ import { alphaDefinitions } from "../dist/src/cards.js";
 import { alphaDeckPresets } from "../dist/src/decks.js";
 import { ALPHA_FORMAT } from "../dist/src/formats.js";
 import { validateDeck } from "../dist/src/engine.js";
-import { applyCraft, applyLevelMilestoneRewards, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openExecutiveEditionPack, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection } from "../dist/src/economy.js";
+import { applyCraft, applyLevelMilestoneRewards, applyMatchReward, applyScrap, createAlphaMetaProfile, createEconomySandboxProfile, openExecutiveEditionPack, openSandboxBooster, sandboxRarityTier, scrapEligibility, seedOwnedCollection, starterOnboardingRequired } from "../dist/src/economy.js";
 import { executiveEditionVariantId, isExecutiveEditionEligible } from "../dist/src/card-variants.js";
 import { COSMETIC_CATALOG, COSMETIC_SHOP_CATALOG, sortCosmeticItems } from "../dist/src/cosmetics.js";
 import { PlayerProfileService } from "../dist/src/profile.js";
@@ -386,15 +386,30 @@ async function recordCompletedProfileMatches(completion) {
 
 async function profileForRequest(req, profileToken) {
   const accountToken = accountService ? sessionTokenFromRequest(req) : "";
-  if (accountToken) return (await accountService.session(accountToken)).profile;
+  if (accountToken) return projectAccountProfile((await accountService.session(accountToken)).profile);
   return profiles.get(String(profileToken ?? ""));
 }
 
 async function optionalProfileForRequest(req, profileToken) {
   const accountToken = accountService ? sessionTokenFromRequest(req) : "";
-  if (accountToken) return (await accountService.session(accountToken)).profile;
+  if (accountToken) return projectAccountProfile((await accountService.session(accountToken)).profile);
   if (!profileToken) return null;
   return profiles.get(String(profileToken));
+}
+
+function projectAccountProfile(profile) {
+  if (!profile || starterOnboardingRequired(profile)) return profile;
+  const onboarding = profile.meta?.starterOnboarding;
+  if (onboarding?.status === "COMPLETE") return profile;
+  // Legacy PostgreSQL profiles predate Starter Onboarding v1. Project them as
+  // grandfathered without writing a synthetic marker back to the database.
+  return {
+    ...profile,
+    meta: {
+      ...(profile.meta ?? {}),
+      starterOnboarding: { version:1, status:"COMPLETE", selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 }
+    }
+  };
 }
 
 async function mutateProfileForRequest(req, profileToken, mutation) {
@@ -456,7 +471,7 @@ async function roomSeatProfileForRequest(req, playerId) {
   const accountToken = accountService ? sessionTokenFromRequest(req) : "";
   if (accountToken) {
     const current = await accountService.session(accountToken);
-    return current.profile.playerId === playerId ? current.profile : null;
+    return current.profile.playerId === playerId ? projectAccountProfile(current.profile) : null;
   }
   try { return profiles.getByPlayerId(playerId); }
   catch { return null; }
@@ -652,7 +667,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.53",
+    version: "7.69.54",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -686,7 +701,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.53", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.54", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -910,11 +925,11 @@ const server = createServer(async (req, res) => {
     validateAuthenticatedMutation(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.53", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.54", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.53", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.54", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -939,7 +954,7 @@ const server = createServer(async (req, res) => {
       if (!token) return json(res, 200, { mode:"GUEST", account:null, accountPersistenceConfigured:true, accountPersistenceAvailable:accountService.readyState.ok === true });
       try {
         const current = await accountService.session(token);
-        return json(res, 200, { mode:"ACCOUNT", account:current.account, profile:current.profile, expiresAt:current.session.expiresAt, accountPersistenceConfigured:true, accountPersistenceAvailable:true });
+        return json(res, 200, { mode:"ACCOUNT", account:current.account, profile:projectAccountProfile(current.profile), expiresAt:current.session.expiresAt, accountPersistenceConfigured:true, accountPersistenceAvailable:true });
       } catch (error) {
         if (!(error instanceof AccountError) || error.code !== "AUTH_REQUIRED") throw error;
         return json(res, 200, { mode:"GUEST", account:null, expired:true, accountPersistenceConfigured:true, accountPersistenceAvailable:true }, { "set-cookie":sessionCookie("", { clear:true, secure:SERVER_MODE === "NETWORK" }) });
@@ -961,7 +976,7 @@ const server = createServer(async (req, res) => {
         throw error;
       }
       const current = await accountService.session(loggedIn.sessionToken, { touch:false });
-      return json(res, 200, { mode:"ACCOUNT", account:loggedIn.account, profile:current.profile, expiresAt:loggedIn.expiresAt }, { "set-cookie":sessionCookie(loggedIn.sessionToken, { secure:SERVER_MODE === "NETWORK" }) });
+      return json(res, 200, { mode:"ACCOUNT", account:loggedIn.account, profile:projectAccountProfile(current.profile), expiresAt:loggedIn.expiresAt }, { "set-cookie":sessionCookie(loggedIn.sessionToken, { secure:SERVER_MODE === "NETWORK" }) });
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
       const token = accountService ? sessionTokenFromRequest(req) : "";
@@ -1569,7 +1584,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.53 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.54 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

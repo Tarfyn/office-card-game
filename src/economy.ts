@@ -21,6 +21,17 @@ export interface StarterOnboardingState {
   boosterPresentationCount: number;
 }
 
+type StarterOnboardingSource = {
+  starterOnboarding?: Partial<StarterOnboardingState> | null;
+  meta?: Omit<Partial<PlayerMetaProfile>, "starterOnboarding"> & { starterOnboarding?: Partial<StarterOnboardingState> | null } | null;
+} | null | undefined;
+
+/** Only an explicit v1 pending/in-progress marker makes onboarding required. */
+export function starterOnboardingRequired(source: StarterOnboardingSource): boolean {
+  const onboarding = source?.meta?.starterOnboarding ?? source?.starterOnboarding;
+  return onboarding?.version === 1 && (onboarding.status === "PENDING" || onboarding.status === "IN_PROGRESS");
+}
+
 /** Deterministic Alpha fixture used to exercise the complete Executive Edition card path. */
 export const ALPHA_EXECUTIVE_TEST_CARD_ID = "CS-001";
 

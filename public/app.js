@@ -6331,7 +6331,8 @@ function bindResponsiveLobbySelects() {
 }
 
 function starterOnboardingPending() {
-  return Boolean(state.account && state.serverProfile?.meta?.starterOnboarding?.status !== 'COMPLETE');
+  const status = state.serverProfile?.meta?.starterOnboarding?.status;
+  return Boolean(state.account && (status === 'PENDING' || status === 'IN_PROGRESS'));
 }
 
 function starterOnboardingErrorMessage(error) {
