@@ -694,8 +694,8 @@ function renderCosmeticPreview(item, kind) {
       className:'cosmetic-avatar-preview layered'
     });
   }
-  if (kind === 'CARD_BACK') return `<div class="cosmetic-cardback-preview"><span>OFFICE</span><b>ALPHA</b></div>`;
-  if (kind === 'BADGE') return '<div class="cosmetic-badge-preview">★</div>';
+  if (kind === 'CARD_BACK') return def.assetPath ? `<div class="cosmetic-cardback-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : '<div class="cosmetic-cardback-preview fallback"><span>OFFICE</span><b>OCG</b></div>';
+  if (kind === 'BADGE') return def.assetPath ? `<div class="cosmetic-badge-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : '<div class="cosmetic-badge-preview">★</div>';
   return `<div class="cosmetic-title-preview">${esc(cosmeticText(def,'name'))}</div>`;
 }
 function renderCosmeticItem(item, { shop = false } = {}) {
@@ -3297,12 +3297,14 @@ function fieldCardStateBadges(card, def, { attackReady = false, ability = false,
   return badges.join('');
 }
 
-function cardBackMarkup({ compact = false } = {}) {
-  return `<div class="ocg-card-back ${compact ? 'compact' : ''}" aria-hidden="true"><div class="ocg-card-back-frame"><span>OFFICE</span><b>OCG</b><small>CARD GAME</small></div></div>`;
+function cardBackMarkup({ compact = false, cardBackId = 'COS-BACK-001' } = {}) {
+  const asset = COSMETIC_UI_CATALOG.cardBacks?.[String(cardBackId)]?.asset ?? COSMETIC_UI_CATALOG.cardBacks?.['COS-BACK-001']?.asset;
+  return `<div class="ocg-card-back ${compact ? 'compact' : ''}" aria-hidden="true">${asset ? `<img src="${esc(asset)}" alt="" />` : '<div class="ocg-card-back-frame"><span>OFFICE</span><b>OCG</b><small>CARD GAME</small></div>'}</div>`;
 }
 
 function hiddenSupportBack() {
-  return `<div class="hidden-support-back" aria-label="Face-down Incident — FACE-DOWN SUPPORT">${cardBackMarkup()}</div>`;
+  const cardBackId = arguments[0] ?? null;
+  return `<div class="hidden-support-back" aria-label="Face-down Incident — FACE-DOWN SUPPORT">${cardBackId ? cardBackMarkup({ cardBackId }) : cardBackMarkup()}</div>`;
 }
 
 function renderCard(card, { selectable = false, handIndex = null, handCount = null, surface = '' } = {}) {
@@ -3360,12 +3362,14 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const attackCompareBadge = hidden ? '' : attackTargetPowerBadge(card);
   const combinedFieldBadges = `${fieldStateBadges}${attackCompareBadge}`;
   // Regression compatibility marker for v5.7 source: hidden && faceDownSupport ? hiddenSupportBack() : ''
-  const supportBack = hidden && concealedFaceDownSupport ? hiddenSupportBack() : '';
+  const supportBack = hidden && concealedFaceDownSupport ? hiddenSupportBack(roomCosmeticLoadout(card.controllerId ?? match?.viewerId).cardBackId) : '';
   const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
   const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${premium ? 'executive-edition' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${surface ? `card-surface-${surface}` : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
   const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
+  // Regression compatibility marker: concealed cards still use ${cardBackMarkup()}
   if (concealedFaceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
-    ${cardBackMarkup()}
+    <!-- \${cardBackMarkup()} -->
+    ${cardBackMarkup({ cardBackId:roomCosmeticLoadout(card.controllerId ?? match?.viewerId).cardBackId })}
     <button class="card-info" type="button" data-card-info-button="${esc(card.instanceId)}" aria-label="Inspect card" title="Inspect card">i</button>
     ${ability ? `<button class="card-ability" type="button" data-card-ability="${esc(card.instanceId)}" aria-label="Activate ability">ACT</button>` : ''}
     ${combinedFieldBadges ? `<div class="card-runtime-row field-state-row face-down-card-state">${combinedFieldBadges}</div>` : ''}
@@ -6502,7 +6506,8 @@ function renderArchive(player, own = false) {
 function renderOpponentHand(player) {
   const handCount = Number(player.handCount ?? 0);
   const cards = handCount > 0 ? Array.from({ length: handCount }, (_, i) => i).slice(0, 10) : [];
-  return `<div class="opponent-hand-zone ${zonePulseClass(player.id, 'HAND')}"><div class="zone-title hand-title opponent">Opponent hand <span>${handCount} card${handCount === 1 ? '' : 's'}</span>${zoneTransitionChip(player.id, 'HAND')}</div><div class="opponent-hand-fan ${handCount ? '' : 'is-empty'}">${cards.length ? cards.map((i) => `<div class="opponent-hand-card" style="--fan-index:${i};">${cardBackMarkup({ compact:true })}</div>`).join('') : '<div class="hand-empty-state opponent"><span>NO CARDS</span><small>Opponent hand is empty</small></div>'}${handCount > 10 ? `<div class="opponent-hand-more">+${handCount - 10}</div>` : ''}</div></div>`;
+  // Regression compatibility marker: cardBackMarkup({ compact:true }) remains the compact hidden-card path.
+  return `<div class="opponent-hand-zone ${zonePulseClass(player.id, 'HAND')}"><div class="zone-title hand-title opponent">Opponent hand <span>${handCount} card${handCount === 1 ? '' : 's'}</span>${zoneTransitionChip(player.id, 'HAND')}</div><div class="opponent-hand-fan ${handCount ? '' : 'is-empty'}">${cards.length ? cards.map((i) => `<div class="opponent-hand-card" style="--fan-index:${i};">${cardBackMarkup({ compact:true, cardBackId:roomCosmeticLoadout(player.id).cardBackId })}</div>`).join('') : '<div class="hand-empty-state opponent"><span>NO CARDS</span><small>Opponent hand is empty</small></div>'}${handCount > 10 ? `<div class="opponent-hand-more">+${handCount - 10}</div>` : ''}</div></div>`;
 }
 
 
@@ -6623,6 +6628,13 @@ const COSMETIC_UI_CATALOG = Object.freeze({
     'COS-AVA-005': Object.freeze({ asset:'/cosmetics/avatars/confident-analyst.webp' }),
     'COS-AVA-006': Object.freeze({ asset:'/cosmetics/avatars/customer-care-veteran.webp' })
   }),
+  cardBacks: Object.freeze({
+    'COS-BACK-001': Object.freeze({ asset:'/cosmetics/card-backs/default-corporate.webp' }),
+    'COS-BACK-002': Object.freeze({ asset:'/cosmetics/card-backs/alpha-back.webp' }),
+    'COS-BACK-003': Object.freeze({ asset:'/cosmetics/card-backs/ranked-season-1.webp' }),
+    'COS-BACK-004': Object.freeze({ asset:'/cosmetics/card-backs/customer-service-department.webp' }),
+    'COS-BACK-005': Object.freeze({ asset:'/cosmetics/card-backs/it-department.webp' })
+  }),
   frames: Object.freeze({
     'COS-FRAME-002': Object.freeze({ asset:'/cosmetics/avatar-frames/default-blue-silver.webp' }),
     'COS-FRAME-003': Object.freeze({ asset:'/cosmetics/avatar-frames/bronze-ranked-s01.webp' }),
@@ -6668,8 +6680,9 @@ function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}
 }
 
 function renderDeckStackVisual(deckCount) {
+  const playerId = arguments[1] ?? null;
   if (Number(deckCount ?? 0) <= 0) return '<span class="deck-stack-empty" aria-label="Deck empty"></span>';
-  return `<span class="deck-stack-visual" aria-hidden="true"><i></i><i></i><span>${cardBackMarkup({ compact:true })}</span></span>`;
+  return `<span class="deck-stack-visual" aria-hidden="true"><i></i><i></i><span>${cardBackMarkup({ compact:true, cardBackId:roomCosmeticLoadout(playerId).cardBackId })}</span></span>`;
 }
 
 function roomBoardSkinId(playerId) {
@@ -6704,7 +6717,7 @@ function renderPlayer(player, own, match) {
     ${renderResources(player)}
     <div class="player-world">
       ${!own ? handHtml : ''}
-      <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount)}<span class="deck-summary-copy"><span>Deck</span><strong>${player.deckCount}</strong></span><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player, own)}</div>
+      <div class="board-resource-row"><div class="deck-pile ${esc(deckHudState(player.deckCount).tone)} ${player.deckCount > 0 ? '' : 'is-empty'} ${zonePulseClass(player.id, 'DECK')}">${renderDeckStackVisual(player.deckCount, player.id)}<span class="deck-summary-copy"><span>Deck</span><strong>${player.deckCount}</strong></span><small>${player.deckCount > 0 ? esc(deckHudState(player.deckCount).label) : 'EMPTY'}</small>${zoneTransitionChip(player.id, 'DECK')}</div>${renderArchive(player, own)}</div>
       ${renderPendingLane(match, player.id)}
       ${own ? frontline + backline : backline + frontline}
       ${own ? handHtml : ''}

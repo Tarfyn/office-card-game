@@ -37,4 +37,6 @@ runTypeScript();
 copyData();
 const maskAudit = spawnSync(process.execPath, ['scripts/avatar-frame-mask-audit.mjs'], { cwd: root, stdio: 'inherit' });
 if (maskAudit.status !== 0) process.exit(maskAudit.status ?? 1);
+const cosmeticAudit = spawnSync(process.execPath, ['scripts/cosmetic-asset-audit.mjs'], { cwd: root, stdio: 'inherit' });
+if (cosmeticAudit.status !== 0) process.exit(cosmeticAudit.status ?? 1);
 console.log('Build complete: dist/');

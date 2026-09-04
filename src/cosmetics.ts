@@ -58,11 +58,21 @@ export const COSMETIC_IDS = {
   confidentAnalystAvatar: "COS-AVA-005",
   customerCareVeteranAvatar: "COS-AVA-006",
   defaultCorporateCardBack: "COS-BACK-001",
+  externalAlphaCardBack: "COS-BACK-002",
+  rankedSeason01CardBack: "COS-BACK-003",
+  customerServiceCardBack: "COS-BACK-004",
+  itDepartmentCardBack: "COS-BACK-005",
   defaultBlueSilverFrame: "COS-FRAME-002",
   bronzeRankedS01Frame: "COS-FRAME-003",
   goldRankedS01Frame: "COS-FRAME-004",
   diamondRankedS01Frame: "COS-FRAME-005",
-  silverRankedS01Frame: "COS-FRAME-006"
+  silverRankedS01Frame: "COS-FRAME-006",
+  replyAllSurvivorBadge: "COS-BADGE-001",
+  coffeePoweredBadge: "COS-BADGE-002",
+  inboxZeroBadge: "COS-BADGE-003",
+  meetingSurvivorBadge: "COS-BADGE-004",
+  ticketCloserBadge: "COS-BADGE-005",
+  escalationSpecialistBadge: "COS-BADGE-006"
 } as const;
 
 export const COSMETIC_CATALOG: Record<string, CosmeticDefinition> = {
@@ -77,12 +87,22 @@ export const COSMETIC_CATALOG: Record<string, CosmeticDefinition> = {
   [COSMETIC_IDS.overloadedJuniorAvatar]: { id:COSMETIC_IDS.overloadedJuniorAvatar, kind:"AVATAR", slot:"avatarId", name:"Overloaded Junior", description:"Running on caffeine, luck and unresolved tickets.", nameKey:"cosmetics.overloadedJuniorName", descriptionKey:"cosmetics.overloadedJuniorDescription", assetPath:"/cosmetics/avatars/overloaded-junior.webp" },
   [COSMETIC_IDS.confidentAnalystAvatar]: { id:COSMETIC_IDS.confidentAnalystAvatar, kind:"AVATAR", slot:"avatarId", name:"Confident Analyst", description:"Optimistic, prepared and suspiciously motivated.", nameKey:"cosmetics.confidentAnalystName", descriptionKey:"cosmetics.confidentAnalystDescription", assetPath:"/cosmetics/avatars/confident-analyst.webp" },
   [COSMETIC_IDS.customerCareVeteranAvatar]: { id:COSMETIC_IDS.customerCareVeteranAvatar, kind:"AVATAR", slot:"avatarId", name:"Customer Care Veteran", description:"Calm voice, tired eyes, infinite patience.", nameKey:"cosmetics.customerCareVeteranName", descriptionKey:"cosmetics.customerCareVeteranDescription", assetPath:"/cosmetics/avatars/customer-care-veteran.webp" },
-  [COSMETIC_IDS.defaultCorporateCardBack]: { id:COSMETIC_IDS.defaultCorporateCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Corporate Standard", description:"A dependable company-issued card back.", nameKey:"cosmetics.corporateStandardName", descriptionKey:"cosmetics.corporateStandardDescription", assetPath:null },
+  [COSMETIC_IDS.defaultCorporateCardBack]: { id:COSMETIC_IDS.defaultCorporateCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Corporate Standard", description:"A dependable company-issued card back.", nameKey:"cosmetics.corporateStandardName", descriptionKey:"cosmetics.corporateStandardDescription", assetPath:"/cosmetics/card-backs/default-corporate.webp", sortOrder:0 },
+  [COSMETIC_IDS.externalAlphaCardBack]: { id:COSMETIC_IDS.externalAlphaCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"External Alpha", description:"Issued to External Alpha participants.", nameKey:"cosmetics.externalAlphaName", descriptionKey:"cosmetics.externalAlphaDescription", assetPath:"/cosmetics/card-backs/alpha-back.webp", sortOrder:10 },
+  [COSMETIC_IDS.rankedSeason01CardBack]: { id:COSMETIC_IDS.rankedSeason01CardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Ranked Season 1", description:"A competitive card back reserved for Ranked rewards.", nameKey:"cosmetics.rankedSeason01BackName", descriptionKey:"cosmetics.rankedSeason01BackDescription", assetPath:"/cosmetics/card-backs/ranked-season-1.webp", sortOrder:20 },
+  [COSMETIC_IDS.customerServiceCardBack]: { id:COSMETIC_IDS.customerServiceCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Customer Service Department", description:"A department issue for the people who keep customers heard.", nameKey:"cosmetics.customerServiceBackName", descriptionKey:"cosmetics.customerServiceBackDescription", assetPath:"/cosmetics/card-backs/customer-service-department.webp", sortOrder:30 },
+  [COSMETIC_IDS.itDepartmentCardBack]: { id:COSMETIC_IDS.itDepartmentCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"IT Department", description:"A department issue for the systems desk.", nameKey:"cosmetics.itBackName", descriptionKey:"cosmetics.itBackDescription", assetPath:"/cosmetics/card-backs/it-department.webp", sortOrder:40 },
   [COSMETIC_IDS.defaultBlueSilverFrame]: { id:COSMETIC_IDS.defaultBlueSilverFrame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Blue Silver Frame", description:"Clean corporate standard issue.", nameKey:"cosmetics.blueSilverFrameName", descriptionKey:"cosmetics.blueSilverFrameDescription", assetPath:"/cosmetics/avatar-frames/default-blue-silver.webp", sortOrder:0 },
   [COSMETIC_IDS.bronzeRankedS01Frame]: { id:COSMETIC_IDS.bronzeRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Bronze Ranked S1", description:"Early-season ranked reward frame.", nameKey:"cosmetics.bronzeRankedS01Name", descriptionKey:"cosmetics.bronzeRankedS01Description", assetPath:"/cosmetics/avatar-frames/bronze-ranked-s01.webp", rankTierId:"BRONZE" },
   [COSMETIC_IDS.goldRankedS01Frame]: { id:COSMETIC_IDS.goldRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Gold Ranked S1", description:"Premium ranked reward frame.", nameKey:"cosmetics.goldRankedS01Name", descriptionKey:"cosmetics.goldRankedS01Description", assetPath:"/cosmetics/avatar-frames/gold-ranked-s01.webp", rankTierId:"GOLD" },
   [COSMETIC_IDS.diamondRankedS01Frame]: { id:COSMETIC_IDS.diamondRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Diamond Ranked S1", description:"High-tier ranked reward frame.", nameKey:"cosmetics.diamondRankedS01Name", descriptionKey:"cosmetics.diamondRankedS01Description", assetPath:"/cosmetics/avatar-frames/diamond-ranked-s01.webp", rankTierId:"DIAMOND" },
-  [COSMETIC_IDS.silverRankedS01Frame]: { id:COSMETIC_IDS.silverRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Silver Ranked S1", description:"Mid-tier ranked reward frame.", nameKey:"cosmetics.silverRankedS01Name", descriptionKey:"cosmetics.silverRankedS01Description", assetPath:"/cosmetics/avatar-frames/silver-ranked-s01.webp", portraitMaskAsset:"/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png", rankTierId:"SILVER" }
+  [COSMETIC_IDS.silverRankedS01Frame]: { id:COSMETIC_IDS.silverRankedS01Frame, kind:"AVATAR_FRAME", slot:"avatarFrameId", name:"Silver Ranked S1", description:"Mid-tier ranked reward frame.", nameKey:"cosmetics.silverRankedS01Name", descriptionKey:"cosmetics.silverRankedS01Description", assetPath:"/cosmetics/avatar-frames/silver-ranked-s01.webp", portraitMaskAsset:"/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png", rankTierId:"SILVER" },
+  [COSMETIC_IDS.replyAllSurvivorBadge]: { id:COSMETIC_IDS.replyAllSurvivorBadge, kind:"BADGE", slot:"badgeId", name:"Reply All Survivor", description:"Survived the thread that should have been a direct message.", nameKey:"cosmetics.replyAllSurvivorName", descriptionKey:"cosmetics.replyAllSurvivorDescription", assetPath:"/cosmetics/badges/reply-all-survivor.webp", sortOrder:10 },
+  [COSMETIC_IDS.coffeePoweredBadge]: { id:COSMETIC_IDS.coffeePoweredBadge, kind:"BADGE", slot:"badgeId", name:"Coffee Powered", description:"Kept the office moving one cup at a time.", nameKey:"cosmetics.coffeePoweredName", descriptionKey:"cosmetics.coffeePoweredDescription", assetPath:"/cosmetics/badges/coffee-powered.webp", sortOrder:20 },
+  [COSMETIC_IDS.inboxZeroBadge]: { id:COSMETIC_IDS.inboxZeroBadge, kind:"BADGE", slot:"badgeId", name:"Inbox Zero", description:"Reached the quietest place in the company.", nameKey:"cosmetics.inboxZeroName", descriptionKey:"cosmetics.inboxZeroDescription", assetPath:"/cosmetics/badges/inbox-zero.webp", sortOrder:30 },
+  [COSMETIC_IDS.meetingSurvivorBadge]: { id:COSMETIC_IDS.meetingSurvivorBadge, kind:"BADGE", slot:"badgeId", name:"Meeting Survivor", description:"Returned from the calendar with notes intact.", nameKey:"cosmetics.meetingSurvivorName", descriptionKey:"cosmetics.meetingSurvivorDescription", assetPath:"/cosmetics/badges/meeting-survivor.webp", sortOrder:40 },
+  [COSMETIC_IDS.ticketCloserBadge]: { id:COSMETIC_IDS.ticketCloserBadge, kind:"BADGE", slot:"badgeId", name:"Ticket Closer", description:"Turns open tickets into resolved tickets.", nameKey:"cosmetics.ticketCloserName", descriptionKey:"cosmetics.ticketCloserDescription", assetPath:"/cosmetics/badges/ticket-closer.webp", sortOrder:50 },
+  [COSMETIC_IDS.escalationSpecialistBadge]: { id:COSMETIC_IDS.escalationSpecialistBadge, kind:"BADGE", slot:"badgeId", name:"Escalation Specialist", description:"Knows exactly when to raise the issue.", nameKey:"cosmetics.escalationSpecialistName", descriptionKey:"cosmetics.escalationSpecialistDescription", assetPath:"/cosmetics/badges/escalation-specialist.webp", sortOrder:60 }
 };
 
 export const COSMETIC_SHOP_CATALOG = Object.freeze([
@@ -95,7 +115,9 @@ export const COSMETIC_SHOP_CATALOG = Object.freeze([
   { cosmeticId:COSMETIC_IDS.overloadedJuniorAvatar, price:240 },
   { cosmeticId:COSMETIC_IDS.confidentAnalystAvatar, price:240 },
   { cosmeticId:COSMETIC_IDS.customerCareVeteranAvatar, price:240 },
-  { cosmeticId:COSMETIC_IDS.defaultBlueSilverFrame, price:160 }
+  { cosmeticId:COSMETIC_IDS.defaultBlueSilverFrame, price:160 },
+  { cosmeticId:COSMETIC_IDS.customerServiceCardBack, price:180 },
+  { cosmeticId:COSMETIC_IDS.itDepartmentCardBack, price:180 }
 ]);
 
 export function sortCosmeticItems<T extends { definition?: CosmeticDefinition }>(items: readonly T[], rankedTiers: readonly { id: string; order: number }[] = []): T[] {
@@ -120,7 +142,17 @@ const LEGACY_STARTER_EXCLUDED_COSMETICS = new Set<string>([
   COSMETIC_IDS.bronzeRankedS01Frame,
   COSMETIC_IDS.goldRankedS01Frame,
   COSMETIC_IDS.diamondRankedS01Frame,
-  COSMETIC_IDS.silverRankedS01Frame
+  COSMETIC_IDS.silverRankedS01Frame,
+  COSMETIC_IDS.externalAlphaCardBack,
+  COSMETIC_IDS.rankedSeason01CardBack,
+  COSMETIC_IDS.customerServiceCardBack,
+  COSMETIC_IDS.itDepartmentCardBack,
+  COSMETIC_IDS.replyAllSurvivorBadge,
+  COSMETIC_IDS.coffeePoweredBadge,
+  COSMETIC_IDS.inboxZeroBadge,
+  COSMETIC_IDS.meetingSurvivorBadge,
+  COSMETIC_IDS.ticketCloserBadge,
+  COSMETIC_IDS.escalationSpecialistBadge
 ]);
 
 const LEGACY_BOARD_TO_ID: Record<string, string> = {

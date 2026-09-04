@@ -22,6 +22,7 @@
     "ops:alpha-check": "node scripts/alpha-candidate-check.mjs",
     "ops:i18n-audit": "node scripts/localization-audit.mjs",
     "ops:art-audit": "node scripts/artwork-audit.mjs --write",
+    "ops:cosmetic-audit": "node scripts/cosmetic-asset-audit.mjs",
     "ops:art-audit:strict": "node scripts/artwork-audit.mjs --write --strict-missing"
   },
   "devDependencies": {

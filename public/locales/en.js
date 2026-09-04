@@ -1,4 +1,4 @@
-export const en = Object.freeze({
+const enCatalog = {
   meta: { title: "Office Card Game — v{version} Alpha Playtest" },
   accessibility: { skipToGame: "Skip to game content" },
   nav: { backToLobby: "Back to lobby", lobby: "Lobby" },
@@ -99,4 +99,27 @@ export const en = Object.freeze({
     feedbackSaved: "Saved to this match.",
     feedbackSaveFailed: "Could not save playtest note."
   }
+};
+Object.assign(enCatalog.cosmetics, {
+  externalAlphaName: "External Alpha",
+  externalAlphaDescription: "Issued to External Alpha participants.",
+  rankedSeason01BackName: "Ranked Season 1",
+  rankedSeason01BackDescription: "A competitive card back reserved for Ranked rewards.",
+  customerServiceBackName: "Customer Service Department",
+  customerServiceBackDescription: "A department issue for the people who keep customers heard.",
+  itBackName: "IT Department",
+  itBackDescription: "A department issue for the systems desk.",
+  replyAllSurvivorName: "Reply All Survivor",
+  replyAllSurvivorDescription: "Survived the thread that should have been a direct message.",
+  coffeePoweredName: "Coffee Powered",
+  coffeePoweredDescription: "Kept the office moving one cup at a time.",
+  inboxZeroName: "Inbox Zero",
+  inboxZeroDescription: "Reached the quietest place in the company.",
+  meetingSurvivorName: "Meeting Survivor",
+  meetingSurvivorDescription: "Returned from the calendar with notes intact.",
+  ticketCloserName: "Ticket Closer",
+  ticketCloserDescription: "Turns open tickets into resolved tickets.",
+  escalationSpecialistName: "Escalation Specialist",
+  escalationSpecialistDescription: "Knows exactly when to raise the issue."
 });
+export const en = Object.freeze(enCatalog);

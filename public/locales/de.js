@@ -1,4 +1,4 @@
-export const de = Object.freeze({
+const deCatalog = {
   meta: { title: "Office Card Game — v{version} Alpha-Playtest" },
   accessibility: { skipToGame: "Zum Spielinhalt springen" },
   nav: { backToLobby: "Zurück zur Lobby", lobby: "Lobby" },
@@ -99,7 +99,30 @@ export const de = Object.freeze({
     feedbackSaved: "Für dieses Match gespeichert.",
     feedbackSaveFailed: "Playtest-Hinweis konnte nicht gespeichert werden."
   }
+};
+Object.assign(deCatalog.cosmetics, {
+  externalAlphaName: "Externe Alpha",
+  externalAlphaDescription: "Ausgegeben an Teilnehmer der externen Alpha.",
+  rankedSeason01BackName: "Ranked Saison 1",
+  rankedSeason01BackDescription: "Eine kompetitive Kartenrückseite für Ranked-Belohnungen.",
+  customerServiceBackName: "Kundenservice-Abteilung",
+  customerServiceBackDescription: "Abteilungsausgabe für alle, die Kunden Gehör verschaffen.",
+  itBackName: "IT-Abteilung",
+  itBackDescription: "Abteilungsausgabe für den Systems Desk.",
+  replyAllSurvivorName: "Reply-All-Überlebender",
+  replyAllSurvivorDescription: "Hat den Thread überlebt, der eine Direktnachricht hätte sein sollen.",
+  coffeePoweredName: "Kaffeegetrieben",
+  coffeePoweredDescription: "Hält das Büro Tasse für Tasse am Laufen.",
+  inboxZeroName: "Postfach Null",
+  inboxZeroDescription: "Hat den ruhigsten Ort im Unternehmen erreicht.",
+  meetingSurvivorName: "Meeting-Überlebender",
+  meetingSurvivorDescription: "Kehrt mit intakten Notizen aus dem Kalender zurück.",
+  ticketCloserName: "Ticket-Schließer",
+  ticketCloserDescription: "Macht offene Tickets zu erledigten Tickets.",
+  escalationSpecialistName: "Eskalationsspezialist",
+  escalationSpecialistDescription: "Weiß genau, wann ein Thema eskaliert werden muss."
 });
+export const de = Object.freeze(deCatalog);
 
 // Temporary migration bridge for legacy UI that predates translation keys.
 // New UI strings should use keyed dictionaries; this exact-literal overlay lets

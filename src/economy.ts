@@ -1,4 +1,4 @@
-import { COSMETIC_CATALOG, cosmeticIsOwned, defaultCosmeticLoadout, defaultCosmeticOwnership, normalizePlayerCosmetics, type PlayerCosmeticState } from "./cosmetics.js";
+import { COSMETIC_CATALOG, COSMETIC_IDS, cosmeticIsOwned, defaultCosmeticLoadout, defaultCosmeticOwnership, normalizePlayerCosmetics, type PlayerCosmeticState } from "./cosmetics.js";
 import { executiveEditionVariantId, isExecutiveEditionEligible, normalizeCardVariantId, variantOwnershipKey } from "./card-variants.js";
 
 export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
@@ -374,11 +374,30 @@ export function applyAlphaPlaytestCosmeticGrant(profile: PlayerMetaProfile, now 
       cards: [], officeCredits: 0, scrap: 0,
       cosmetics: ["COS-FRAME-006"], packs: [], grantedAt: now
     }, now).profile;
-  return applyRewardGrant(withSilverRankedFrame, {
+  const withExecutiveCard = applyRewardGrant(withSilverRankedFrame, {
     source: "alpha_playtest",
     sourceRef: "alpha-playtest:executive-card:v1",
     cards: [{ cardId: ALPHA_EXECUTIVE_TEST_CARD_ID, quantity: 1, variantId: executiveEditionVariantId(ALPHA_EXECUTIVE_TEST_CARD_ID) }],
     officeCredits: 0, scrap: 0, cosmetics: [], packs: [], grantedAt: now
+  }, now).profile;
+  const withAlphaCosmetics = applyRewardGrant(withExecutiveCard, {
+    source: "alpha_playtest",
+    sourceRef: "alpha-playtest:cosmetic-card-backs:v1",
+    cards: [], officeCredits: 0, scrap: 0,
+    cosmetics: [COSMETIC_IDS.externalAlphaCardBack, COSMETIC_IDS.rankedSeason01CardBack], packs: [], grantedAt: now
+  }, now).profile;
+  return applyRewardGrant(withAlphaCosmetics, {
+    source: "alpha_playtest",
+    sourceRef: "alpha-playtest:achievement-badges:v1",
+    cards: [], officeCredits: 0, scrap: 0,
+    cosmetics: [
+      COSMETIC_IDS.replyAllSurvivorBadge,
+      COSMETIC_IDS.coffeePoweredBadge,
+      COSMETIC_IDS.inboxZeroBadge,
+      COSMETIC_IDS.meetingSurvivorBadge,
+      COSMETIC_IDS.ticketCloserBadge,
+      COSMETIC_IDS.escalationSpecialistBadge
+    ], packs: [], grantedAt: now
   }, now).profile;
 }
 
