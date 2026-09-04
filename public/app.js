@@ -516,6 +516,21 @@ function profileCosmeticName(slot) {
   return item?.definition ? cosmeticText(item.definition, 'name') : null;
 }
 
+function rankedSeasonLabel(seasonId) {
+  const normalized = String(seasonId ?? '').toUpperCase().replace(/1$/, '');
+  if (normalized === 'ALPHA_PRESEASON') return t('ranked.seasons.alphaPreseason', {}, 'Alpha Preseason');
+  return seasonId ? String(seasonId).replaceAll('_', ' ') : '—';
+}
+
+function achievementDisplayName(item) {
+  return item?.titleKey ? t(item.titleKey) : item?.hidden ? t('achievements.hidden') : item?.id ?? t('achievements.hidden');
+}
+
+function achievementProgressLabel(item) {
+  if (item?.progress?.completedAt) return t('achievements.completed');
+  return `${item?.progress?.value ?? 0}/${item?.target ?? 1}`;
+}
+
 function renderPlayerFileHeader(profile) {
   const loadout = profile?.meta?.cosmetics?.loadout ?? {};
   const avatarId = loadout.avatarId ?? 'COS-AVA-001';
@@ -531,7 +546,7 @@ function renderPlayerFileHeader(profile) {
   const badge = cosmeticBadgeMeta(loadout.badgeId);
   const titleMarkup = title ? `<p class="player-file-title">${esc(title)}</p>` : '';
   const badgeMarkup = badge ? `<div class="player-file-badge"><img src="${esc(badge.asset)}" alt=""/><span>${esc(badge.label)}</span></div>` : '';
-  return `<header class="player-file-header"><div class="player-file-header-main"><div class="player-file-avatar">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(profile?.displayName) })}</div><div class="player-file-name"><span>${esc(t('playerFile.kicker'))}</span><h1>${esc(profile?.displayName ?? 'Player')}</h1>${titleMarkup}${badgeMarkup}<small>${esc(profileCosmeticName('avatarId') ?? t('playerFile.defaultAvatar'))}${frameAsset ? ` · ${esc(profileCosmeticName('avatarFrameId') ?? t('playerFile.framed'))}` : ''}</small></div></div><div class="player-file-header-stats"><div><span>${esc(t('playerFile.level'))}</span><strong>${esc(progression.level ?? 1)}</strong><div class="player-file-xp"><i style="width:${xpPercent}%"></i></div><small>${esc(t('playerFile.xpProgress',{ current:xpIntoLevel, total:step }))}</small></div><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong><small>${esc(profile?.ranked?.seasonId ?? '—')} · ${esc(profile?.ranked?.rating ?? '—')} MMR</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(pvp.wins)}–${esc(pvp.losses)}–${esc(pvp.draws)}</strong><small>${esc(t('playerFile.matchesCount',{ count:pvp.matches }))}</small></div></div></header>`;
+  return `<header class="player-file-header"><div class="player-file-header-main"><div class="player-file-avatar">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(profile?.displayName) })}</div><div class="player-file-name"><span>${esc(t('playerFile.kicker'))}</span><h1>${esc(profile?.displayName ?? 'Player')}</h1>${titleMarkup}${badgeMarkup}<small>${esc(profileCosmeticName('avatarId') ?? t('playerFile.defaultAvatar'))}${frameAsset ? ` · ${esc(profileCosmeticName('avatarFrameId') ?? t('playerFile.framed'))}` : ''}</small></div></div><div class="player-file-header-stats"><div><span>${esc(t('playerFile.level'))}</span><strong>${esc(progression.level ?? 1)}</strong><div class="player-file-xp"><i style="width:${xpPercent}%"></i></div><small>${esc(t('playerFile.xpProgress',{ current:xpIntoLevel, total:step }))}</small></div><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong><small>${esc(rankedSeasonLabel(profile?.ranked?.seasonId))} · ${esc(profile?.ranked?.rating ?? '—')} MMR</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(pvp.wins)}–${esc(pvp.losses)}–${esc(pvp.draws)}</strong><small>${esc(t('playerFile.matchesCount',{ count:pvp.matches }))}</small></div></div></header>`;
 }
 
 function renderPlayerFileHistoryRow(record) {
@@ -549,11 +564,14 @@ function renderPlayerFileOverview(profile) {
   const progression = profile?.meta?.progression ?? {};
   const achievements = Object.values(profile?.meta?.achievements ?? {});
   const completedAchievements = achievements.filter((item) => item?.completedAt).length;
+  const achievementItems = state.achievementData?.achievements ?? [];
+  const incompleteAchievements = achievementItems.filter((item) => !item.progress?.completedAt);
+  const achievementPreview = (incompleteAchievements.length ? incompleteAchievements : achievementItems).slice(0,3);
   const recent = (profile?.matchHistory ?? []).filter((item) => item.mode === 'FRIENDLY' || item.mode === 'RANKED').slice(0,5);
   const competitiveResults = recent.map((item) => `<b class="${String(item.result ?? item.outcome).toLowerCase()}">${esc(item.result ?? (item.outcome === 'RESIGN_LOSS' ? 'LOSS' : item.outcome))}</b>`).join('');
   const topDeck = Object.values(profile?.stats?.deckUsage ?? {}).sort((a,b) => Number(b.matches ?? 0) - Number(a.matches ?? 0))[0];
   const topDepartment = Object.entries(profile?.stats?.departmentUsage ?? {}).sort(([,a],[,b]) => Number(b.matches ?? 0) - Number(a.matches ?? 0))[0];
-  return `<div class="player-file-overview"><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.progression'))}</span><h2>${esc(t('playerFile.levelHeadline',{ level:progression.level ?? 1 }))}</h2><p>${esc(t('playerFile.xpDetail',{ xp:progression.xp ?? 0 }))}</p><button class="player-file-link" data-profile-section="RANKED">${esc(t('playerFile.viewRanked'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.record'))}</span><h2>${esc(t('playerFile.recordHeadline',{ wins:pvp.wins, losses:pvp.losses, draws:pvp.draws }))}</h2><p>${esc(t('playerFile.winRate',{ rate:pvp.matches ? Math.round(pvp.wins / pvp.matches * 100) : 0 }))}</p><button class="player-file-link" data-profile-section="STATS">${esc(t('playerFile.viewStats'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.achievements'))}</span><h2>${esc(t('playerFile.achievementHeadline',{ completed:completedAchievements, total:achievements.length }))}</h2><p>${esc(t('playerFile.achievementDetail'))}</p><button class="player-file-link" data-profile-section="ACHIEVEMENTS">${esc(t('playerFile.viewAchievements'))}</button></article></section><section class="player-file-panel player-file-recent"><div class="player-file-panel-heading"><div><span>${esc(t('playerFile.recentForm'))}</span><h2>${esc(t('playerFile.competitiveForm'))}</h2></div><button class="player-file-link" data-profile-section="MATCH_HISTORY">${esc(t('playerFile.viewHistory'))}</button></div><div class="player-file-form">${competitiveResults || `<small>${esc(t('playerFile.noCompetitiveMatches'))}</small>`}</div>${recent.length ? `<div class="player-file-mini-history">${recent.slice(0,3).map(renderPlayerFileHistoryRow).join('')}</div>` : ''}</section><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.ranked'))}</span><h2>${esc(profileRankLabel(profile))}</h2><p>${esc(t('playerFile.mmrPeak',{ current:ranked.rating ?? 1000, peak:ranked.peakRating ?? ranked.rating ?? 1000 }))}</p></article><article class="player-file-panel"><span>${esc(t('playerFile.favorites'))}</span><h2>${esc(topDeck?.deckName ?? t('playerFile.noDeck'))}</h2><p>${esc(topDepartment ? t('playerFile.departmentUsage',{ department:topDepartment[0], count:topDepartment[1].matches ?? 0 }) : t('playerFile.noDepartment'))}</p></article></section></div>`;
+  return `<div class="player-file-overview"><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.progression'))}</span><h2>${esc(t('playerFile.levelHeadline',{ level:progression.level ?? 1 }))}</h2><p>${esc(t('playerFile.xpDetail',{ xp:progression.xp ?? 0 }))}</p><button class="player-file-link" data-profile-section="RANKED">${esc(t('playerFile.viewRanked'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.record'))}</span><h2>${esc(t('playerFile.recordHeadline',{ wins:pvp.wins, losses:pvp.losses, draws:pvp.draws }))}</h2><p>${esc(t('playerFile.winRate',{ rate:pvp.matches ? Math.round(pvp.wins / pvp.matches * 100) : 0 }))}</p><button class="player-file-link" data-profile-section="STATS">${esc(t('playerFile.viewStats'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.achievements'))}</span><h2>${esc(t('playerFile.achievementHeadline',{ completed:completedAchievements, total:achievements.length }))}</h2><p>${esc(t('playerFile.achievementDetail'))}</p>${achievementPreview.length ? `<div class="player-file-achievement-preview">${achievementPreview.map((item) => `<div><strong>${esc(achievementDisplayName(item))}</strong><span>${esc(achievementProgressLabel(item))}</span></div>`).join('')}</div>` : ''}<button class="player-file-link" data-profile-section="ACHIEVEMENTS">${esc(t('playerFile.viewAchievements'))}</button></article></section><section class="player-file-panel player-file-recent"><div class="player-file-panel-heading"><div><span>${esc(t('playerFile.recentForm'))}</span><h2>${esc(t('playerFile.competitiveForm'))}</h2></div><button class="player-file-link" data-profile-section="MATCH_HISTORY">${esc(t('playerFile.viewHistory'))}</button></div><div class="player-file-form">${competitiveResults || `<small>${esc(t('playerFile.noCompetitiveMatches'))}</small>`}</div>${recent.length ? `<div class="player-file-mini-history">${recent.slice(0,3).map(renderPlayerFileHistoryRow).join('')}</div>` : ''}</section><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.ranked'))}</span><h2>${esc(profileRankLabel(profile))}</h2><p>${esc(t('playerFile.mmrPeak',{ current:ranked.rating ?? 1000, peak:ranked.peakRating ?? ranked.rating ?? 1000 }))}</p></article><article class="player-file-panel"><span>${esc(t('playerFile.favorites'))}</span><h2>${esc(topDeck?.deckName ?? t('playerFile.noDeck'))}</h2><p>${esc(topDepartment ? t('playerFile.departmentUsage',{ department:topDepartment[0], count:topDepartment[1].matches ?? 0 }) : t('playerFile.noDepartment'))}</p></article></section></div>`;
 }
 
 function renderPlayerFileHistory(profile) {
@@ -572,13 +590,13 @@ function renderPlayerFileHistory(profile) {
 function renderPlayerFileRanked(profile) {
   const ranked = profile?.ranked ?? {};
   const tally = profileTally(profile, 'ranked');
-  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.rankedKicker'))}</span><h2>${esc(t('playerFile.rankedProgression'))}</h2><p>${esc(ranked.seasonId ?? '—')} · ${esc(ranked.phase ?? 'PRESEASON')}</p></div><div class="player-file-stat-grid"><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong></div><div><span>MMR</span><strong>${esc(ranked.rating ?? 1000)}</strong><small>${esc(t('playerFile.peak',{ value:ranked.peakRating ?? ranked.rating ?? 1000 }))}</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(t('playerFile.wld',{ wins:tally.wins, losses:tally.losses, draws:tally.draws }))}</strong></div><div><span>${esc(t('playerFile.placements'))}</span><strong>${esc(ranked.placementsPlayed ?? 0)} / ${esc(ranked.placementsRequired ?? 5)}</strong></div></div><p class="player-file-note">${esc(t('playerFile.rankedNote'))}</p></section>`;
+  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.rankedKicker'))}</span><h2>${esc(t('playerFile.rankedProgression'))}</h2><p>${esc(rankedSeasonLabel(ranked.seasonId))} · ${esc(ranked.phase ?? 'PRESEASON')}</p></div><div class="player-file-stat-grid"><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong></div><div><span>MMR</span><strong>${esc(ranked.rating ?? 1000)}</strong><small>${esc(t('playerFile.peak',{ value:ranked.peakRating ?? ranked.rating ?? 1000 }))}</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(t('playerFile.wld',{ wins:tally.wins, losses:tally.losses, draws:tally.draws }))}</strong></div><div><span>${esc(t('playerFile.placements'))}</span><strong>${esc(ranked.placementsPlayed ?? 0)} / ${esc(ranked.placementsRequired ?? 5)}</strong></div></div><p class="player-file-note">${esc(t('playerFile.rankedNote'))}</p></section>`;
 }
 
 function renderPlayerFileAchievements(profile) {
   const items = state.achievementData?.achievements ?? [];
   const completed = items.filter((item) => item.progress?.completedAt).length || Object.values(profile?.meta?.achievements ?? {}).filter((item) => item?.completedAt).length;
-  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.achievementKicker'))}</span><h2>${esc(t('playerFile.achievementSummary',{ completed, total:items.length || Object.keys(profile?.meta?.achievements ?? {}).length }))}</h2><p>${esc(t('playerFile.achievementProfileNote'))}</p></div><div class="player-file-achievement-list">${items.slice(0,4).map((item) => `<div><strong>${esc(item.progress?.completedAt ? (item.titleKey ? t(item.titleKey) : item.id) : t('achievements.inProgress'))}</strong><span>${esc(item.progress?.completedAt ? t('achievements.completed') : `${item.progress?.value ?? 0}/${item.target ?? 1}`)}</span></div>`).join('') || `<div class="player-file-empty"><strong>${esc(t('playerFile.achievementsLoad'))}</strong></div>`}</div><button class="player-file-link" id="profileOpenAchievements">${esc(t('playerFile.openAchievements'))}</button></section>`;
+  return `<section class="player-file-detail"><div class="player-file-detail-heading"><span>${esc(t('playerFile.achievementKicker'))}</span><h2>${esc(t('playerFile.achievementSummary',{ completed, total:items.length || Object.keys(profile?.meta?.achievements ?? {}).length }))}</h2><p>${esc(t('playerFile.achievementProfileNote'))}</p></div><div class="player-file-achievement-list">${items.slice(0,4).map((item) => `<div><strong>${esc(achievementDisplayName(item))}</strong><span>${esc(achievementProgressLabel(item))}</span></div>`).join('') || `<div class="player-file-empty"><strong>${esc(t('playerFile.achievementsLoad'))}</strong></div>`}</div><button class="player-file-link" id="profileOpenAchievements">${esc(t('playerFile.openAchievements'))}</button></section>`;
 }
 
 function renderPlayerFileStats(profile) {
@@ -595,6 +613,15 @@ function renderPlayerFile() {
   const sections = [['OVERVIEW','playerFile.tabs.overview'],['MATCH_HISTORY','playerFile.tabs.history'],['RANKED','playerFile.tabs.ranked'],['ACHIEVEMENTS','playerFile.tabs.achievements'],['STATS','playerFile.tabs.stats']];
   const body = state.profileSection === 'MATCH_HISTORY' ? renderPlayerFileHistory(profile) : state.profileSection === 'RANKED' ? renderPlayerFileRanked(profile) : state.profileSection === 'ACHIEVEMENTS' ? renderPlayerFileAchievements(profile) : state.profileSection === 'STATS' ? renderPlayerFileStats(profile) : renderPlayerFileOverview(profile);
   return `<section class="player-file-shell">${renderPlayerFileHeader(profile)}<nav class="player-file-tabs" aria-label="${esc(t('playerFile.tabsLabel'))}">${sections.map(([id,key]) => `<button class="${state.profileSection===id?'active':''}" data-profile-section="${id}">${esc(t(key))}</button>`).join('')}</nav>${state.profileMessage ? `<div class="player-file-message" role="status">${esc(state.profileMessage)}</div>` : ''}<main class="player-file-body">${body}</main><footer class="player-file-footer"><button class="ghost" id="playerFileBack">${esc(t('nav.backToLobby'))}</button><button class="player-file-link" id="playerFilePersonnel">${esc(t('playerFile.openPersonnel'))}</button></footer></section>`;
+}
+
+function revealPlayerFileTab() {
+  const nav = document.querySelector('.player-file-tabs');
+  const active = nav?.querySelector('button.active');
+  if (!nav || !active) return;
+  const target = active.offsetLeft - Math.max(0, (nav.clientWidth - active.offsetWidth) / 2);
+  const max = Math.max(0, nav.scrollWidth - nav.clientWidth);
+  nav.scrollLeft = Math.max(0, Math.min(target, max));
 }
 
 function renderAchievements() {
@@ -4234,8 +4261,10 @@ async function persistSelectedDeck(value) {
 }
 
 function syncLobbyDeckChoice(value) {
+  const previous = state.preferredDeckValue;
   const resolved = effectiveLobbyDeckValue(value);
   state.preferredDeckValue = resolved;
+  if (previous !== resolved) state.botMessage = null;
   void persistSelectedDeck(resolved);
   for (const id of ['quickDeck','createDeck','joinDeck']) {
     const select = document.querySelector(`#${id}`);
@@ -4262,6 +4291,32 @@ function syncLobbyDeckChoice(value) {
   if (quick) quick.disabled = state.matchmakingBusy || !legal;
   if (create) create.disabled = !legal;
   if (join) join.disabled = !legal;
+  updateTrainingControls(resolved);
+}
+
+function trainingDeckStatus(value = state.preferredDeckValue) {
+  const summary = lobbyDeckSummary(value);
+  if (!summary?.formatReady) return { valid:false, message:t('training.deckNotReady'), summary };
+  if (summary.ownedReady === false) return { valid:false, message:t('training.deckNeedsCopies'), summary };
+  return { valid:true, message:null, summary };
+}
+
+function trainingValidationMarkup(status) {
+  return status.valid ? '' : `<p class="desk-matchmaking-message error training-validation-message" role="alert">${esc(status.message)}</p>`;
+}
+
+function updateTrainingControls(value = state.preferredDeckValue) {
+  const status = trainingDeckStatus(value);
+  const disabled = state.botBusy || !status.valid;
+  for (const id of ['startTraining','startTutorial','startTrainingPanel','startTutorialPanel']) {
+    const button = document.querySelector(`#${id}`);
+    if (button) button.disabled = disabled;
+  }
+  const host = document.querySelector('[data-training-validation-host]');
+  if (host) host.innerHTML = state.botMessage
+    ? `<p class="desk-matchmaking-message error">${esc(state.botMessage)}</p>`
+    : trainingValidationMarkup(status);
+  return status;
 }
 
 function catalogArt(def) {
@@ -5630,7 +5685,7 @@ function renderRankedStanding() {
   const standingDetail = placement
     ? lobbyCopy(`Provisional MMR ${ranked.rating} · complete placements to lock the visible standing.`,`Vorläufiges MMR ${ranked.rating} · schließe die Platzierungsspiele ab, um den sichtbaren Rang festzulegen.`)
     : lobbyCopy(`Peak ${ranked.peakRating} MMR`,`Bestwert ${ranked.peakRating} MMR`);
-  return `<section class="ranked-standing"><div><span>RANKED ALPHA · ${esc(phaseLabel)}</span><strong>${esc(standing)}</strong><small>${esc(standingDetail)} ${lobbyCopy('Rated play is Quick Match only; private Ranked-rule rooms are unrated.','Gewertete Matches gibt es nur über Quick Match; private Räume mit Ranked-Regeln bleiben ungewertet.')}</small></div><div class="ranked-standing-stats"><span>${lobbyCopy('Record','Bilanz')} <b>${esc(ranked.wins ?? 0)}–${esc(ranked.losses ?? 0)}–${esc(ranked.draws ?? 0)}</b></span><span>${lobbyCopy('Peak','Bestwert')} <b>${esc(ranked.peakRating ?? ranked.rating ?? 1000)}</b></span><span>${lobbyCopy('Last','Zuletzt')} <b>${esc(lastMove)}</b></span><span>${lobbyCopy('Season','Saison')} <b>${esc(ranked.seasonId ?? 'ALPHA_PRESEASON')}</b></span></div><small class="ranked-standing-note">${lobbyCopy('Alpha preseason foundation · rating values and search windows are provisional · Ranked timer remains off.','Alpha-Vorsaison · Ratingwerte und Suchfenster sind vorläufig · der Ranked-Timer bleibt aus.')}</small></section>`;
+  return `<section class="ranked-standing"><div><span>RANKED ALPHA · ${esc(phaseLabel)}</span><strong>${esc(standing)}</strong><small>${esc(standingDetail)} ${lobbyCopy('Rated play is Quick Match only; private Ranked-rule rooms are unrated.','Gewertete Matches gibt es nur über Quick Match; private Räume mit Ranked-Regeln bleiben ungewertet.')}</small></div><div class="ranked-standing-stats"><span>${lobbyCopy('Record','Bilanz')} <b>${esc(ranked.wins ?? 0)}–${esc(ranked.losses ?? 0)}–${esc(ranked.draws ?? 0)}</b></span><span>${lobbyCopy('Peak','Bestwert')} <b>${esc(ranked.peakRating ?? ranked.rating ?? 1000)}</b></span><span>${lobbyCopy('Last','Zuletzt')} <b>${esc(lastMove)}</b></span><span>${lobbyCopy('Season','Saison')} <b>${esc(rankedSeasonLabel(ranked.seasonId ?? 'ALPHA_PRESEASON'))}</b></span></div><small class="ranked-standing-note">${lobbyCopy('Alpha preseason foundation · rating values and search windows are provisional · Ranked timer remains off.','Alpha-Vorsaison · Ratingwerte und Suchfenster sind vorläufig · der Ranked-Timer bleibt aus.')}</small></section>`;
 }
 
 function renderStarterDeckGuide() {
@@ -6055,6 +6110,12 @@ async function beginQuickMatch() {
 
 async function startBotMatch(mode) {
   if (!state.profileToken || state.botBusy) return;
+  const deckStatus = trainingDeckStatus();
+  if (!deckStatus.valid) {
+    state.botMessage = deckStatus.message;
+    renderLobby();
+    return;
+  }
   state.botBusy = true;
   state.botMessage = null;
   try {
@@ -6232,6 +6293,7 @@ function renderLobby() {
   const preferredDeck = effectiveLobbyDeckValue();
   if (!state.preferredDeckValue) state.preferredDeckValue = preferredDeck;
   const options = lobbyDeckOptions();
+  const trainingStatus = trainingDeckStatus(preferredDeck);
   const modes = (state.matchSettings?.modes ?? [{id:'FRIENDLY',name:'Friendly',description:'Manual friendly room.'}]).filter((mode) => mode.id === 'FRIENDLY' || mode.id === 'RANKED');
   const selectedMode = matchModeConfig(state.lobbyMatchMode) ?? modes[0];
   const queueWaiting = state.matchmakingTicket?.status === 'WAITING';
@@ -6242,8 +6304,8 @@ function renderLobby() {
         <div class="desk-nav-rail">
           <div class="desk-nav-heading"><span>${lobbyCopy('OFFICE TERMINAL','OFFICE-TERMINAL')}</span><strong>${lobbyCopy('Main Lobby','Hauptlobby')}</strong></div>
            <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Quick Match','Quick Match')}</strong><small>${lobbyCopy('Selected deck is staged on the desk.','Das gewählte Deck liegt auf dem Schreibtisch bereit.')}</small></div>
-           <button id="startTraining" class="desk-file-button bot-nav-button" type="button"><span>${esc(t('training.modeLabel'))}</span><strong>${esc(t('training.title'))}</strong><small>${esc(t('training.description'))}</small></button>
-           <button id="startTutorial" class="desk-file-button bot-nav-button" type="button"><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><small>${esc(t('tutorial.description'))}</small></button>
+           <button id="startTraining" class="desk-file-button bot-nav-button" type="button" ${trainingStatus.valid ? '' : 'disabled'}><span>${esc(t('training.modeLabel'))}</span><strong>${esc(t('training.title'))}</strong><small>${esc(t('training.description'))}</small></button>
+           <button id="startTutorial" class="desk-file-button bot-nav-button" type="button" ${trainingStatus.valid ? '' : 'disabled'}><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><small>${esc(t('tutorial.description'))}</small></button>
            <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
           <button id="openPlayerFile" class="desk-file-button profile-nav-button" type="button"><span>${esc(t('playerFile.kicker'))}</span><strong>${esc(t('playerFile.title'))}</strong><small>${esc(t('playerFile.shortDescription'))}</small></button>
           <button id="openPersonnel" class="desk-file-button cosmetic-nav-button" type="button"><span>${esc(t('cosmetics.ownedCollection').toUpperCase())}</span><strong>${esc(t('cosmetics.personnel'))}</strong><small>${esc(t('cosmetics.equip'))}</small></button>
@@ -6266,10 +6328,10 @@ function renderLobby() {
               <label class="quick-match-field quick-match-mode">${lobbyCopy('Mode','Modus')}<select id="quickMode" ${queueWaiting?'disabled':''}>${modes.map((mode) => `<option value="${esc(mode.id)}">${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
               ${queueWaiting ? `<button id="cancelQuickMatch">${lobbyCopy('Cancel search','Suche abbrechen')}</button>` : `<button class="primary desk-quick-match-button" id="quickMatchBtn" ${state.matchmakingBusy?'disabled':''}>${state.matchmakingBusy?lobbyCopy('Queueing…','Suche läuft…'):lobbyCopy('Quick Match','Quick Match')}</button>`}
             </div>
-            <div class="bot-match-controls"><div><span>${esc(t('training.botOpponent').toUpperCase())}</span><small>${esc(t('training.selectOpponent'))}</small></div><label class="quick-match-field">${esc(t('training.opponentDeck'))}<select id="botOpponentDeck">${botDeckOptions()}</select></label><button id="startTrainingPanel" ${state.botBusy?'disabled':''}>${esc(t('training.start'))}</button><button id="startTutorialPanel" ${state.botBusy?'disabled':''}>${esc(t('tutorial.start'))}</button></div>
+            <div class="bot-match-controls"><div><span>${esc(t('training.botOpponent').toUpperCase())}</span><small>${esc(t('training.selectOpponent'))}</small></div><label class="quick-match-field">${esc(t('training.opponentDeck'))}<select id="botOpponentDeck">${botDeckOptions()}</select></label><button id="startTrainingPanel" ${state.botBusy || !trainingStatus.valid?'disabled':''}>${esc(t('training.start'))}</button><button id="startTutorialPanel" ${state.botBusy || !trainingStatus.valid?'disabled':''}>${esc(t('tutorial.start'))}</button></div>
             <div data-lobby-deck-prep-host="QUICK">${renderLobbyDeckPrep(preferredDeck,'QUICK')}</div>
             ${state.matchmakingMessage ? `<p class="desk-matchmaking-message">${esc(state.matchmakingMessage)}</p>` : ''}
-            ${state.botMessage ? `<p class="desk-matchmaking-message error">${esc(state.botMessage)}</p>` : ''}
+            <div data-training-validation-host>${state.botMessage ? `<p class="desk-matchmaking-message error">${esc(state.botMessage)}</p>` : trainingValidationMarkup(trainingStatus)}</div>
           </div>
         </section>
         ${renderStarterDeckGuide()}
@@ -7342,7 +7404,7 @@ function render() {
     document.querySelector('#playerFileBack')?.addEventListener('click',()=>{ state.mode='PLAY'; render(); });
     document.querySelector('#playerFilePersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
     document.querySelectorAll('[data-profile-section]').forEach((button)=>button.addEventListener('click',()=>{ state.profileSection=button.dataset.profileSection; render(); }));
-    document.querySelector('.player-file-tabs button.active')?.scrollIntoView({ block:'nearest', inline:'nearest' });
+    revealPlayerFileTab();
     document.querySelector('#profileHistoryMode')?.addEventListener('change',(event)=>{ state.historyFilter.mode=event.target.value; render(); });
     document.querySelector('#profileHistoryOutcome')?.addEventListener('change',(event)=>{ state.historyFilter.outcome=event.target.value; render(); });
     document.querySelector('#profileLoadMore')?.addEventListener('click',()=>{ state.profileHistoryLimit += 20; render(); });

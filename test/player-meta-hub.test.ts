@@ -140,10 +140,42 @@ test("Player File mobile navigation and actions have reachable responsive struct
   const appSource = readFileSync("public/app.js", "utf8");
   const stylesSource = readFileSync("public/styles.css", "utf8");
   assert.match(appSource, /class="player-file-tabs"/);
-  assert.match(appSource, /scrollIntoView\(\{ block:'nearest', inline:'nearest' \}\)/);
+  assert.match(appSource, /function revealPlayerFileTab\(\)/);
+  assert.match(appSource, /revealPlayerFileTab\(\);/);
   assert.match(stylesSource, /\.player-file-tabs button \{ min-height:44px/);
   assert.match(stylesSource, /\.player-file-panel-heading \{ display:grid; grid-template-columns:minmax\(0,1fr\)/);
   assert.match(stylesSource, /\.player-file-footer \{ display:grid; grid-template-columns:1fr/);
 });
 
-console.log(`${passed}/6 player meta hub tests passed.`);
+test("Training validation follows the selected player deck and keeps the Bot deck independent", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  const serverSource = readFileSync("server/server.mjs", "utf8");
+  assert.match(appSource, /function trainingDeckStatus\(value = state\.preferredDeckValue\)/);
+  assert.match(appSource, /if \(previous !== resolved\) state\.botMessage = null/);
+  assert.match(appSource, /updateTrainingControls\(resolved\)/);
+  assert.match(appSource, /startTrainingPanel.*trainingStatus\.valid/);
+  assert.match(appSource, /selectedDeckPayload\(deckId\).*botDeckId/);
+  assert.match(serverSource, /const deckSelection = deckSelectionForProfile\(body, profile\)/);
+  assert.match(serverSource, /const botDeck = alphaDeckPresets\[String\(body\?\.botDeckId/);
+});
+
+test("Achievement Overview and Achievements rows identify localized milestones", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  assert.match(appSource, /function achievementDisplayName\(item\)/);
+  assert.match(appSource, /player-file-achievement-preview/);
+  assert.match(appSource, /achievementDisplayName\(item\)/);
+  assert.match(appSource, /achievementProgressLabel\(item\)/);
+  assert.match(appSource, /const incompleteAchievements = achievementItems\.filter/);
+});
+
+test("Ranked season identifiers use localized display labels and mobile cards can wrap", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  const stylesSource = readFileSync("public/styles.css", "utf8");
+  assert.match(appSource, /function rankedSeasonLabel\(seasonId\)/);
+  assert.match(appSource, /rankedSeasonLabel\(profile\?\.ranked\?\.seasonId\)/);
+  assert.match(appSource, /rankedSeasonLabel\(ranked\.seasonId/);
+  assert.match(stylesSource, /\.player-file-header-stats \{ grid-template-columns:repeat\(2,minmax\(0,1fr\)\); \}/);
+  assert.match(stylesSource, /\.player-file-name h1.*overflow-wrap:anywhere/);
+});
+
+console.log(`${passed}/9 player meta hub tests passed.`);

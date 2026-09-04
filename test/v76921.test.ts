@@ -18,10 +18,10 @@ const html = root("public/index.html");
 const readme = root("README.md");
 
 test("v7.69.26 version markers are current", () => {
-  assert.equal(pkg.version, "7.69.49");
+  assert.equal(pkg.version, "7.69.50");
   assert.match(pkg.scripts.test, /dist\/test\/v76921\.test\.js/);
-  assert.match(server, /version: "7\.69\.49"/);
-  assert.match(server, /Office Card Game v7\.69\.49 server/);
+  assert.match(server, /version: "7\.69\.50"/);
+  assert.match(server, /Office Card Game v7\.69\.50 server/);
   assert.match(html, /v7\.69\.29 Alpha Playtest/);
   assert.match(readme, /## v7\.69\.22 — Normalized Desktop Field Spacing/);
 });
