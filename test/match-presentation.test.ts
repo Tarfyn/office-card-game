@@ -51,4 +51,15 @@ test("final resolution cues remain one-shot across normal render cycles", () => 
   assert.match(app, /state\.matchResultGateTimer = setTimeout\(\(\) => resolveMatchResultPresentationGate\(key\), delay\)/);
 });
 
+test("Resolve notifications use one stable event-keyed presentation host", () => {
+  const resolution = sliceBetween(app, "function resolutionOutcomeEvent", "function turnStatus");
+  assert.match(resolution, /function resolutionPresentationKey\(\)/);
+  assert.match(resolution, /resolution:\$\{event\.type\}:\$\{event\.seq\}/);
+  assert.match(resolution, /resolutionPresentationHost/);
+  assert.match(resolution, /host\.dataset\.presentationKey === key\) return/);
+  const renderGame = sliceBetween(app, "function renderGame", "markRenderedTransientMotion");
+  assert.doesNotMatch(renderGame, /renderResolutionMoment\(\)/, "Resolve markup must not be rebuilt inside app.innerHTML");
+  assert.match(app, /syncResolutionPresentationHost\(\);/);
+});
+
 console.log(`\n${passed}/${passed} Match presentation tests passed.`);

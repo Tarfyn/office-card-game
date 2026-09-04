@@ -10776,6 +10776,7 @@ body.match-mode .archive-compact[open] .archive-grid > .card {
 
 /* Combat lives in a persistent portal keyed to the authoritative resolution event, so polling/renders cannot remount it. */
 .combat-presentation-host { position:relative; z-index:390; }
+.resolution-presentation-host { position:relative; z-index:391; }
 
 @media (min-width:2200px) and (min-height:1100px) {
   body.match-mode .player-head { width:clamp(520px,30vw,760px); min-height:60px; padding:8px 10px; }

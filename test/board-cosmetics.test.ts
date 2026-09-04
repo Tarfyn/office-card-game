@@ -90,7 +90,10 @@ assert.equal(applyAlphaPlaytestCosmeticGrant(alpha, 11).rewardGrants.filter((gra
 assert.equal(COSMETIC_CATALOG["COS-FRAME-006"].assetPath, "/cosmetics/avatar-frames/silver-ranked-s01.webp");
 assert.equal(COSMETIC_CATALOG["COS-FRAME-006"].portraitMaskAsset, "/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png");
 assert.ok(readFileSync(root("public/cosmetics/avatar-frames/silver-ranked-s01.webp")).byteLength > 1000);
-assert.ok(readFileSync(root("public/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png")).byteLength > 1000);
+const silverMask = readFileSync(root("public/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png"));
+assert.ok(silverMask.byteLength > 7000, "Silver mask should retain the expanded inner opening");
+assert.equal(silverMask[24], 8, "Silver mask must use 8-bit channels");
+assert.equal(silverMask[25], 6, "Silver mask must use RGBA channels");
 assert.match(app, /cardBacks: Object\.freeze/);
 assert.match(app, /roomCosmeticLoadout\(player\.id\)\.cardBackId/);
 assert.match(app, /COS-BACK-005': Object\.freeze\(\{ asset:'\/cosmetics\/card-backs\/it-department\.webp' \}\)/);

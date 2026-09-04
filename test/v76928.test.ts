@@ -15,7 +15,7 @@ const app = root("public/app.js");
 const packageJson = JSON.parse(root("package.json"));
 
 test("v7.69.44 release version is current", () => {
-  assert.equal(packageJson.version, "7.69.48");
+  assert.equal(packageJson.version, "7.69.49");
 });
 
 function service(firstPlayerId: "P1" | "P2" = "P1"): RoomService {

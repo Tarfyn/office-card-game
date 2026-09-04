@@ -111,6 +111,63 @@ test("equal Power destroys both Employees", () => {
   assert(state.players.P2.archive.includes(p2), "P2 Employee should be in Archive");
 });
 
+function resolveFocusedBattle(attackerDefinitionId: string, defenderDefinitionId: string) {
+  const attackerMaterialDefinitionId = attackerDefinitionId === "IT-003" ? "IT-001" : "CS-001";
+  const defenderMaterialDefinitionId = defenderDefinitionId === "IT-003" ? "IT-001" : "CS-001";
+  const state = customMatch(
+    [{ definitionId: attackerDefinitionId, copies: 20 }, { definitionId: attackerMaterialDefinitionId, copies: 20 }],
+    [{ definitionId: defenderDefinitionId, copies: 20 }, { definitionId: defenderMaterialDefinitionId, copies: 20 }]
+  );
+  toMain(state, "P1");
+  state.players.P1.availableCapacity = 20;
+  const attackerMaterial = alphaDefinitions[attackerDefinitionId].promotion
+    ? forceToHand(state, "P1", attackerMaterialDefinitionId)
+    : null;
+  if (attackerMaterial) playEmployee(state, "P1", attackerMaterial, 0);
+  const attacker = forceToHand(state, "P1", attackerDefinitionId);
+  playEmployee(state, "P1", attacker, 0, attackerMaterial ? [attackerMaterial] : []);
+  finishTurn(state, "P1");
+  toMain(state, "P2");
+  state.players.P2.availableCapacity = 20;
+  const defenderMaterial = alphaDefinitions[defenderDefinitionId].promotion
+    ? forceToHand(state, "P2", defenderMaterialDefinitionId)
+    : null;
+  if (defenderMaterial) playEmployee(state, "P2", defenderMaterial, 0);
+  const defender = forceToHand(state, "P2", defenderDefinitionId);
+  playEmployee(state, "P2", defender, 0, defenderMaterial ? [defenderMaterial] : []);
+  finishTurn(state, "P2");
+  toMain(state, "P1");
+  advancePhase(state, "P1");
+  declareAttack(state, "P1", attacker, defender);
+  const battle = [...state.eventLog].reverse().find((event) => event.type === "BATTLE_RESOLVED");
+  assert(battle, "Expected BATTLE_RESOLVED event");
+  return { state, attacker, defender, battle: battle! };
+}
+
+test("3 Power attacker loses to 4 Power defender", () => {
+  const { state, attacker, defender, battle } = resolveFocusedBattle("IT-003", "CS-006");
+  assert(battle.data?.attackerId === attacker && battle.data?.targetId === defender, "Battle must reference the selected instances");
+  assert(battle.data?.attackerPower === 3 && battle.data?.defenderPower === 4, "Authoritative powers must match the visible printed values");
+  assert(battle.data?.winnerId === defender, "Higher Power defender should win");
+  assert(JSON.stringify(battle.data?.destroyedIds) === JSON.stringify([attacker]), "Only the lower Power attacker should be destroyed");
+  assert(state.players.P1.archive.includes(attacker) && state.players.P2.employeeField.includes(defender), "Final zones must match the battle result");
+});
+
+test("4 Power attacker destroys 3 Power defender", () => {
+  const { state, attacker, defender, battle } = resolveFocusedBattle("CS-006", "IT-003");
+  assert(battle.data?.attackerPower === 4 && battle.data?.defenderPower === 3, "Authoritative powers must match the visible printed values");
+  assert(battle.data?.winnerId === attacker, "Higher Power attacker should win");
+  assert(JSON.stringify(battle.data?.destroyedIds) === JSON.stringify([defender]), "Only the lower Power defender should be destroyed");
+  assert(state.players.P1.employeeField.includes(attacker) && state.players.P2.archive.includes(defender), "Final zones must match the battle result");
+});
+
+test("equal focused Power still destroys both Employees", () => {
+  const { state, attacker, defender, battle } = resolveFocusedBattle("CS-006", "CS-006");
+  assert(battle.data?.winnerId === null, "Equal Power battle has no winner");
+  assert(JSON.stringify(battle.data?.destroyedIds) === JSON.stringify([defender, attacker]), "Equal Power battle must destroy both selected instances");
+  assert(state.players.P1.archive.includes(attacker) && state.players.P2.archive.includes(defender), "Both equal Power Employees must be archived");
+});
+
 test("direct attack is forbidden while opponent controls an Employee", () => {
   const state = readyMatch("P1");
   advancePhase(state, "P1");

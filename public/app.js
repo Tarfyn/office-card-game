@@ -2909,6 +2909,27 @@ function renderResolutionMoment() {
   return `<div class="resolution-moment chain-complete"><span>CHAIN COMPLETE</span><strong>Effects resolved</strong><small>Priority returns to the match.</small></div>`;
 }
 
+function resolutionPresentationKey() {
+  const event = resolutionOutcomeEvent();
+  return event ? `resolution:${event.type}:${event.seq}` : '';
+}
+
+function syncResolutionPresentationHost() {
+  let host = document.querySelector('#resolutionPresentationHost');
+  const key = resolutionPresentationKey();
+  const html = key ? renderResolutionMoment() : '';
+  if (!html) { host?.remove(); return; }
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'resolutionPresentationHost';
+    host.className = 'resolution-presentation-host';
+    document.body.appendChild(host);
+  }
+  if (host.dataset.presentationKey === key) return;
+  host.dataset.presentationKey = key;
+  host.innerHTML = html;
+}
+
 function turnStatus(match) {
   if (match.status === 'ENDED') return { label:'GAME OVER', detail:`${match.winnerId ?? '—'} · ${match.reason ?? ''}`, tone:'ended' };
   if (match.pendingChoice?.playerId === match.viewerId || match.pendingDeckSelection?.playerId === match.viewerId || match.pendingTriggerTargetSelection?.playerId === match.viewerId || match.pendingHandSelection?.playerId === match.viewerId) {
@@ -7262,9 +7283,10 @@ function renderGame() {
       </div>
       ${matchResultPresentationReady(match) ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>
-  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderResolutionMoment()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
+  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
   markRenderedTransientMotion();
   syncCombatPresentationHost();
+  syncResolutionPresentationHost();
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   // Compatibility marker: addEventListener('click', playAnotherMatch)
@@ -7309,6 +7331,7 @@ function render() {
   document.body.classList.toggle('collection-mode', collectionMode);
   document.body.classList.toggle('cosmetic-mode', personnelMode || shopMode);
   document.body.classList.toggle('achievement-mode', achievementMode);
+  if (!liveMatch) document.querySelector('#resolutionPresentationHost')?.remove();
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'ADMIN') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();
