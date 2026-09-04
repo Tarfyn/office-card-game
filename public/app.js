@@ -141,6 +141,8 @@ const state = {
   gameplayPresentationQueue: [],
   gameplayPresentationTimer: null,
   matchEndOverlayDismissedRoomId: null,
+  matchResultGate: null,
+  matchResultGateTimer: null,
   resolutionTrace: null,
   resolutionTraceTimer: null,
   flowCue: null,
@@ -526,8 +528,10 @@ function renderPlayerFileHeader(profile) {
   const xpPercent = Math.max(0, Math.min(100, Math.round((xpIntoLevel / step) * 100)));
   const pvp = profileTally(profile, 'pvp');
   const title = profileCosmeticName('titleId');
-  const badge = profileCosmeticName('badgeId');
-  return `<header class="player-file-header"><div class="player-file-header-main"><div class="player-file-avatar">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(profile?.displayName) })}</div><div class="player-file-name"><span>${esc(t('playerFile.kicker'))}</span><h1>${esc(profile?.displayName ?? 'Player')}</h1><p>${title ? esc(title) : esc(t('playerFile.noTitle'))}${badge ? ` · ${esc(badge)}` : ''}</p><small>${esc(profileCosmeticName('avatarId') ?? t('playerFile.defaultAvatar'))}${frameAsset ? ` · ${esc(profileCosmeticName('avatarFrameId') ?? t('playerFile.framed'))}` : ''}</small></div></div><div class="player-file-header-stats"><div><span>${esc(t('playerFile.level'))}</span><strong>${esc(progression.level ?? 1)}</strong><div class="player-file-xp"><i style="width:${xpPercent}%"></i></div><small>${esc(t('playerFile.xpProgress',{ current:xpIntoLevel, total:step }))}</small></div><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong><small>${esc(profile?.ranked?.seasonId ?? '—')} · ${esc(profile?.ranked?.rating ?? '—')} MMR</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(pvp.wins)}–${esc(pvp.losses)}–${esc(pvp.draws)}</strong><small>${esc(t('playerFile.matchesCount',{ count:pvp.matches }))}</small></div></div></header>`;
+  const badge = cosmeticBadgeMeta(loadout.badgeId);
+  const titleMarkup = title ? `<p class="player-file-title">${esc(title)}</p>` : '';
+  const badgeMarkup = badge ? `<div class="player-file-badge"><img src="${esc(badge.asset)}" alt=""/><span>${esc(badge.label)}</span></div>` : '';
+  return `<header class="player-file-header"><div class="player-file-header-main"><div class="player-file-avatar">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(profile?.displayName) })}</div><div class="player-file-name"><span>${esc(t('playerFile.kicker'))}</span><h1>${esc(profile?.displayName ?? 'Player')}</h1>${titleMarkup}${badgeMarkup}<small>${esc(profileCosmeticName('avatarId') ?? t('playerFile.defaultAvatar'))}${frameAsset ? ` · ${esc(profileCosmeticName('avatarFrameId') ?? t('playerFile.framed'))}` : ''}</small></div></div><div class="player-file-header-stats"><div><span>${esc(t('playerFile.level'))}</span><strong>${esc(progression.level ?? 1)}</strong><div class="player-file-xp"><i style="width:${xpPercent}%"></i></div><small>${esc(t('playerFile.xpProgress',{ current:xpIntoLevel, total:step }))}</small></div><div><span>${esc(t('playerFile.rank'))}</span><strong>${esc(profileRankLabel(profile))}</strong><small>${esc(profile?.ranked?.seasonId ?? '—')} · ${esc(profile?.ranked?.rating ?? '—')} MMR</small></div><div><span>${esc(t('playerFile.record'))}</span><strong>${esc(pvp.wins)}–${esc(pvp.losses)}–${esc(pvp.draws)}</strong><small>${esc(t('playerFile.matchesCount',{ count:pvp.matches }))}</small></div></div></header>`;
 }
 
 function renderPlayerFileHistoryRow(record) {
@@ -1361,6 +1365,7 @@ function acceptView(view) {
   state.view = view;
   reconcileAuthoritativeUi(previousView, view);
   state.pendingActionConfirmation = null;
+  syncMatchResultPresentationGate(view, previousView);
   if (view?.match?.status === 'ENDED' && view?.settings?.ratingActive && view?.roomId && state.rankedRefreshRoomId !== view.roomId) {
     state.rankedRefreshRoomId = view.roomId;
     setTimeout(() => refreshServerProfile().then(() => render()).catch(() => { state.rankedRefreshRoomId = null; }), 50);
@@ -1370,6 +1375,78 @@ function acceptView(view) {
   if (view?.viewerSession?.activeElsewhere) state.connectionStatus = 'SUPERSEDED';
   else if (state.connectionStatus === 'SUPERSEDED') state.connectionStatus = 'CONNECTING';
   return view;
+}
+
+const RESULT_PRESENTATION_MAX_MS = 4200;
+const RESULT_PRESENTATION_MIN_MS = 80;
+const FINAL_RESOLUTION_EVENT_TYPES = new Set(['ATTACK_DECLARED','BATTLE_RESOLVED','BREAKTHROUGH_DAMAGE','REPUTATION_CHANGED','EMPLOYEE_DESTROYED','CARD_DESTROYED','CARD_ARCHIVED','GAME_ENDED']);
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+}
+
+function matchResultPresentationKey(view) {
+  const match = view?.match;
+  return match?.status === 'ENDED' ? `${view?.roomId ?? 'room'}:${match.stateVersion ?? 0}:${match.lastEventSeq ?? 0}:${match.reason ?? 'ENDED'}` : null;
+}
+
+function clearMatchResultPresentationGate() {
+  if (state.matchResultGateTimer) clearTimeout(state.matchResultGateTimer);
+  state.matchResultGateTimer = null;
+  state.matchResultGate = null;
+}
+
+function finalResolutionEventsForView(view, previousView) {
+  const previousSeq = Number(previousView?.match?.lastEventSeq ?? 0);
+  return (view?.events ?? []).filter((event) => Number(event?.seq ?? 0) > previousSeq && FINAL_RESOLUTION_EVENT_TYPES.has(event?.type));
+}
+
+function finalResolutionPresentationDelay(events) {
+  if (!events.length) return 0;
+  if (prefersReducedMotion()) return RESULT_PRESENTATION_MIN_MS;
+  const hasArchiveResolution = events.some((event) => ['EMPLOYEE_DESTROYED','CARD_DESTROYED','CARD_ARCHIVED','BREAKTHROUGH_DAMAGE'].includes(event.type));
+  return Math.min(RESULT_PRESENTATION_MAX_MS, hasArchiveResolution ? 3800 : 1500);
+}
+
+function resolveMatchResultPresentationGate(key) {
+  if (state.matchResultGate?.key !== key) return;
+  state.matchResultGate.ready = true;
+  state.matchResultGate.pending = false;
+  state.matchResultGateTimer = null;
+  render();
+}
+
+function syncMatchResultPresentationGate(view, previousView) {
+  const match = view?.match;
+  if (!match || match.status !== 'ENDED') {
+    clearMatchResultPresentationGate();
+    return;
+  }
+  const key = matchResultPresentationKey(view);
+  if (!key || state.matchResultGate?.key === key) return;
+
+  // A reload/reconnect that hydrates an already-ended room must show the result
+  // promptly; historical events are state hydration, not new visual work.
+  if (!previousView?.match || previousView.match.status === 'ENDED') {
+    state.matchResultGate = { key, ready:true, pending:false };
+    return;
+  }
+
+  const recentFinalEvents = finalResolutionEventsForView(view, previousView);
+  const delay = match.reason === 'RESIGN' ? 0 : finalResolutionPresentationDelay(recentFinalEvents);
+  if (delay <= 0) {
+    state.matchResultGate = { key, ready:true, pending:false };
+    return;
+  }
+
+  if (state.matchResultGateTimer) clearTimeout(state.matchResultGateTimer);
+  state.matchResultGate = { key, ready:false, pending:true };
+  state.matchResultGateTimer = setTimeout(() => resolveMatchResultPresentationGate(key), delay);
+}
+
+function matchResultPresentationReady(match) {
+  const key = matchResultPresentationKey(state.view);
+  return Boolean(match?.status === 'ENDED' && (!key || state.matchResultGate?.key !== key || state.matchResultGate.ready));
 }
 
 function clearRecoveryNoticeTimer() {
@@ -1616,6 +1693,9 @@ function roomViewIsResumable(view) {
 }
 
 function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
+  if (state.matchResultGateTimer) clearTimeout(state.matchResultGateTimer);
+  state.matchResultGateTimer = null;
+  state.matchResultGate = null;
   state.selectedHand.clear();
   state.interaction = null;
   state.pendingActionConfirmation = null;
@@ -6641,6 +6721,14 @@ const COSMETIC_UI_CATALOG = Object.freeze({
     'COS-FRAME-004': Object.freeze({ asset:'/cosmetics/avatar-frames/gold-ranked-s01.webp' }),
     'COS-FRAME-005': Object.freeze({ asset:'/cosmetics/avatar-frames/diamond-ranked-s01.webp' }),
     'COS-FRAME-006': Object.freeze({ asset:'/cosmetics/avatar-frames/silver-ranked-s01.webp', mask:'/cosmetics/avatar-frames/masks/silver-ranked-s01-inner-opening.png' })
+  }),
+  badges: Object.freeze({
+    'COS-BADGE-001': Object.freeze({ asset:'/cosmetics/badges/reply-all-survivor.webp', nameKey:'cosmetics.replyAllSurvivorName' }),
+    'COS-BADGE-002': Object.freeze({ asset:'/cosmetics/badges/coffee-powered.webp', nameKey:'cosmetics.coffeePoweredName' }),
+    'COS-BADGE-003': Object.freeze({ asset:'/cosmetics/badges/inbox-zero.webp', nameKey:'cosmetics.inboxZeroName' }),
+    'COS-BADGE-004': Object.freeze({ asset:'/cosmetics/badges/meeting-survivor.webp', nameKey:'cosmetics.meetingSurvivorName' }),
+    'COS-BADGE-005': Object.freeze({ asset:'/cosmetics/badges/ticket-closer.webp', nameKey:'cosmetics.ticketCloserName' }),
+    'COS-BADGE-006': Object.freeze({ asset:'/cosmetics/badges/escalation-specialist.webp', nameKey:'cosmetics.escalationSpecialistName' })
   })
 });
 
@@ -6669,6 +6757,17 @@ function cosmeticFrameAsset(frameId) {
 function cosmeticFrameMaskAsset(frameId) {
   const entry = COSMETIC_UI_CATALOG.frames[String(frameId || '')];
   return entry?.mask ?? avatarFrameMaskAsset(entry?.asset);
+}
+
+function cosmeticBadgeMeta(badgeId) {
+  const entry = COSMETIC_UI_CATALOG.badges[String(badgeId || '')];
+  return entry ? { ...entry, label:t(entry.nameKey, {}, String(badgeId)) } : null;
+}
+
+function renderPlayerBadge(playerId) {
+  const badge = cosmeticBadgeMeta(roomCosmeticLoadout(playerId).badgeId);
+  if (!badge) return '';
+  return `<span class="player-badge-mark" title="${esc(badge.label)}" aria-label="${esc(badge.label)}"><img src="${esc(badge.asset)}" alt="" /></span>`;
 }
 
 function renderPlayerAvatar(playerId, own, { combat = false, repDelta = 0 } = {}) {
@@ -6712,7 +6811,7 @@ function renderPlayer(player, own, match) {
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   const directBoardTarget = !own && state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(null);
   return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(boardSkinClass(player.id))} ${esc(departmentThemeClass(department))}${deskState}${directBoardTarget ? ' direct-attack-board-target' : ''}" data-board-skin="${esc(roomBoardSkinId(player.id))}" ${directBoardTarget ? 'data-direct-attack-board="1"' : ''}>
-    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div><span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
+    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div>${renderPlayerBadge(player.id)}<span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
     <div class="player-world">
@@ -6903,7 +7002,7 @@ function matchEndOverlayReason(match, outcome) {
 }
 
 function renderMatchEndOverlay(match) {
-  if (!match || match.status !== 'ENDED' || state.matchEndOverlayDismissedRoomId === state.view?.roomId) return '';
+  if (!match || match.status !== 'ENDED' || !matchResultPresentationReady(match) || state.matchEndOverlayDismissedRoomId === state.view?.roomId) return '';
   const outcome = matchRewardOutcome(match) ?? 'DRAW';
   const title = matchResultTitle(outcome);
   const tone = outcome === 'WIN' ? 'win' : outcome === 'DRAW' ? 'draw' : 'loss';
@@ -7161,7 +7260,7 @@ function renderGame() {
         </div>
         ${renderDesktopMatchUtilities(match, guidanceTip)}
       </div>
-      ${match.status === 'ENDED' ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
+      ${matchResultPresentationReady(match) ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>
   </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderResolutionMoment()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
   markRenderedTransientMotion();
@@ -7220,6 +7319,7 @@ function render() {
     document.querySelector('#playerFileBack')?.addEventListener('click',()=>{ state.mode='PLAY'; render(); });
     document.querySelector('#playerFilePersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
     document.querySelectorAll('[data-profile-section]').forEach((button)=>button.addEventListener('click',()=>{ state.profileSection=button.dataset.profileSection; render(); }));
+    document.querySelector('.player-file-tabs button.active')?.scrollIntoView({ block:'nearest', inline:'nearest' });
     document.querySelector('#profileHistoryMode')?.addEventListener('change',(event)=>{ state.historyFilter.mode=event.target.value; render(); });
     document.querySelector('#profileHistoryOutcome')?.addEventListener('change',(event)=>{ state.historyFilter.outcome=event.target.value; render(); });
     document.querySelector('#profileLoadMore')?.addEventListener('click',()=>{ state.profileHistoryLimit += 20; render(); });

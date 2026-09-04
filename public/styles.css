@@ -1532,6 +1532,10 @@ body {
 .player-file-name > span,.player-file-header-stats span,.player-file-panel > span,.player-file-toolbar > div > span,.player-file-detail-heading > span { color:#755a31; font-size:9px; font-weight:950; letter-spacing:.15em; text-transform:uppercase; }
 .player-file-name h1 { margin:0; font-family:Georgia,"Times New Roman",serif; font-size:34px; line-height:1; }
 .player-file-name p { margin:0; color:#5b4e41; font-size:13px; font-weight:700; }
+.player-file-title { line-height:1.25; }
+.player-file-badge { display:inline-flex; align-items:center; gap:7px; width:max-content; max-width:100%; min-height:30px; padding:3px 9px 3px 4px; border:1px solid rgba(142,101,42,.48); border-radius:2px; background:linear-gradient(135deg,#f4e1a8,#b7812f 48%,#f5d987); box-shadow:inset 0 1px rgba(255,255,255,.62),0 2px 5px rgba(76,49,18,.12); color:#38230f; }
+.player-file-badge img { width:30px; height:30px; flex:0 0 30px; object-fit:contain; }
+.player-file-badge span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; font-weight:900; letter-spacing:.02em; }
 .player-file-name small { color:#776958; font-size:10px; }
 .player-file-header-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; align-items:stretch; }
 .player-file-header-stats > div { display:grid; align-content:start; gap:5px; min-width:0; padding:10px; border:1px solid rgba(118,87,48,.28); background:rgba(255,252,244,.38); }
@@ -1571,8 +1575,46 @@ body {
 .player-file-empty { display:grid; place-items:center; gap:7px; min-height:170px; padding:18px; color:#766a5d; text-align:center; }.player-file-empty strong { color:#493722; font-family:Georgia,"Times New Roman",serif; font-size:18px; }.player-file-empty small { font-size:11px; }
 .player-file-detail { padding:22px; }.player-file-detail-heading { border-bottom:1px solid #dfd3c3; padding-bottom:15px; }.player-file-stat-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:16px; }.player-file-stat-grid > div { display:grid; gap:5px; padding:12px; border:1px solid #e1d7ca; background:#fffdf9; }.player-file-stat-grid span { color:#877767; font-size:8px; font-weight:950; letter-spacing:.1em; }.player-file-stat-grid strong { font-family:Georgia,"Times New Roman",serif; font-size:20px; overflow-wrap:anywhere; }.player-file-stat-grid small { color:#7c6e5e; font-size:9px; }.player-file-note { margin:17px 0 0; padding:10px 12px; border-left:3px solid #b58a4d; color:#76695c; background:#f4ecde; font-size:10px; }.player-file-achievement-list,.player-file-breakdown { display:grid; gap:6px; margin-top:16px; }.player-file-achievement-list > div,.player-file-breakdown > div { display:flex; justify-content:space-between; gap:10px; padding:9px 10px; border-bottom:1px solid #e6ddd0; font-size:10px; }.player-file-achievement-list span,.player-file-breakdown span { color:#7c6e5e; }.player-file-footer { display:flex; justify-content:space-between; gap:10px; margin-top:14px; }
 .player-file-message { margin:10px 0; padding:10px 12px; border:1px solid #d8b19a; background:#fff4ec; color:#8a4434; font-size:11px; }
+.player-file-panel-heading > div,.player-file-toolbar > div { min-width:0; }
+.player-file-footer { align-items:center; padding:12px 14px; border:1px solid #d8cbbb; background:linear-gradient(180deg,rgba(255,253,248,.9),rgba(237,225,207,.88)); }
+.player-file-footer button { min-height:40px; padding:9px 14px; }
 @media (max-width:850px) { .player-file-shell { width:min(100% - 20px,680px); margin-top:14px; }.player-file-header { grid-template-columns:1fr; gap:15px; padding:14px; }.player-file-header-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }.player-file-avatar { width:92px; height:92px; flex-basis:92px; }.player-file-name h1 { font-size:26px; }.player-file-section-grid { grid-template-columns:1fr; }.player-file-history-row { grid-template-columns:72px minmax(0,1fr); gap:7px 10px; }.player-file-history-meta { grid-column:2; display:flex; justify-content:flex-start; justify-items:start; white-space:normal; }.player-file-filters { flex-wrap:wrap; }.player-file-filters label { flex:1 1 130px; }.player-file-filters select { width:100%; min-width:0; }.player-file-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:480px) { .player-file-header-main { gap:11px; }.player-file-avatar { width:70px; height:70px; flex-basis:70px; }.player-file-name h1 { font-size:21px; }.player-file-name p { font-size:11px; }.player-file-header-stats { gap:4px; }.player-file-header-stats > div { padding:7px 5px; }.player-file-header-stats strong { font-size:16px; }.player-file-header-stats small { font-size:8px; }.player-file-tabs { margin:10px -5px; }.player-file-tabs button { padding-inline:9px; font-size:8px; }.player-file-history,.player-file-detail { padding:12px 9px; }.player-file-history-main strong { font-size:10px; }.player-file-history-main span,.player-file-history-main small { font-size:8px; }.player-file-footer { align-items:center; } }
+
+/* Player File mobile polish: keep the dossier dense, but readable and reachable. */
+@media (max-width:850px) {
+  .player-file-shell { width:calc(100% - 16px); max-width:680px; margin-bottom:28px; }
+  .player-file-tabs { scrollbar-width:thin; overscroll-behavior-inline:contain; }
+  .player-file-tabs button { min-height:44px; padding:9px 13px; font-size:11px; letter-spacing:.05em; }
+  .player-file-name > span,.player-file-header-stats span,.player-file-panel > span,.player-file-toolbar > div > span,.player-file-detail-heading > span { font-size:11px; letter-spacing:.1em; }
+  .player-file-name p { font-size:14px; }
+  .player-file-name small { font-size:12px; line-height:1.35; }
+  .player-file-header-stats small { font-size:12px; }
+  .player-file-panel p,.player-file-detail-heading p { font-size:14px; }
+  .player-file-link { min-height:38px; align-items:center; font-size:12px; letter-spacing:.05em; }
+  .player-file-panel-heading { align-items:flex-start; flex-wrap:wrap; }
+  .player-file-panel-heading .player-file-link { margin-top:0; }
+  .player-file-result strong { font-size:12px; }
+  .player-file-result small { font-size:11px; }
+  .player-file-history-main strong { font-size:13px; }
+  .player-file-history-main span,.player-file-history-main small { font-size:12px; line-height:1.35; }
+  .player-file-history-meta { font-size:12px; }
+  .player-file-filters label { font-size:11px; }
+  .player-file-stat-grid span { font-size:11px; }
+  .player-file-stat-grid small { font-size:12px; }
+  .player-file-achievement-list > div,.player-file-breakdown > div { font-size:13px; }
+  .player-file-footer { align-items:stretch; }
+  .player-file-footer button { flex:1 1 0; min-width:0; font-size:12px; }
+}
+@media (max-width:560px) {
+  .player-file-header { padding:12px; }
+  .player-file-header-stats > div { padding:8px 6px; }
+  .player-file-header-stats strong { font-size:18px; }
+  .player-file-panel-heading { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; }
+  .player-file-panel-heading .player-file-link { justify-self:start; }
+  .player-file-footer { display:grid; grid-template-columns:1fr; gap:7px; }
+  .player-file-footer button { width:100%; }
+}
 
 /* v3.4 collection-floor shredding + saved-deck warning */
 .card-economy-actions .economy-protection.blocked {
@@ -12895,4 +12937,27 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
   .collection-card .catalog-art-stage .card-finish-badge::before {
     background:linear-gradient(108deg,rgba(255,250,210,.44),transparent 38%,rgba(255,255,255,.20) 53%,transparent 69%);
   }
+}
+
+/* v7.69.48 - compact per-seat Match HUD badge and bounded result handoff */
+body.match-mode .player-identity { overflow:visible; }
+body.match-mode .player-identity-copy { min-width:0; flex:1 1 auto; overflow:hidden; }
+.player-badge-mark {
+  flex:0 0 28px;
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border:1px solid rgba(226,183,82,.62);
+  border-radius:50%;
+  background:linear-gradient(145deg,#f4d995,#9e681e 58%,#51330f);
+  box-shadow:inset 0 0 0 2px rgba(255,244,192,.34),0 2px 5px rgba(0,0,0,.24);
+}
+.player-badge-mark img { width:100%; height:100%; object-fit:contain; display:block; }
+@media (min-width:2200px) and (min-height:1100px) {
+  .player-badge-mark { flex-basis:36px; width:36px; height:36px; }
+}
+@media (max-width:760px) {
+  .player-badge-mark { flex-basis:22px; width:22px; height:22px; border-width:1px; box-shadow:inset 0 0 0 1px rgba(255,244,192,.34); }
 }

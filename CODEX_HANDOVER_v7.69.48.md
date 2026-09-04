@@ -1,14 +1,39 @@
-# Office Card Game - Codex Handover v7.69.47
+# Office Card Game - Codex Handover v7.69.48
 
 ## Current baseline
 
-- Version: `v7.69.47`
-- Release commit: the commit referenced by annotated tag `v7.69.47`
+- Version: `v7.69.48`
+- Release commit: the commit referenced by annotated tag `v7.69.48`
 - Ranked timer: disabled
 - Server authority: hosted Match state, profile persistence, ownership, rewards and progression remain authoritative
 
-This release integrates the accepted cosmetic batch on top of the v7.69.46 recovery-hardening
-baseline. The parked PostgreSQL/account work is separate and is not part of this release.
+This release combines the accepted Player File readability polish with the Match HUD Badge and
+client-only Match-end presentation work on top of the v7.69.47 cosmetic baseline. The parked
+PostgreSQL/account work remains separate and is not part of this release.
+
+## Player File
+
+The Player File identity header now renders the equipped Badge artwork and localized Badge name
+as a dedicated identity element. An equipped Title remains a separate line, and absent Title or
+Badge slots do not render placeholder text. The existing Avatar/Frame, Level, Rank and record
+summary remain in the header.
+
+On narrow screens the five profile sections use a horizontally reachable tab strip with 44px
+touch targets; the active tab is brought into view after navigation. Mobile profile metadata and
+history rows use readable minimum sizes, long Recent Form headings wrap safely, the shell uses
+the available viewport width, and the footer actions remain attached to the dossier and stack at
+narrow widths. Exact 1920x1080, 3840x2160, 390x844 and 844x390 browser emulation was unavailable
+in the implementation session; local browser smoke and responsive source checks were used.
+
+## Match presentation
+
+Match HUD identity renders each seated player's compact equipped Badge independently while keeping
+Player Name primary and Title visible. Authoritative Match completion remains immediate. The
+client result presentation gate waits for final combat/archive cues with a 1.5s normal-attack
+delay, up to 3.8s for destructive/damage resolution, a 4.2s hard maximum, and an 80ms
+reduced-motion fallback. Resignation remains immediate, and hydration of an already-ended Match
+shows the result promptly. Historical transient events remain deduplicated and are not replayed
+as old visual cues after reload/reconnect.
 
 ## Card Backs
 

@@ -16,9 +16,9 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.11 — stable transient motion,
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.11 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.47");
-  assert.match(server,/version: "7\.69\.47"/);
-  assert.match(server,/version:"7\.69\.47"/);
+  assert.equal(pkg.version,"7.69.48");
+  assert.match(server,/version: "7\.69\.48"/);
+  assert.match(server,/version:"7\.69\.48"/);
   assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.11 — Render Stability \+ Pile Polish/);
   assert.match(pkg.scripts.test,/dist\/test\/v76911\.test\.js/);

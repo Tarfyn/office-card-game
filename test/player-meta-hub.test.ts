@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import { PlayerProfileService, type PlayerProfileStoreSnapshot } from "../src/profile.js";
 import { RoomService } from "../src/room.js";
 
@@ -126,4 +127,23 @@ test("room completion writes one server history record per seat", () => {
   assert.equal(callbackCount, 1);
 });
 
-console.log(`${passed}/4 player meta hub tests passed.`);
+test("Player File projects equipped Badge artwork without flattening the title hierarchy", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  assert.match(appSource, /const badge = cosmeticBadgeMeta\(loadout\.badgeId\)/);
+  assert.match(appSource, /class="player-file-title"/);
+  assert.match(appSource, /class="player-file-badge"/);
+  assert.match(appSource, /const badgeMarkup = badge \?/);
+  assert.match(appSource, /silver-ranked-s01-inner-opening\.png/);
+});
+
+test("Player File mobile navigation and actions have reachable responsive structure", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  const stylesSource = readFileSync("public/styles.css", "utf8");
+  assert.match(appSource, /class="player-file-tabs"/);
+  assert.match(appSource, /scrollIntoView\(\{ block:'nearest', inline:'nearest' \}\)/);
+  assert.match(stylesSource, /\.player-file-tabs button \{ min-height:44px/);
+  assert.match(stylesSource, /\.player-file-panel-heading \{ display:grid; grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(stylesSource, /\.player-file-footer \{ display:grid; grid-template-columns:1fr/);
+});
+
+console.log(`${passed}/6 player meta hub tests passed.`);
