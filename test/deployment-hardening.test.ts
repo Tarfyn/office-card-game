@@ -15,6 +15,7 @@ assert.match(deploy, /check_endpoint \/api\/ready/);
 assert.match(deploy, /check_endpoint \/api\/health/);
 assert.match(deploy, /ROLLBACK_ATTEMPTED/);
 assert.match(deploy, /git show-ref --verify/);
+assert.match(deploy, /CHECK_ONLY.*-eq 0.*RELEASE_DIR.*PREVIOUS/);
 assert.match(deploy, /refusing to reuse existing target release directory/);
 assert.match(deploy, /refusing to overwrite existing immutable release/);
 assert.match(docs, /npm advisory service is intentionally not on the\s+deployment-critical path/);

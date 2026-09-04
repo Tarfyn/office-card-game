@@ -112,9 +112,13 @@ validate_project() {
   grep -Fq "version:\"$VERSION\"" <<< "$server_source" || die "compact server version marker does not match package version"
   RELEASE_NAME="v${VERSION}-$(git rev-parse --short=8 HEAD)"
   RELEASE_DIR="$RELEASES/$RELEASE_NAME"
-  [[ "$RELEASE_DIR" != "$PREVIOUS" ]] || die "requested release is already active"
-  [[ ! -e "$RELEASE_DIR" ]] || die "refusing to reuse existing target release directory: $RELEASE_DIR"
-  if sudo -n "$RELEASE_HELPER" exists "$RELEASE_NAME" >/dev/null 2>&1; then
+  if [[ "$CHECK_ONLY" -eq 0 && "$RELEASE_DIR" == "$PREVIOUS" ]]; then
+    die "requested release is already active"
+  fi
+  if [[ "$CHECK_ONLY" -eq 0 && -e "$RELEASE_DIR" ]]; then
+    die "refusing to reuse existing target release directory: $RELEASE_DIR"
+  fi
+  if [[ "$CHECK_ONLY" -eq 0 ]] && sudo -n "$RELEASE_HELPER" exists "$RELEASE_NAME" >/dev/null 2>&1; then
     die "refusing to overwrite existing immutable release: $RELEASE_NAME"
   fi
   log "3" "version surfaces agree: $VERSION; release=$RELEASE_NAME"
