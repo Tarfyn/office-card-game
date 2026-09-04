@@ -1,11 +1,34 @@
-# Office Card Game - Codex Handover v7.69.51 Account/PostgreSQL Candidate
+# Office Card Game - Codex Handover v7.69.51 Account/PostgreSQL Production Baseline
 
 ## Release
 
-- Version: `v7.69.51` candidate (not tagged, merged, deployed, or cut over)
-- Base: current `main` v7.69.50 (`15f64b7d055a1b1d1b99be501a71d709e7913088`)
+- Version: `v7.69.51`
+- Release commit: `146b1671596ad9c8a0482ed5c6c9ac5b64f42a29`
+- Active production release: `v7.69.51-146b1671`
+- Production role: first PostgreSQL Account/Profile baseline
 - Ranked timer: disabled
 - Server authority: deck ownership, Match state, progression, rewards and cosmetic ownership remain authoritative
+
+## Production PostgreSQL closeout
+
+The production cutover completed successfully. PostgreSQL 18.6 is active and is now the
+authoritative Source of Truth for authenticated Accounts and their Profile/Progression state. The
+database is reachable, `/api/ready` reports `READY`, and `/api/health` reports the database as
+required and `READY`. Production migration state is exactly current: one applied migration, one
+required migration, no pending, changed, or unknown migration, with both `current` and `exact`
+true. PostgreSQL listens only on `127.0.0.1` and `::1`; an external TCP 5432 connection test failed
+as intended.
+
+The intentional production storage split is:
+
+- Authenticated Account/Profile progression: `POSTGRES`
+- Guest profile/session path: `MEMORY_ONLY` / `GUEST_LOCAL`
+- Hosted Room storage: `FILE_JSON_LOCAL`
+- Matchmaking storage: `FILE_JSON_LOCAL`
+
+The application is therefore not fully PostgreSQL-backed. PostgreSQL authority applies to the
+authenticated Account/Profile domain; Guest, Room, and Matchmaking retain their explicitly separate
+storage contracts.
 
 ## Training deck readiness
 
@@ -52,10 +75,11 @@ Company Store, Personnel File, Deckbuilder, Training gameplay and Tutorial gamep
 unchanged. Deployment hardening remains active, including audit-independent install, bounded
 installation, locking, immutable release validation, readiness/health checks and rollback safety.
 
-## Account and PostgreSQL persistence candidate
+## Account and PostgreSQL persistence baseline
 
-This branch reconciles the accepted Account application, PostgreSQL helper, migration, backup, and
-deployment-hardening foundations onto v7.69.50. `PROFILE_STORAGE_BACKEND` is explicit:
+Version v7.69.51 established the accepted Account application, PostgreSQL helper, migration,
+backup, and deployment-hardening foundations as the first production PostgreSQL persistence
+baseline. `PROFILE_STORAGE_BACKEND` is explicit:
 `FILE_JSON_LOCAL` keeps Guest player state authoritative; `POSTGRES` enables Account registration,
 login, logout, opaque cookie sessions, and PostgreSQL-backed player profiles. Merely configuring
 `DATABASE_URL` never changes the backend. Hosted Room, Matchmaking, and playtest-feedback snapshots
@@ -115,17 +139,42 @@ The initial role bootstrap is the non-public CLI
 Account, accepts only the fixed OPS/ADMIN transitions, and uses parameterized SQL. It accepts no
 generic role, SQL, path, or secret argument and has no registration or web equivalent.
 
-## Cutover and rollback constraints
+## Production backup and rollback constraints
 
-The marker identifies a technically reviewed PostgreSQL-capable release, not an active production
-cutover. Before approval, production remains `FILE_JSON_LOCAL`. The operator sequence is: verify
-installed artifacts and loopback-only PostgreSQL; take fresh legacy and PostgreSQL backups; deploy
-the tag so the immutable candidate is migrated before activation; verify it while file persistence
-is still active; separately run `enable-postgres`; then reactivate that exact migrated release and
-perform DB-backed readiness, Account, cross-session, Ops, backup, and external port-exposure checks.
+The production backup architecture uses timestamped, PostgreSQL-native custom-format dumps under
+the protected PostgreSQL backup directory. Dumps are validated with `pg_restore --list`, published
+atomically, and retained for 30 days by the fixed backup service/timer. A fresh post-cutover dump
+was confirmed to contain production Account/Profile data. The pre-cutover legacy JSON snapshot
+remains preserved separately as historical evidence, backup/reference material, and migration
+provenance.
 
-Migrations are additive and forward-only. Before `enable-postgres`, rollback can reactivate the
-previous file-backed release. After cutover, new Account data is authoritative in PostgreSQL, so
-blindly reverting to stale JSON is forbidden; rollback must use a schema-compatible application
-release or a separate human-reviewed recovery plan. No production migration, enablement, tag,
-deployment, or VPS change is part of preparing this branch.
+Legacy Account/Profile JSON is no longer an active store, a second writable Source of Truth, or a
+safe automatic rollback target. New authenticated Account writes exist only in PostgreSQL. A normal
+application rollback must therefore activate a release that remains compatible with the current
+PostgreSQL schema and Account/Profile persistence contract. Switching authenticated persistence
+back to `FILE_JSON_LOCAL` is forbidden as a routine rollback. Any emergency JSON restoration would
+be a deliberate, human-reviewed disaster-recovery operation with explicit data-divergence and
+data-loss risk.
+
+Migrations remain additive and forward-only. Schema migration reversal is not automatic, and
+legacy JSON must not be used to overwrite or silently replace newer PostgreSQL Account data.
+
+## Operations production state
+
+The initial OPS/Admin bootstrap path is active. Production authorization was verified end to end:
+an unauthenticated `/ops` request returns 401, an authenticated non-OPS Account returns 403, and an
+OPS Account returns 200. Operations Phase 1 remains operational and read-only; it does not grant
+the web application root, sudo, shell, migration, backup, restore, deployment, or role-mutation
+authority.
+
+## Non-blocking observability follow-up
+
+Current `/api/health` fields such as `profileStorage: MEMORY_ONLY`, `playerStorage: MEMORY_ONLY`,
+`credentialStorage: MEMORY_ONLY`, and `authMode: GUEST_LOCAL` describe the Guest/local path. They
+must not be mistaken for authenticated Account persistence; `persistenceBackend: POSTGRES`
+describes that authoritative Account/Profile path.
+
+A future, non-blocking observability change should make the split explicit with fields equivalent
+to `accountPersistence: POSTGRES`, `guestPersistence: MEMORY_ONLY`,
+`roomPersistence: FILE_JSON_LOCAL`, and `matchmakingPersistence: FILE_JSON_LOCAL`. This closeout
+does not change the health response or any runtime behavior.

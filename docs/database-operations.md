@@ -2,44 +2,53 @@
 
 ## Status and scope
 
-The production server remains on `FILE_JSON_LOCAL` until an explicitly approved cutover. The
-repository application foundation normalizes the separate PostgreSQL backend to `POSTGRES`, but
-merely having `DATABASE_URL` present never activates it.
+Production release `v7.69.51-146b1671` is the first live PostgreSQL Account/Profile baseline. The
+approved cutover is complete: `persistenceBackend` is `POSTGRES`, PostgreSQL 18.6 is active and
+reachable, `/api/ready` is `READY`, and `/api/health` reports the required database as `READY`.
+Merely having `DATABASE_URL` present still never activates the backend; production was switched
+through the explicit reviewed cutover gate.
 The server fixes mutable state beneath `/srv/office-card-game/runtime` while releases beneath
 `/srv/office-card-game/releases` are immutable after `/usr/local/sbin/ocg-release-helper finalize`.
 The active release is selected by the root-owned `/srv/office-card-game/current` symlink.
 
-The current JSON files are:
+The retained and still-active JSON-domain files are:
 
-- `players.local.json`: durable player/profile, economy, ranked, achievements, and deck state.
-- `guest-credentials.local.json`: guest tokens mapped to stable player IDs.
-- `rooms.local.json`: hosted room state.
-- `matchmaking.local.json`: matchmaking state.
-- `playtest-feedback.local.json`: feedback records.
-- `profiles.local.json`: optional read-only migration source from the former combined store; it may
-  be absent on current installations.
+- `players.local.json`: historical pre-cutover player/profile, economy, Ranked, Achievement, and
+  Deck state; no longer authoritative or writable for authenticated Accounts.
+- `guest-credentials.local.json`: historical pre-cutover Guest-token mapping; not used by the
+  production `MEMORY_ONLY` Guest path.
+- `rooms.local.json`: active hosted Room state.
+- `matchmaking.local.json`: active Matchmaking state.
+- `playtest-feedback.local.json`: active feedback records.
+- `profiles.local.json`: optional historical source from the former combined store; it may be
+  absent on current installations.
 
 `server/storage/local-json.mjs` writes snapshots through a same-directory temporary file and atomic
-rename. PostgreSQL is authoritative only for authenticated Account player state when the explicit
-backend is `POSTGRES`. At that point Guest profiles use process memory plus the existing browser
-snapshot behavior and do not read or write the legacy player/credential JSON files; hosted rooms,
-matchmaking state, and playtest feedback keep their separate JSON operational stores. The existing
-player JSON files remain untouched until an explicitly approved cutover and old Alpha Guest
-progress is intentionally not imported.
+rename. PostgreSQL is now authoritative for authenticated Account player state. Guest profiles use
+process memory plus the existing browser snapshot behavior and do not read or write the legacy
+player/credential JSON files; hosted rooms, matchmaking state, and playtest feedback retain their
+separate JSON operational stores. Old Alpha Guest progress was intentionally not imported.
 
-Repository implementation and tests install no PostgreSQL packages and perform no production
-operation. The recorded VPS infrastructure baseline is Ubuntu 26.04 with PostgreSQL 18.6,
-loopback-only listeners, a working daily backup timer, and 30-day dump retention; this state still
-requires an explicit release/cutover review.
+The intentional live storage split is:
 
-## Target architecture
+- Authenticated Account/Profile progression: `POSTGRES`
+- Guest profile/session path: `MEMORY_ONLY` / `GUEST_LOCAL`
+- Hosted Room storage: `FILE_JSON_LOCAL`
+- Matchmaking storage: `FILE_JSON_LOCAL`
+
+Do not describe production as fully PostgreSQL-backed. The recorded VPS baseline is Ubuntu 26.04
+with PostgreSQL 18.6, loopback-only listeners on `127.0.0.1` and `::1`, no public 5432 exposure, a
+working backup timer, and 30-day dump retention.
+
+## Production architecture
 
 The fixed resources are:
 
 - PostgreSQL major version: 18
+- Active production release: `v7.69.51-146b1671`
 - Database: `office_card_game`
 - Login role: `office_card_game_app`
-- Network endpoint: `127.0.0.1:5432` and the local PostgreSQL Unix socket
+- Network endpoint: `127.0.0.1:5432`, `[::1]:5432`, and the local PostgreSQL Unix socket
 - Service environment: `/etc/office-card-game.env`, `root:root`, mode `0600`
 - PostgreSQL backups: `/srv/office-card-game/backups/postgresql`
 - Legacy JSON backups: `/srv/office-card-game/backups/legacy-json`
@@ -103,8 +112,9 @@ OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1
 ```
 
 The marker is present only in a release that has passed the real PostgreSQL integration suite and
-whose readiness endpoint requires the database whenever PostgreSQL is selected. It is a capability
-gate, not evidence that production has already been migrated or cut over.
+whose readiness endpoint requires the database whenever PostgreSQL is selected. It remains a
+capability gate rather than standalone evidence of live state; the recorded v7.69.51 production
+checks separately establish that migration and cutover completed.
 
 The generated database password is 32 random bytes represented as 64 lowercase hexadecimal
 characters. It is written directly into `DATABASE_URL` in the root-owned environment file. The
@@ -164,7 +174,9 @@ bootstrap and neither inspects nor prepares PostgreSQL resources.
 Creates a PostgreSQL custom-format compressed `pg_dump`, validates it with `pg_restore --list`,
 then atomically publishes it under the fixed PostgreSQL backup directory. Dumps are
 `root:postgres` mode `0640`. Files older than 30 days are removed only from that fixed
-directory and only when their names match `office_card_game-*.dump`.
+directory and only when their names match `office_card_game-*.dump`. PostgreSQL dumps are now the
+primary Account/Profile recovery artifact. A fresh post-cutover dump was validated and confirmed
+to contain non-empty production data; the separate legacy JSON snapshot remains archived.
 
 ### `backup-status`
 
@@ -297,28 +309,35 @@ These are one-time human-root commands, not sudoers grants. `/opt/office-card-ga
 separate `ocgadmin`-managed checkout. Do not grant passwordless access to `install`, `mv`, `chown`,
 `chmod`, a shell, or the deployment artifact.
 
-## Migration and cutover flow
+## Completed production cutover record
 
-1. Confirm the live application is still `FILE_JSON_LOCAL` and READY; verify installed artifact
-   hashes, PostgreSQL loopback-only listeners, migration/backup state, and the timer.
-2. Run a fresh `backup-legacy`, then `backup-now`, and review `audit` plus `backup-status`.
-3. Approve, merge, and tag the fully tested release containing additive migrations, the exact
-   marker, Account/PostgreSQL support, DB-dependent readiness, and production dependencies.
-4. Deploy the tag through the installed repository-managed wrapper. It builds/tests, prepares and
-   finalizes the immutable release, validates the marker, and invokes
-   `ocg-db-helper migrate <release>` before activation. Failure leaves the previous release active.
-5. Verify the newly active candidate while production is still `FILE_JSON_LOCAL`, including Guest
-   behavior, version, readiness, and health.
-6. Review migration counts and the helper's validated pre/post-migration PostgreSQL dumps.
-7. Explicitly run `enable-postgres` and record the exact migrated release it prints.
-8. Re-activate that exact release through `ocg-release-helper activate <release>`; this restart is
-   the persistence cutover.
-9. Verify PostgreSQL-backed readiness/health, Account registration/login, restart persistence,
-   second-session state, Ops authorization, a fresh backup, and an external scan proving port 5432
-   is unreachable.
+The first Account/Profile cutover completed successfully on `v7.69.51-146b1671`. The recorded
+production state is:
 
-The DB helper intentionally does not modify the root-owned release helper. The deployment wrapper
-does not call `enable-postgres`; backend activation remains a separate explicit operator gate.
+- migrations applied: 1
+- migrations required: 1
+- current: true
+- exact: true
+- pending migrations: none
+- changed migrations: none
+- unknown migrations: none
+- database readiness: required and `READY`
+- Ranked timer: disabled
+
+Authenticated Account persistence and Profile/Progression persistence across independent sessions
+and browser contexts passed after cutover. The OPS role grant succeeded, `/ops` returned the
+expected 401/403/200 authorization outcomes, and an external TCP 5432 test failed as intended.
+
+The completed operator sequence retained the security boundary: fresh legacy and PostgreSQL
+backups were taken, the immutable release passed its migration gate before activation, backend
+enablement remained a separate explicit action, and post-cutover readiness, persistence,
+authorization, network exposure, and backup behavior were verified. The DB helper still does not
+modify the root-owned release helper, and the deployment wrapper still does not call
+`enable-postgres`.
+
+Future releases must continue to run additive pending migrations before activation and must remain
+compatible with the live PostgreSQL Account/Profile schema. Any future persistence-mode change is
+a new explicit operator gate; completion of the first cutover is not blanket authorization for one.
 
 ## Restore and rollback
 
@@ -328,12 +347,16 @@ fresh database using `pg_restore`, validate ownership/schema/migrations, and onl
 application. Never use `--clean` or drop the production database without a separate reviewed
 recovery plan.
 
-Before `enable-postgres`, JSON remains authoritative. A migration or candidate-readiness failure
-leaves player data and the previous release intact; additive schema objects may remain. After
-`enable-postgres`, new Account writes are authoritative in PostgreSQL. Never blindly activate a
-release that cannot use the current schema, and never automatically switch back to stale JSON.
-Migrations are forward-only and are not automatically reversed, so rollback must use a previously
-tested PostgreSQL-compatible release or a separate human-reviewed recovery plan.
+Post-cutover, new Account/Profile writes are authoritative in PostgreSQL. Never blindly activate a
+release that cannot use the current schema, and never automatically switch authenticated Profile
+persistence back to stale JSON. Legacy JSON is historical backup/reference material and migration
+provenance, not a second writable Source of Truth or a general rollback mechanism. Migrations are
+forward-only and are not automatically reversed, so a normal rollback must use a previously tested
+PostgreSQL-compatible release.
+
+Any emergency return to JSON would be a deliberate human-root disaster-recovery procedure with
+explicit data-divergence and data-loss risk. It requires a separately reviewed reconciliation plan;
+it is not normal release rollback.
 
 Disabling PostgreSQL persistence is also human-root-only because the helper intentionally has no
 rollback or arbitrary environment-edit action. A root administrator must restore the reviewed
@@ -346,7 +369,7 @@ Human root remains required to:
 - inspect and install the helper/sudoers/systemd artifacts;
 - install the reviewed deployment wrapper and protect its fixed parent directory;
 - remove any pre-existing public firewall rule for 5432;
-- approve the first bootstrap and final production cutover;
+- approve any future bootstrap, persistence-mode change, or recovery procedure;
 - perform restores or emergency environment rollback;
 - modify or replace the helper itself.
 
@@ -417,7 +440,9 @@ Guest mode remains available for low-friction Alpha testing and keeps browser-bo
 Under `FILE_JSON_LOCAL`, the existing Guest server persistence remains unchanged. Under `POSTGRES`,
 Guest server identity is deliberately memory-only so the archived legacy player/credential files
 remain unwritten; a process restart may create a new Guest identity from the browser snapshot. It
-is visibly labeled temporary and has no cross-device guarantee.
+is visibly labeled temporary and has no cross-device guarantee. Production currently uses this
+`POSTGRES` split, so the live Guest path is `MEMORY_ONLY` / `GUEST_LOCAL` while authenticated
+Accounts use PostgreSQL.
 Registering creates a fresh server-defined Account profile; Guest cards, Decks, currencies,
 cosmetics, Ranked state, achievements, and rewards are not claimed or migrated. The legacy JSON
 archive remains available for safety/debugging only after cutover.
@@ -435,6 +460,8 @@ dashboard are future work.
 endpoint independently resolve the opaque Account session and require the database-backed role
 `OPS` or `ADMIN`. An unauthenticated request receives 401; a normal `PLAYER` receives 403. Hiding
 the Lobby link is not an authorization boundary, and client/profile role fields are ignored.
+The production bootstrap and authorization path has been exercised successfully with the expected
+401/403/200 outcomes.
 
 New registrations always receive `PLAYER`. Because email verification is not yet implemented,
 there is intentionally no email allowlist that silently grants Ops authority. After the reviewed
@@ -478,6 +505,25 @@ do not grant the Node service helper or systemd privileges for this purpose.
 Phase 1 is visibility-only. Any future session invalidation, grant, progression correction,
 cosmetic grant, or account suspension must first introduce an Admin Audit Log recording WHO, WHEN,
 ACTION, TARGET, BEFORE, AFTER, and REASON.
+
+### Non-blocking health terminology follow-up
+
+Current `/api/health` output can be misread because `profileStorage: MEMORY_ONLY`,
+`playerStorage: MEMORY_ONLY`, `credentialStorage: MEMORY_ONLY`, and `authMode: GUEST_LOCAL`
+describe the Guest/local path, while `persistenceBackend: POSTGRES` describes authenticated
+Account/Profile persistence. This is an observability naming issue, not a persistence failure.
+
+A future response contract should consider explicit fields such as:
+
+```yaml
+accountPersistence: POSTGRES
+guestPersistence: MEMORY_ONLY
+roomPersistence: FILE_JSON_LOCAL
+matchmakingPersistence: FILE_JSON_LOCAL
+```
+
+Do not infer Account persistence from the Guest fields, and do not grant the application new
+privileges merely to improve terminology. This closeout intentionally makes no API/runtime change.
 
 ## Local and isolated database verification
 

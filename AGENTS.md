@@ -631,11 +631,16 @@ database work. The DB helper may operate only on its fixed Office Card Game data
 environment, runtime, backup, state, and validated immutable release paths.
 
 PostgreSQL must remain loopback/Unix-socket only. Production migrations are forward-only,
-versioned, additive, checksum-recorded, and must succeed before release activation. A legacy JSON
-snapshot and a validated PostgreSQL dump are mandatory before the first persistence cutover. A
-database restore, helper installation/replacement, firewall change, or emergency environment
-rollback remains human-root-only. See `docs/database-operations.md` for the exact workflow and
-NO-GO conditions.
+versioned, additive, checksum-recorded, and must succeed before release activation. PostgreSQL is
+the authoritative Source of Truth for authenticated Account/Profile progression. Guest persistence
+remains `MEMORY_ONLY` / `GUEST_LOCAL`, while Room and Matchmaking storage intentionally remain
+`FILE_JSON_LOCAL`; do not describe the whole application as fully PostgreSQL-backed. A legacy JSON
+snapshot and a validated PostgreSQL dump are mandatory before any persistence cutover. Retained
+legacy Account/Profile JSON is historical backup/reference material and migration provenance, not
+a second writable Source of Truth or an automatic rollback target. Normal application rollback
+must remain PostgreSQL-compatible. A database restore, helper installation/replacement, firewall
+change, persistence-mode change, or emergency environment rollback remains human-root-only. See
+`docs/database-operations.md` for the exact workflow and NO-GO conditions.
 
 PostgreSQL-capable releases must be deployed through the reviewed repository-managed wrapper
 installed at `/opt/office-card-game/deploy.sh`. A finalized release carrying
