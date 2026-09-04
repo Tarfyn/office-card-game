@@ -37,11 +37,13 @@ package/version surfaces, acquires a kernel-managed `flock`, checks disk/registr
 preconditions, then runs install, build and tests with visible stage logging. A fresh helper-owned
 release is prepared from the validated tree. The active symlink is never modified in place.
 
-After activation it requires the service to be active with the expected release working directory,
-`/api/ready` to be `READY`, and `/api/health` to be healthy with the expected version and
-`timerActive:false`. A failed post-cutover check performs at most one helper-mediated rollback and
-rechecks the previous release. A pre-cutover failure discards only the release prepared by that
-attempt. An already-existing immutable target is never overwritten.
+After activation it requires the service to be active with a valid main PID, `/api/ready` to be
+`READY`, and `/api/health` to be healthy with the expected version and `timerActive:false`. The
+endpoint version checks prove that the active service is serving the intended release without
+depending on cross-user `/proc` working-directory inspection. A failed post-cutover check performs
+at most one helper-mediated rollback and rechecks the previous release. A pre-cutover failure
+discards only the release prepared by that attempt. An already-existing immutable target is never
+overwritten.
 
 The lock is an OS file lock, so it releases automatically when the process exits. The current
 helper-managed release layout retains the active release and prior release directories; no

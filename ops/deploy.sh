@@ -186,11 +186,9 @@ if kind == "health" and d.get("ranked",{}).get("timerActive") is not False:
 
 service_is_current() {
   systemctl is-active --quiet "$SERVICE" || return 1
-  local pid cwd
+  local pid
   pid="$(systemctl show -p MainPID --value "$SERVICE")"
   [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
-  cwd="$(readlink -f "/proc/$pid/cwd")"
-  [[ "$cwd" == "$CURRENT" ]]
 }
 
 verify_live() {
