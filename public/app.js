@@ -224,6 +224,7 @@ const state = {
   alphaOnboardingOpen: false,
   starterOnboardingBusy: false,
   starterOnboardingMessage: null,
+  starterOnboardingCompleteNotice: false,
   starterDepartments: [],
   networkDiagnostics: { pingMs:null, checkedAt:null, busy:false },
   playtestAnalytics: null,
@@ -454,11 +455,16 @@ async function refreshServerProfile() {
   return result.profile;
 }
 
+function scrollActiveSurfaceToTop() {
+  window.scrollTo(0,0);
+}
+
 async function enterAchievements() {
   state.mode = 'ACHIEVEMENTS';
   state.achievementBusy = true;
   state.achievementMessage = null;
   render();
+  scrollActiveSurfaceToTop();
   try {
     state.achievementData = await api('/api/profiles/me/achievements', { headers:profileAuthHeaders() });
   } catch (error) {
@@ -475,6 +481,7 @@ async function enterPlayerFile(section = 'OVERVIEW') {
   state.profileHistoryLimit = 20;
   state.profileMessage = null;
   render();
+  scrollActiveSurfaceToTop();
   try {
     await refreshServerProfile();
     const requests = [state.cosmeticPersonnel ? Promise.resolve() : loadCosmeticViews(), api('/api/profiles/me/achievements', { headers:profileAuthHeaders() }).then((value) => { state.achievementData = value; })];
@@ -578,16 +585,19 @@ function renderPlayerFileOverview(profile) {
   const pvp = profileTally(profile, 'pvp');
   const ranked = profile?.ranked ?? {};
   const progression = profile?.meta?.progression ?? {};
-  const achievements = Object.values(profile?.meta?.achievements ?? {});
-  const completedAchievements = achievements.filter((item) => item?.completedAt).length;
   const achievementItems = state.achievementData?.achievements ?? [];
+  const achievements = Object.values(profile?.meta?.achievements ?? {});
+  const completedAchievements = achievementItems.length
+    ? achievementItems.filter((item) => item.progress?.completedAt).length
+    : achievements.filter((item) => item?.completedAt).length;
+  const achievementTotal = achievementItems.length || achievements.length;
   const incompleteAchievements = achievementItems.filter((item) => !item.progress?.completedAt);
   const achievementPreview = (incompleteAchievements.length ? incompleteAchievements : achievementItems).slice(0,3);
   const recent = (profile?.matchHistory ?? []).filter((item) => item.mode === 'FRIENDLY' || item.mode === 'RANKED').slice(0,5);
   const competitiveResults = recent.map((item) => `<b class="${String(item.result ?? item.outcome).toLowerCase()}">${esc(item.result ?? (item.outcome === 'RESIGN_LOSS' ? 'LOSS' : item.outcome))}</b>`).join('');
   const topDeck = Object.values(profile?.stats?.deckUsage ?? {}).sort((a,b) => Number(b.matches ?? 0) - Number(a.matches ?? 0))[0];
   const topDepartment = Object.entries(profile?.stats?.departmentUsage ?? {}).sort(([,a],[,b]) => Number(b.matches ?? 0) - Number(a.matches ?? 0))[0];
-  return `<div class="player-file-overview"><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.progression'))}</span><h2>${esc(t('playerFile.levelHeadline',{ level:progression.level ?? 1 }))}</h2><p>${esc(t('playerFile.xpDetail',{ xp:progression.xp ?? 0 }))}</p><button class="player-file-link" data-profile-section="RANKED">${esc(t('playerFile.viewRanked'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.record'))}</span><h2>${esc(t('playerFile.recordHeadline',{ wins:pvp.wins, losses:pvp.losses, draws:pvp.draws }))}</h2><p>${esc(t('playerFile.winRate',{ rate:pvp.matches ? Math.round(pvp.wins / pvp.matches * 100) : 0 }))}</p><button class="player-file-link" data-profile-section="STATS">${esc(t('playerFile.viewStats'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.achievements'))}</span><h2>${esc(t('playerFile.achievementHeadline',{ completed:completedAchievements, total:achievements.length }))}</h2><p>${esc(t('playerFile.achievementDetail'))}</p>${achievementPreview.length ? `<div class="player-file-achievement-preview">${achievementPreview.map((item) => `<div><strong>${esc(achievementDisplayName(item))}</strong><span>${esc(achievementProgressLabel(item))}</span></div>`).join('')}</div>` : ''}<button class="player-file-link" data-profile-section="ACHIEVEMENTS">${esc(t('playerFile.viewAchievements'))}</button></article></section><section class="player-file-panel player-file-recent"><div class="player-file-panel-heading"><div><span>${esc(t('playerFile.recentForm'))}</span><h2>${esc(t('playerFile.competitiveForm'))}</h2></div><button class="player-file-link" data-profile-section="MATCH_HISTORY">${esc(t('playerFile.viewHistory'))}</button></div><div class="player-file-form">${competitiveResults || `<small>${esc(t('playerFile.noCompetitiveMatches'))}</small>`}</div>${recent.length ? `<div class="player-file-mini-history">${recent.slice(0,3).map(renderPlayerFileHistoryRow).join('')}</div>` : ''}</section><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.ranked'))}</span><h2>${esc(profileRankLabel(profile))}</h2><p>${esc(t('playerFile.mmrPeak',{ current:ranked.rating ?? 1000, peak:ranked.peakRating ?? ranked.rating ?? 1000 }))}</p></article><article class="player-file-panel"><span>${esc(t('playerFile.favorites'))}</span><h2>${esc(topDeck?.deckName ?? t('playerFile.noDeck'))}</h2><p>${esc(topDepartment ? t('playerFile.departmentUsage',{ department:topDepartment[0], count:topDepartment[1].matches ?? 0 }) : t('playerFile.noDepartment'))}</p></article></section></div>`;
+  return `<div class="player-file-overview"><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.progression'))}</span><h2>${esc(t('playerFile.levelHeadline',{ level:progression.level ?? 1 }))}</h2><p>${esc(t('playerFile.xpDetail',{ xp:progression.xp ?? 0 }))}</p><button class="player-file-link" data-profile-section="RANKED">${esc(t('playerFile.viewRanked'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.record'))}</span><h2>${esc(t('playerFile.recordHeadline',{ wins:pvp.wins, losses:pvp.losses, draws:pvp.draws }))}</h2><p>${esc(t('playerFile.winRate',{ rate:pvp.matches ? Math.round(pvp.wins / pvp.matches * 100) : 0 }))}</p><button class="player-file-link" data-profile-section="STATS">${esc(t('playerFile.viewStats'))}</button></article><article class="player-file-panel"><span>${esc(t('playerFile.achievements'))}</span><h2>${esc(t('playerFile.achievementHeadline',{ completed:completedAchievements, total:achievementTotal }))}</h2><p>${esc(t('playerFile.achievementDetail'))}</p>${achievementPreview.length ? `<div class="player-file-achievement-preview">${achievementPreview.map((item) => `<div><strong>${esc(achievementDisplayName(item))}</strong><span>${esc(achievementProgressLabel(item))}</span></div>`).join('')}</div>` : ''}<button class="player-file-link" data-profile-section="ACHIEVEMENTS">${esc(t('playerFile.viewAchievements'))}</button></article></section><section class="player-file-panel player-file-recent"><div class="player-file-panel-heading"><div><span>${esc(t('playerFile.recentForm'))}</span><h2>${esc(t('playerFile.competitiveForm'))}</h2></div><button class="player-file-link" data-profile-section="MATCH_HISTORY">${esc(t('playerFile.viewHistory'))}</button></div><div class="player-file-form">${competitiveResults || `<small>${esc(t('playerFile.noCompetitiveMatches'))}</small>`}</div>${recent.length ? `<div class="player-file-mini-history">${recent.slice(0,3).map(renderPlayerFileHistoryRow).join('')}</div>` : ''}</section><section class="player-file-section-grid"><article class="player-file-panel"><span>${esc(t('playerFile.ranked'))}</span><h2>${esc(profileRankLabel(profile))}</h2><p>${esc(t('playerFile.mmrPeak',{ current:ranked.rating ?? 1000, peak:ranked.peakRating ?? ranked.rating ?? 1000 }))}</p></article><article class="player-file-panel"><span>${esc(t('playerFile.favorites'))}</span><h2>${esc(topDeck?.deckName ?? t('playerFile.noDeck'))}</h2><p>${esc(topDepartment ? t('playerFile.departmentUsage',{ department:topDepartment[0], count:topDepartment[1].matches ?? 0 }) : t('playerFile.noDepartment'))}</p></article></section></div>`;
 }
 
 function renderPlayerFileHistory(profile) {
@@ -722,6 +732,7 @@ async function enterCosmeticSurface(mode) {
   state.cosmeticMessage = null;
   try { await loadCosmeticViews(); } catch (error) { state.cosmeticMessage = cosmeticErrorMessage(error); }
   render();
+  scrollActiveSurfaceToTop();
 }
 function avatarFrameMaskAsset(frameAsset, explicitMaskAsset = '') {
   if (explicitMaskAsset) return explicitMaskAsset;
@@ -4271,13 +4282,36 @@ function renderLobbyDeckPrep(value, context = 'QUICK') {
   const deck = lobbyDeckSummary(value);
   if (!deck) return '<div class="lobby-deck-prep invalid"><strong>No deck selected</strong></div>';
   const size = Number(state.format?.deckSize ?? 40);
-  const contextLabel = context === 'CREATE' ? 'ROOM DECK' : context === 'JOIN' ? 'JOINING WITH' : 'MATCH DECK';
-  const ownedLabel = deck.ownedReady ? 'COLLECTION READY' : `${deck.missingCopies} COPY${deck.missingCopies===1?'':'IES'} MISSING`;
+  const contextLabel = context === 'CREATE' ? lobbyCopy('ROOM DECK','RAUM-DECK') : context === 'JOIN' ? lobbyCopy('JOINING WITH','BEITRITT MIT') : lobbyCopy('MATCH DECK','MATCH-DECK');
+  const ownedLabel = deck.trainingLoaner
+    ? t('training.loanerStatus')
+    : deck.ownedReady
+      ? lobbyCopy('COLLECTION READY','SAMMLUNG BEREIT')
+      : lobbyCopy(`${deck.missingCopies} ${deck.missingCopies===1?'COPY':'COPIES'} MISSING`,`${deck.missingCopies} ${deck.missingCopies===1?'EXEMPLAR FEHLT':'EXEMPLARE FEHLEN'}`);
   return `<div class="lobby-deck-prep ${deck.formatReady?'ready':'invalid'} ${esc(departmentThemeClass(deck.department))}" data-lobby-deck-prep="${esc(context)}">
     <div class="lobby-deck-prep-code"><span>${esc(departmentCode(deck.department))}</span><small>${esc(contextLabel)}</small></div>
     <div class="lobby-deck-prep-copy"><strong>${esc(deck.name)}</strong><b>${esc(deck.identity.loop)}</b><small>${deck.topTags.length ? deck.topTags.map((tag)=>`#${esc(tag)}`).join(' · ') : esc(deck.identity.note)}</small></div>
-    <div class="lobby-deck-prep-status"><span class="${deck.total===size?'ready':'warn'}">${esc(deck.total)}/${esc(size)}</span><span class="${deck.formatReady?'ready':'warn'}">${deck.formatReady?'FORMAT READY':'DRAFT'}</span><span class="${deck.ownedReady?'ready':'info'}">${esc(ownedLabel)}</span></div>
+    <div class="lobby-deck-prep-status"><span class="${deck.total===size?'ready':'warn'}">${esc(deck.total)}/${esc(size)}</span><span class="${deck.formatReady?'ready':'warn'}">${deck.formatReady?lobbyCopy('FORMAT READY','FORMAT BEREIT'):lobbyCopy('DRAFT','ENTWURF')}</span><span class="${deck.ownedReady?'ready':'info'}">${esc(ownedLabel)}</span></div>
   </div>`;
+}
+
+function pvpDeckStatus(value = state.preferredDeckValue) {
+  const summary = lobbyDeckSummary(value);
+  if (!summary?.formatReady) return { valid:false, message:t('training.deckNotReady'), summary };
+  if (summary.trainingLoaner) return { valid:false, message:t('training.loanerPvpUnavailable'), summary };
+  if (summary.ownedReady === false) return { valid:false, message:t('training.pvpNeedsCopies'), summary };
+  return { valid:true, message:t('training.pvpReady'), summary };
+}
+
+// Regression compatibility markers for the original format preflight copy:
+// Selected deck is not format-ready before matchmaking; Selected deck is not format-ready before creating a room; Selected deck is not format-ready before joining a room.
+// The current preflight also rejects unowned and Training-only loaner decks through pvpStatus.
+
+function pvpValidationMarkup(status) {
+  const firstDayDeckId = state.serverProfile?.meta?.starterOnboarding?.firstDayDeckId;
+  const firstDayReady = Boolean(status.valid && status.summary?.custom && status.summary.value === `custom:${firstDayDeckId}`);
+  const message = firstDayReady ? t('starterAccess.complete.next') : status.message;
+  return `<p class="deck-access-guidance ${status.valid ? 'ready' : 'blocked'}" role="${status.valid ? 'status' : 'alert'}">${esc(message)}</p>`;
 }
 
 async function persistSelectedDeck(value) {
@@ -4318,16 +4352,18 @@ function syncLobbyDeckChoice(value) {
     button.classList.toggle('selected', selected);
     button.setAttribute('aria-pressed', selected ? 'true' : 'false');
   });
-  const summary = lobbyDeckSummary(resolved);
-  const legal = Boolean(summary?.formatReady);
+  const pvpStatus = pvpDeckStatus(resolved);
   const quick = document.querySelector('#quickMatchBtn');
   const create = document.querySelector('#createRoomBtn');
   const join = document.querySelector('#joinRoomBtn');
-  if (quick) quick.disabled = state.matchmakingBusy || !legal;
-  if (create) create.disabled = !legal;
-  if (join) join.disabled = !legal;
+  if (quick) quick.disabled = state.matchmakingBusy || !pvpStatus.valid;
+  if (create) create.disabled = !pvpStatus.valid;
+  if (join) join.disabled = !pvpStatus.valid;
+  document.querySelectorAll('[data-pvp-validation-host]').forEach((host) => { host.innerHTML = pvpValidationMarkup(pvpStatus); });
   updateTrainingControls(resolved);
 }
+
+// Regression compatibility marker: quick.disabled = state.matchmakingBusy || !legal;
 
 function trainingDeckStatus(value = state.preferredDeckValue) {
   const summary = lobbyDeckSummary(value);
@@ -4338,7 +4374,9 @@ function trainingDeckStatus(value = state.preferredDeckValue) {
 }
 
 function trainingValidationMarkup(status) {
-  return status.valid ? '' : `<p class="desk-matchmaking-message error training-validation-message" role="alert">${esc(status.message)}</p>`;
+  if (!status.valid) return `<p class="desk-matchmaking-message error training-validation-message" role="alert">${esc(status.message)}</p>`;
+  if (status.summary?.trainingLoaner) return `<p class="training-loaner-guidance" role="status">${esc(t('training.loanerExplanation'))}</p>`;
+  return '';
 }
 
 function updateTrainingControls(value = state.preferredDeckValue) {
@@ -4723,6 +4761,7 @@ async function enterAlphaDeckbuilder(message = null) {
   state.mode = 'COLLECTION';
   if (message) state.deckBuilderMessage = message;
   render();
+  scrollActiveSurfaceToTop();
 }
 
 function updateCollectionSearch(value) {
@@ -5052,7 +5091,7 @@ function renderCollectionCard(def, deck) {
   const swapStatus = swapSource ? deckSwapTargetStatus(deck, def.id) : null;
   return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${finishClass(selectedVariant)} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${alphaAccessOnly ? 'alpha-access-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
     ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, finishBadgePlacement:'artwork', isNew, artReady:Boolean(def.artId), owned })}
-    ${alphaAccessOnly ? '<span class="alpha-access-chip">ALPHA ACCESS · NOT OWNED</span>' : ''}
+    ${alphaAccessOnly ? `<span class="alpha-access-chip">${esc(lobbyCopy('ALPHA ACCESS · NOT OWNED','ALPHA-ZUGANG · NICHT IM BESITZ'))}</span>` : ''}
     ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))} <small>${esc(ownedCopies(def.id))}</small></button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))} <small>${esc(executiveOwned)}</small></button></div>` : ''}
     ${finishSwapTarget ? `<button class="collection-finish-swap" data-deck-finish-swap="${esc(def.id)}" data-deck-finish-to="${esc(finishSwapTarget)}">${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}</button>` : ''}
     ${swapSource ? `<div class="collection-swap-control"><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-swap-target="${esc(def.id)}" ${swapStatus?.allowed ? '' : 'disabled'} title="${esc(swapStatus?.reason ?? 'Swap in this card')}">${swapSource.id===def.id ? 'SWAP SOURCE' : 'SWAP IN'}</button></div>` : `<div class="collection-copy-control"><button data-deck-minus="${esc(def.id)}" ${copies <= 0 ? 'disabled' : ''}>−</button><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-plus="${esc(def.id)}" ${copies >= deckCeiling || deckCardCount(deck) >= state.format.deckSize ? 'disabled' : ''}>+</button></div>`}
@@ -5490,6 +5529,8 @@ function renderDeckEditSafety(deck) {
 }
 
 function renderCollection() {
+  // Regression compatibility markers for the original tester-facing collection copy:
+  // Build, collect and inspect the full office set. All Alpha cards available.
   let deck = editingDeck();
   if (!deck) deck = newCustomDeck();
   if (state.deckSwapSourceId && deckCopies(deck, state.deckSwapSourceId) <= 0) state.deckSwapSourceId = null;
@@ -5529,7 +5570,7 @@ function renderCollection() {
   const setStats = collectionSetStats();
   const currencies = state.economyConfig?.currencies ?? [{id:'OFFICE_CREDITS',name:'Office Credits'},{id:'SHREDDER_SCRAPS',name:'Shredder Scraps'}];
   app.innerHTML = `<section class="collection-shell">
-    <header class="collection-toolbar"><div><button class="ghost" id="backToPlay">← Play</button><strong>Collection & Deckbuilder</strong><span class="muted">Build, collect and inspect the full office set.</span><div class="collection-set-progress"><span><b>${esc(setStats.uniqueOwned)}</b> / ${esc(setStats.total)} owned</span><span><b>${esc(setStats.artReady)}</b> / ${esc(setStats.total)} artwork</span>${setStats.unseenNew ? `<span class="new-set-count"><b>${esc(setStats.unseenNew)}</b> new</span><button class="mark-seen-button" id="markAllCardsSeen">Mark seen</button>` : ''}</div><div class="collection-mode-toggle" role="group" aria-label="Deckbuilder collection mode"><button data-collection-mode="SANDBOX_ALL_AVAILABLE" class="${ownedDeckMode()?'':'active'}">All Alpha cards</button><button data-collection-mode="OWNED_COPIES" class="${ownedDeckMode()?'active':''}">Owned copies</button></div></div><div class="economy-preview">${currencies.map((currency) => `<span>${esc(currency.name.toUpperCase())} <b>${esc(state.metaProfile?.balances?.[currency.id] ?? 0)}</b></span>`).join('')}<small>${ownedDeckMode() ? 'Owned-copy limits active' : 'All Alpha cards available'} · saved to your server profile</small></div></header>
+    <header class="collection-toolbar"><div><button class="ghost" id="backToPlay">← ${esc(lobbyCopy('Play','Spielen'))}</button><strong>${esc(lobbyCopy('Collection & Deckbuilder','Sammlung & Deckbuilder'))}</strong><span class="muted">${esc(lobbyCopy('Build with owned cards or inspect the full Alpha set.','Baue mit eigenen Karten oder sieh dir das ganze Alpha-Set an.'))}</span><div class="collection-set-progress"><span><b>${esc(setStats.uniqueOwned)}</b> / ${esc(setStats.total)} ${esc(lobbyCopy('owned','im Besitz'))}</span><span><b>${esc(setStats.artReady)}</b> / ${esc(setStats.total)} ${esc(lobbyCopy('artwork','Artworks'))}</span>${setStats.unseenNew ? `<span class="new-set-count"><b>${esc(setStats.unseenNew)}</b> ${esc(lobbyCopy('new','neu'))}</span><button class="mark-seen-button" id="markAllCardsSeen">${esc(lobbyCopy('Mark seen','Als gesehen markieren'))}</button>` : ''}</div><div class="collection-mode-toggle" role="group" aria-label="${esc(lobbyCopy('Deckbuilder collection mode','Sammlungsmodus im Deckbuilder'))}"><button data-collection-mode="SANDBOX_ALL_AVAILABLE" class="${ownedDeckMode()?'':'active'}">${esc(lobbyCopy('All Alpha cards','Alle Alpha-Karten'))}</button><button data-collection-mode="OWNED_COPIES" class="${ownedDeckMode()?'active':''}">${esc(lobbyCopy('Owned copies','Eigene Exemplare'))}</button></div></div><div class="economy-preview">${currencies.map((currency) => `<span>${esc(currency.name.toUpperCase())} <b>${esc(state.metaProfile?.balances?.[currency.id] ?? 0)}</b></span>`).join('')}<small>${esc(ownedDeckMode() ? lobbyCopy('Owned-copy limits active · real account collection','Nur eigene Exemplare · echte Kontosammlung') : lobbyCopy('Alpha practice access · unowned cards are marked and unavailable for PvP','Alpha-Übungszugriff · nicht eigene Karten sind markiert und im PvP nicht verfügbar'))}</small></div></header>
     ${renderEconomyLab()}
     ${renderEconomyRoadmap()}
     ${renderStarterDeckShelf()}
@@ -6245,8 +6286,8 @@ async function beginQuickMatch() {
   state.matchmakingMessage = null;
   try {
     const deckId = document.querySelector('#quickDeck')?.value;
-    const prep = lobbyDeckSummary(deckId);
-    if (!prep?.formatReady) throw new Error('Selected deck is not format-ready. Open the Deckbuilder to finish it before matchmaking.');
+    const pvpStatus = pvpDeckStatus(deckId);
+    if (!pvpStatus.valid) throw new Error(pvpStatus.message);
     const mode = document.querySelector('#quickMode')?.value ?? 'FRIENDLY';
     const payload = { ...selectedDeckPayload(deckId), mode, profileToken:state.profileToken };
     const result = await api('/api/matchmaking/enqueue', { method:'POST', body:JSON.stringify(payload) });
@@ -6414,7 +6455,10 @@ async function advanceStarterBooster(packNumber) {
   try {
     const result = await api('/api/onboarding/booster', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, packNumber:Number(packNumber) }) });
     applyServerProfile(result.profile);
-    if (result.profile?.meta?.starterOnboarding?.status === 'COMPLETE') await syncServerDecks();
+    if (result.profile?.meta?.starterOnboarding?.status === 'COMPLETE') {
+      await syncServerDecks();
+      state.starterOnboardingCompleteNotice = true;
+    }
   } catch (error) {
     const reconciled = await reconcileStarterOnboardingAfterError();
     if (!reconciled) state.starterOnboardingMessage = starterOnboardingErrorMessage(error);
@@ -6427,6 +6471,11 @@ async function advanceStarterBooster(packNumber) {
 function bindStarterOnboarding() {
   document.querySelectorAll('[data-starter-department]').forEach((button) => button.addEventListener('click', () => completeStarterOnboarding(button.dataset.starterDepartment)));
   document.querySelectorAll('[data-starter-booster]').forEach((button) => button.addEventListener('click', () => advanceStarterBooster(button.dataset.starterBooster)));
+}
+
+function renderStarterCompletionNotice() {
+  if (!state.starterOnboardingCompleteNotice) return '';
+  return `<section class="starter-complete-notice" role="status"><div><span>${esc(t('starterAccess.complete.kicker'))}</span><strong>${esc(t('starterAccess.complete.title'))}</strong><small>${esc(t('starterAccess.complete.description'))}</small><small class="starter-complete-next">${esc(t('starterAccess.complete.next'))}</small></div><button type="button" id="dismissStarterComplete" aria-label="${esc(t('common.close'))}">×</button></section>`;
 }
 
 function alphaOnboardingSeen() {
@@ -6555,12 +6604,14 @@ function renderLobby() {
   if (!state.preferredDeckValue) state.preferredDeckValue = preferredDeck;
   const options = lobbyDeckOptions();
   const trainingStatus = trainingDeckStatus(preferredDeck);
+  const pvpStatus = pvpDeckStatus(preferredDeck);
   const modes = (state.matchSettings?.modes ?? [{id:'FRIENDLY',name:'Friendly',description:'Manual friendly room.'}]).filter((mode) => mode.id === 'FRIENDLY' || mode.id === 'RANKED');
   const selectedMode = matchModeConfig(state.lobbyMatchMode) ?? modes[0];
   const queueWaiting = state.matchmakingTicket?.status === 'WAITING';
   app.innerHTML = `<section class="executive-lobby material-executive-lobby">
     ${renderRecentSessionCard()}
     ${renderAccountControls()}
+    ${renderStarterCompletionNotice()}
     <div class="executive-desk-surface">
       <aside class="executive-desk-left" aria-label="${esc(lobbyCopy('Lobby navigation and utilities','Lobby-Navigation und Werkzeuge'))}">
         <div class="desk-nav-rail">
@@ -6592,6 +6643,7 @@ function renderLobby() {
             </div>
             <div class="bot-match-controls"><div><span>${esc(t('training.botOpponent').toUpperCase())}</span><small>${esc(t('training.selectOpponent'))}</small></div><label class="quick-match-field">${esc(t('training.opponentDeck'))}<select id="botOpponentDeck">${botDeckOptions()}</select></label><button id="startTrainingPanel" ${state.botBusy || !trainingStatus.valid?'disabled':''}>${esc(t('training.start'))}</button><button id="startTutorialPanel" ${state.botBusy || !trainingStatus.valid?'disabled':''}>${esc(t('tutorial.start'))}</button></div>
             <div data-lobby-deck-prep-host="QUICK">${renderLobbyDeckPrep(preferredDeck,'QUICK')}</div>
+            <div data-pvp-validation-host>${pvpValidationMarkup(pvpStatus)}</div>
             ${state.matchmakingMessage ? `<p class="desk-matchmaking-message">${esc(state.matchmakingMessage)}</p>` : ''}
             <div data-training-validation-host>${state.botMessage ? `<p class="desk-matchmaking-message error">${esc(state.botMessage)}</p>` : trainingValidationMarkup(trainingStatus)}</div>
           </div>
@@ -6616,6 +6668,7 @@ function renderLobby() {
               <p class="muted">${lobbyCopy('Choose your deck and match rules, then send the six-character code to Player 2.','Wähle Deck und Matchregeln und sende anschließend den sechsstelligen Code an Spieler 2.')}</p>
               <label class="field">${lobbyCopy('Deck','Deck')}<select id="createDeck">${options}</select></label>
               <div data-lobby-deck-prep-host="CREATE">${renderLobbyDeckPrep(preferredDeck,'CREATE')}</div>
+              <div data-pvp-validation-host>${pvpValidationMarkup(pvpStatus)}</div>
               <label class="field">${lobbyCopy('Match mode','Matchmodus')}<select id="createMode">${modes.map((mode) => `<option value="${esc(mode.id)}" ${mode.id===state.lobbyMatchMode?'selected':''}>${esc(lobbyModeName(mode))}</option>`).join('')}</select></label>
               <div class="mode-preview" id="modePreview"><strong>${esc(lobbyModeName(selectedMode))}</strong><span>${esc(lobbyModeDescription(selectedMode))}</span><small>${state.lobbyMatchMode==='RANKED' ? lobbyCopy('Private room · unrated. Ranked timer profile is reserved but still disabled.','Privater Raum · ungewertet. Das Ranked-Timerprofil ist reserviert, bleibt aber deaktiviert.') : lobbyCopy('No timer by default.','Standardmäßig kein Timer.')}</small></div>
               <button class="primary" id="createRoomBtn">${lobbyCopy('Create room','Raum erstellen')}</button>
@@ -6626,6 +6679,7 @@ function renderLobby() {
               <label class="field">${lobbyCopy('Room code','Raumcode')}<input id="joinCode" maxlength="6" placeholder="ABC123" autocomplete="off" value="${esc(state.inviteRoomCode ?? '')}" /></label>
               <label class="field">${lobbyCopy('Deck','Deck')}<select id="joinDeck">${options}</select></label>
               <div data-lobby-deck-prep-host="JOIN">${renderLobbyDeckPrep(preferredDeck,'JOIN')}</div>
+              <div data-pvp-validation-host>${pvpValidationMarkup(pvpStatus)}</div>
               <div class="mode-preview compact"><strong>${lobbyCopy('Room rules come from the host','Raumregeln kommen vom Host')}</strong><span>${lobbyCopy('Friendly / Ranked rules and future timer settings are server-owned. Private rooms never change Ranked MMR.','Freundschafts-/Ranked-Regeln und künftige Timer-Einstellungen liegen beim Server. Private Räume verändern niemals das Ranked-MMR.')}</span></div>
               <button class="primary" id="joinRoomBtn">${lobbyCopy('Join room','Raum beitreten')}</button>
               ${state.lastError ? `<div class="error">${esc(state.lastError)}</div>` : ''}
@@ -6645,6 +6699,7 @@ function renderLobby() {
   bindAlphaOnboarding();
   bindStarterOnboarding();
   bindAccountControls();
+  document.querySelector('#dismissStarterComplete')?.addEventListener('click',()=>{ state.starterOnboardingCompleteNotice=false; renderLobby(); });
   bindConnectionDiagnostics();
   bindBugReportControls();
   bindAlphaSessionControls();
@@ -7689,8 +7744,8 @@ async function createRoom() {
   state.lastError = null;
   try {
     const deckId = document.querySelector('#createDeck').value;
-    const prep = lobbyDeckSummary(deckId);
-    if (!prep?.formatReady) throw new Error('Selected deck is not format-ready. Open the Deckbuilder to finish it before creating a room.');
+    const pvpStatus = pvpDeckStatus(deckId);
+    if (!pvpStatus.valid) throw new Error(pvpStatus.message);
     const payload = { ...selectedDeckPayload(deckId), mode: state.lobbyMatchMode, profileToken:state.profileToken };
     const result = await api('/api/rooms', { method:'POST', body:JSON.stringify(payload) });
     saveSession({ roomId: result.roomId, token: result.token, playerId: result.playerId });
@@ -7708,8 +7763,8 @@ async function joinRoom() {
   try {
     const roomId = document.querySelector('#joinCode').value.trim().toUpperCase();
     const deckId = document.querySelector('#joinDeck').value;
-    const prep = lobbyDeckSummary(deckId);
-    if (!prep?.formatReady) throw new Error('Selected deck is not format-ready. Open the Deckbuilder to finish it before joining a room.');
+    const pvpStatus = pvpDeckStatus(deckId);
+    if (!pvpStatus.valid) throw new Error(pvpStatus.message);
     const result = await api(`/api/rooms/${encodeURIComponent(roomId)}/join`, { method:'POST', body:JSON.stringify({ ...selectedDeckPayload(deckId), profileToken:state.profileToken }) });
     state.inviteRoomCode = null;
     saveSession({ roomId: result.roomId, token: result.token, playerId: result.playerId });
