@@ -137,7 +137,10 @@ preflight() {
   command -v flock >/dev/null || die "flock is required"
   command -v timeout >/dev/null || die "timeout is required"
   systemctl is-enabled "$SERVICE" >/dev/null 2>&1 || die "service manager cannot see $SERVICE"
-  [[ "$CHECK_ONLY" -eq 1 ]] && log "4" "preflight passed: node=$(node --version) npm=$(npm --version) free=${available}KB registry=$registry"
+  if [[ "$CHECK_ONLY" -eq 1 ]]; then
+    log "4" "preflight passed: node=$(node --version) npm=$(npm --version) free=${available}KB registry=$registry"
+  fi
+  return 0
 }
 
 install_build_test() {
