@@ -93,6 +93,7 @@ import { PlayerProfileService } from "../dist/src/profile.js";
 import { assertDeckInput } from "../dist/src/player-decks.js";
 import { MatchmakingQueue } from "../dist/src/matchmaking.js";
 import { normalizeRankedConfig, ratingWindowForWait } from "../dist/src/ranked.js";
+import { availableStarterDepartments, createPendingAccountMeta, isTrainingLoanerDeck, trainingLoanerAllowed } from "../dist/src/starter-access.js";
 import { projectAchievements, normalizeProgressionConfig } from "../dist/src/progression.js";
 import { aggregatePlaytestAnalytics, filterPlaytestRecords, normalizePlaytestFilter, playtestAnalyticsDimensions, playtestRecordsCsv, playtestCardActivityCsv } from "../dist/src/playtest-analytics.js";
 import { localJsonPersistence } from "./storage/local-json.mjs";
@@ -190,7 +191,7 @@ const PRESERVED_PROFILE_MUTATION_ERRORS = new Set([
   "COSMETIC_NOT_OWNED", "COSMETIC_WRONG_SLOT", "COSMETIC_SLOT_INVALID", "COSMETIC_REQUIRED",
   "DECK_UNKNOWN_CARD", "DECK_UNKNOWN_VARIANT", "DECK_MALFORMED", "DECK_COPY_LIMIT", "DECK_NOT_FOUND", "DECK_NOT_VALID", "DECK_NOT_OWNED", "DECK_CONFLICT",
   "CARD_VARIANT_INVALID", "COLLECTION_FLOOR", "DECKS_AFFECTED_BY_SCRAP", "INSUFFICIENT_FUNDS", "PROFILE_MISMATCH",
-  "PLAYER_NOT_FOUND", "RANKED_SETTLEMENT_INCONSISTENT"
+  "PLAYER_NOT_FOUND", "RANKED_SETTLEMENT_INCONSISTENT", "STARTER_DEPARTMENT_INVALID", "STARTER_GRANT_EMPTY_POOL", "STARTER_ONBOARDING_COMPLETE", "STARTER_ONBOARDING_IN_PROGRESS", "STARTER_ONBOARDING_INVALID_STEP", "STARTER_ONBOARDING_NOT_STARTED"
 ]);
 // Once POSTGRES is explicitly enabled, legacy player JSON is archive material.
 // Guest Alpha profiles remain available in memory and may be re-seeded from the
@@ -255,8 +256,7 @@ function createFreshAccountProfile(userId) {
     credentialPersistence:undefined,
     playerIdFactory:() => userId
   });
-  const profile = memory.create().profile;
-  profile.selectedDeckId = String(economyConfig.sandbox?.starterCollectionDeckId ?? "customer-service-starter");
+  const profile = memory.create(createPendingAccountMeta(Number(economyConfig.sandbox?.startingOfficeCredits ?? 0))).profile;
   return profile;
 }
 
@@ -652,7 +652,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.51",
+    version: "7.69.52",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -686,7 +686,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.51", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.52", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -739,7 +739,7 @@ function errorResponse(res, error) {
   }
   const code = error instanceof Error ? error.message : "";
   if (["INVALID_PROFILE_TOKEN", "PROFILE_REQUIRED"].includes(code)) return json(res, 401, { error:{ code, message: code === "PROFILE_REQUIRED" ? "A playtest profile is required." : "Profile token is invalid or expired." } });
-  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_UNKNOWN_VARIANT","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","CARD_VARIANT_INVALID","COLLECTION_FLOOR","INSUFFICIENT_FUNDS"].includes(code)) return json(res, 400, { error:{ code, message:code } });
+  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_UNKNOWN_VARIANT","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","CARD_VARIANT_INVALID","COLLECTION_FLOOR","INSUFFICIENT_FUNDS","STARTER_DEPARTMENT_INVALID","STARTER_GRANT_EMPTY_POOL","STARTER_ONBOARDING_COMPLETE","STARTER_ONBOARDING_IN_PROGRESS","STARTER_ONBOARDING_INVALID_STEP","STARTER_ONBOARDING_NOT_STARTED"].includes(code)) return json(res, 400, { error:{ code, message:code } });
   if (["DECK_CONFLICT","DECKS_AFFECTED_BY_SCRAP","RANKED_SETTLEMENT_INCONSISTENT"].includes(code)) return json(res, 409, { error:{ code, message:code } });
   if (code === "PROFILE_MISMATCH") return json(res, 403, { error:{ code, message:"This room seat belongs to a different playtest profile." } });
   if (code === "MATCHMAKING_TICKET_NOT_FOUND") return json(res, 404, { error:{ code, message:"Matchmaking ticket not found." } });
@@ -846,8 +846,11 @@ function validateQueuedDeck(selection) {
   return selection;
 }
 
-function validateOwnedDeck(profile, selection) {
+function validateOwnedDeck(profile, selection, mode = "FRIENDLY") {
+  const trainingMode = mode === "TRAINING" || mode === "TUTORIAL";
+  if (!trainingMode && typeof selection === "string" && isTrainingLoanerDeck(selection)) throw new RoomError("INVALID_DECK", "Training loaner decks are only available in Training.");
   if (!profile || profile.meta?.collectionMode !== "OWNED_COPIES") return;
+  if (trainingMode && (profile.meta?.alphaPlaytestAccess?.enabled || trainingLoanerAllowed(mode, typeof selection === "string" ? selection : null))) return;
   const deck = typeof selection === "string" ? alphaDeckPresets[selection] : selection;
   if (!deck) throw new RoomError("INVALID_DECK", "Unknown deck preset.");
   const baseTotals = new Map();
@@ -907,11 +910,11 @@ const server = createServer(async (req, res) => {
     validateAuthenticatedMutation(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.51", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.52", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.51", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.52", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -966,6 +969,17 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { mode:"GUEST", account:null }, { "set-cookie":sessionCookie("", { clear:true, secure:SERVER_MODE === "NETWORK" }) });
     }
     if (req.method === "GET" && path === "/api/presets") return json(res, 200, { presets: rooms.listPresets() });
+    if (req.method === "GET" && path === "/api/starter-access") return json(res, 200, { departments:availableStarterDepartments().map(({ id, displayNameKey, playstyleKey }) => ({ id, displayNameKey, playstyleKey })) });
+    if (req.method === "POST" && path === "/api/onboarding/department") {
+      const body = await readJson(req);
+      const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => ({ profile:service.completeStarterOnboarding(token, String(body?.department ?? "")) }));
+      return json(res, 200, { ...result, storage:accountService && sessionTokenFromRequest(req) ? "POSTGRES" : profiles.playerStorageLabel });
+    }
+    if (req.method === "POST" && path === "/api/onboarding/booster") {
+      const body = await readJson(req);
+      const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => service.advanceStarterBooster(token, Number(body?.packNumber)));
+      return json(res, 200, { ...result, storage:accountService && sessionTokenFromRequest(req) ? "POSTGRES" : profiles.playerStorageLabel });
+    }
     if (req.method === "GET" && path === "/api/catalog") return json(res, 200, { cards: publicCatalog() });
     if (req.method === "GET" && path === "/api/format") return json(res, 200, { format: ALPHA_FORMAT });
     if (req.method === "GET" && path === "/api/economy-config") return json(res, 200, { economy: economyConfig });
@@ -1210,7 +1224,7 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => {
         const current = service.get(token);
-        current.meta.collectionMode = body?.collectionMode === "OWNED_COPIES" ? "OWNED_COPIES" : "SANDBOX_ALL_AVAILABLE";
+        current.meta.collectionMode = accountService && sessionTokenFromRequest(req) ? "OWNED_COPIES" : (body?.collectionMode === "OWNED_COPIES" ? "OWNED_COPIES" : "SANDBOX_ALL_AVAILABLE");
         return { profile:service.updateMeta(token, current.meta) };
       });
       return json(res, 200, { ...result, storage:accountService && sessionTokenFromRequest(req) ? "POSTGRES" : profiles.playerStorageLabel });
@@ -1368,7 +1382,7 @@ const server = createServer(async (req, res) => {
       const profile = await profileForRequest(req, body?.profileToken);
       const mode = matchmakingMode(body?.mode);
       const deckSelection = validateQueuedDeck(deckSelectionForProfile(body, profile));
-      validateOwnedDeck(profile, deckSelection);
+      validateOwnedDeck(profile, deckSelection, mode);
       const storageKind = accountService && sessionTokenFromRequest(req) ? "POSTGRES" : "FILE_JSON_LOCAL";
       const enqueued = matchmaking.enqueue(profile.playerId, mode, matchmakingPayload(profile, deckSelection, mode, storageKind));
       if (!enqueued.opponent) return json(res, 202, { ticket:enqueued.ticket, ranked:mode === "RANKED" ? profile.ranked : null });
@@ -1401,17 +1415,17 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const profile = await optionalProfileForRequest(req, body?.profileToken);
       const deckSelection = deckSelectionForProfile(body, profile);
-      validateOwnedDeck(profile, deckSelection);
+      validateOwnedDeck(profile, deckSelection, body?.mode === "TRAINING" || body?.mode === "TUTORIAL" ? body.mode : "FRIENDLY");
       const result = rooms.createRoom(deckSelection, { mode: body?.mode, timerProfileId: body?.timerProfileId }, profileIdentityForProfile(profile));
       return json(res, 201, result);
     }
 
     if (req.method === "POST" && path === "/api/rooms/bot") {
       const body = await readJson(req);
+      const mode = body?.mode === "TUTORIAL" ? "TUTORIAL" : "TRAINING";
       const profile = await profileForRequest(req, body?.profileToken);
       const deckSelection = deckSelectionForProfile(body, profile);
-      validateOwnedDeck(profile, deckSelection);
-      const mode = body?.mode === "TUTORIAL" ? "TUTORIAL" : "TRAINING";
+      validateOwnedDeck(profile, deckSelection, mode);
       const botDeck = alphaDeckPresets[String(body?.botDeckId ?? "it-starter")] ? String(body?.botDeckId ?? "it-starter") : "it-starter";
       const qaSetup = ALPHA_QA_EXECUTIVE_MATCH && mode === "TRAINING" ? { forceOpeningHandVariantId: executiveEditionVariantId("CS-001") } : undefined;
       const result = rooms.createBotRoom(deckSelection, { mode }, profileIdentityForProfile(profile), botDeck, mode === "TUTORIAL" ? "Office Coach" : "Training Bot", qaSetup);
@@ -1423,7 +1437,7 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const profile = await optionalProfileForRequest(req, body?.profileToken);
       const deckSelection = deckSelectionForProfile(body, profile);
-      validateOwnedDeck(profile, deckSelection);
+      validateOwnedDeck(profile, deckSelection, "FRIENDLY");
       const result = rooms.joinRoom(joinMatch[1].toUpperCase(), deckSelection, profileIdentityForProfile(profile));
       return json(res, 200, result);
     }
@@ -1555,7 +1569,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.51 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.52 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

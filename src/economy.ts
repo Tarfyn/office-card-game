@@ -5,6 +5,22 @@ export type CurrencyId = "OFFICE_CREDITS" | "SHREDDER_SCRAPS";
 export type CollectionMode = "SANDBOX_ALL_AVAILABLE" | "OWNED_COPIES";
 export type RewardSource = "starter" | "booster" | "craft" | "achievement" | "ranked" | "season" | "promotion" | "event" | "admin" | "shop" | "level" | "alpha_playtest";
 
+export interface AlphaPlaytestAccess {
+  enabled: boolean;
+  source: "alpha_playtest";
+  grantedAt: number;
+}
+
+export interface StarterOnboardingState {
+  version: 1;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETE";
+  selectedDepartment: string | null;
+  completedAt: number | null;
+  firstDayDeckId: string | null;
+  boosterCount: number;
+  boosterPresentationCount: number;
+}
+
 /** Deterministic Alpha fixture used to exercise the complete Executive Edition card path. */
 export const ALPHA_EXECUTIVE_TEST_CARD_ID = "CS-001";
 
@@ -39,6 +55,9 @@ export interface PlayerMetaProfile {
   achievements: Record<string, AchievementProgressState>;
   processedProgressionEventIds: string[];
   cosmetics: PlayerCosmeticState;
+  /** Alpha access is entitlement-only; it never increments ownedCards. */
+  alphaPlaytestAccess: AlphaPlaytestAccess | null;
+  starterOnboarding: StarterOnboardingState;
 }
 
 export interface RewardGrantItem {
@@ -87,6 +106,8 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
     achievements: {},
     processedProgressionEventIds: [],
     cosmetics: { owned:defaultCosmeticOwnership(), loadout:defaultCosmeticLoadout("P1") },
+    alphaPlaytestAccess: null,
+    starterOnboarding: { version:1, status:"COMPLETE", selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 },
     progression: {
       level: 1,
       xp: 0,
@@ -172,6 +193,23 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
   next.processedProgressionEventIds = Array.isArray(next.processedProgressionEventIds)
     ? [...new Set(next.processedProgressionEventIds.map(String))].slice(-2000)
     : [];
+  const alphaAccess = next.alphaPlaytestAccess;
+  next.alphaPlaytestAccess = alphaAccess?.enabled === true
+    ? { enabled:true, source:"alpha_playtest", grantedAt:Number(alphaAccess.grantedAt) || now }
+    : null;
+  const onboarding = next.starterOnboarding;
+  next.starterOnboarding = {
+    version:1,
+    status: onboarding?.status === "PENDING" || onboarding?.status === "IN_PROGRESS" || onboarding?.status === "COMPLETE" ? onboarding.status : "COMPLETE",
+    selectedDepartment: onboarding?.selectedDepartment == null ? null : String(onboarding.selectedDepartment),
+    completedAt: Number(onboarding?.completedAt) > 0 ? Number(onboarding.completedAt) : null,
+    firstDayDeckId: onboarding?.firstDayDeckId == null ? null : String(onboarding.firstDayDeckId),
+    boosterCount: Math.max(0, Math.floor(Number(onboarding?.boosterCount) || 0)),
+    boosterPresentationCount: Math.max(0, Math.min(
+      Math.floor(Number(onboarding?.boosterCount) || 0),
+      Math.floor(Number(onboarding?.boosterPresentationCount) || 0)
+    ))
+  };
   next.progression = { ...base.progression, ...(next.progression ?? {}) };
   for (const key of Object.keys(base.progression) as Array<keyof PlayerProgression>) next.progression[key] = Math.max(0, Math.floor(Number(next.progression[key]) || 0));
   next.progression.level = Math.max(1, next.progression.level);

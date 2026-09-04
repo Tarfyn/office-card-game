@@ -185,8 +185,7 @@ export function defaultCosmeticOwnership(now = Date.now()): CosmeticOwnershipGra
     COSMETIC_IDS.classicOfficeBoard,
     COSMETIC_IDS.overworkedSysadminAvatar,
     COSMETIC_IDS.hrOracleAvatar,
-    COSMETIC_IDS.defaultCorporateCardBack,
-    COSMETIC_IDS.defaultBlueSilverFrame
+    COSMETIC_IDS.defaultCorporateCardBack
   ].map((cosmeticId) => ({ cosmeticId, acquiredAt:now, source:"starter", sourceRef:null }));
 }
 

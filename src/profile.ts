@@ -1,4 +1,4 @@
-import { applyAlphaPlaytestCosmeticGrant, applyLevelMilestoneRewards, applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type LevelMilestoneDefinition, type OwnedDeckEntry, type PlayerMetaProfile } from "./economy.js";
+import { applyAlphaPlaytestCosmeticGrant, applyLevelMilestoneRewards, applyRewardGrant, createPlayerMetaProfile, normalizePlayerMetaProfile, type LevelMilestoneDefinition, type OwnedDeckEntry, type PlayerMetaProfile, type RewardGrant } from "./economy.js";
 import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, type CosmeticSlotKey } from "./cosmetics.js";
 import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedContentConfig, normalizeRankedProfile, rankedK, rankedStanding, ratingDelta, type PlayerRankedProfile, type RankedContentConfig, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
@@ -6,6 +6,7 @@ import { normalizeProgressionConfig, processProgressionEvents, rewardGrantFromRe
 import { assertDeckInput, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
 import { createEmptyPlayerStats, DEFAULT_MATCH_HISTORY_LIMIT, normalizeMatchHistoryRecord, normalizePlayerStats, type MatchHistoryInput, type MatchHistoryRecord, type PlayerStats } from "./match-history.js";
 import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
+import { buildFirstDayDeck, buildStarterPackagePlan, normalizeStarterDepartment } from "./starter-access.js";
 
 export type MatchHistoryOutcome = import("./match-history.js").MatchHistoryOutcome;
 export type PlayerMatchHistoryEntry = MatchHistoryRecord;
@@ -368,7 +369,7 @@ export class PlayerProfileService {
     if (!deck) throw new Error("DECK_NOT_FOUND");
     const owned = profile.meta.collectionMode === "OWNED_COPIES" ? profile.meta.ownedCards : undefined;
     const validation = validatePlayerDeck(deck, this.deckDefinitions, this.deckFormat, owned, profile.meta.ownedCardVariants);
-    if (validation.state !== "VALID") throw new Error("DECK_NOT_VALID");
+    if (validation.state === "INVALID_RULES" || (validation.state === "INVALID_MISSING_CARDS" && !profile.meta.alphaPlaytestAccess?.enabled)) throw new Error("DECK_NOT_VALID");
     profile.selectedDeckId = deckId;
     profile.updatedAt = this.nowFactory();
     this.persist();
@@ -382,6 +383,68 @@ export class PlayerProfileService {
     profile.updatedAt = this.nowFactory();
     this.persist();
     return structuredClone(profile);
+  }
+
+  /**
+   * Starts the one-time account starter flow in the same profile mutation as
+   * its idempotent grants. Pack presentation is advanced separately so a
+   * reload cannot reroll or skip an unresolved server result.
+   */
+  completeStarterOnboarding(profileToken: string, department: string): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const config = normalizeStarterDepartment(department);
+    if (!config) throw new Error("STARTER_DEPARTMENT_INVALID");
+    const current = profile.meta.starterOnboarding;
+    if (current?.status === "COMPLETE") {
+      if (current.selectedDepartment === config.id && current.firstDayDeckId && profile.decks.some((deck) => deck.id === current.firstDayDeckId)) return structuredClone(profile);
+      throw new Error("STARTER_ONBOARDING_COMPLETE");
+    }
+    if (current?.status === "IN_PROGRESS") {
+      if (current.selectedDepartment === config.id) return structuredClone(profile);
+      throw new Error("STARTER_ONBOARDING_IN_PROGRESS");
+    }
+    const plan = buildStarterPackagePlan(config.id, Object.values(this.deckDefinitions), this.deckFormat, profile.playerId, this.nowFactory());
+    let meta = normalizePlayerMetaProfile(profile.meta, this.nowFactory());
+    for (const starterGrant of plan.grants) meta = applyRewardGrant(meta, starterGrant, this.nowFactory()).profile;
+    meta.starterOnboarding = { version:1, status:"IN_PROGRESS", selectedDepartment:config.id, completedAt:null, firstDayDeckId:null, boosterCount:plan.grants.filter((grant) => grant.sourceRef?.includes(":booster:")).length, boosterPresentationCount:0 };
+    profile.meta = meta;
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
+  advanceStarterBooster(profileToken: string, packNumber: number): { profile: ServerPlayerProfile; booster: { packNumber: number; sourceRef: string; cards: RewardGrant["cards"] } | null } {
+    const profile = this.requireByToken(profileToken);
+    const onboarding = profile.meta.starterOnboarding;
+    const requested = Math.floor(Number(packNumber));
+    const grants = profile.meta.rewardGrants.filter((grant) => grant.sourceRef?.startsWith(`starter-grant:v1:${onboarding.selectedDepartment}:booster:`));
+    const total = onboarding.boosterCount;
+    if (!Number.isInteger(requested) || requested < 1 || requested > total || !onboarding.selectedDepartment) throw new Error("STARTER_ONBOARDING_INVALID_STEP");
+    const grant = grants.find((item) => item.sourceRef?.endsWith(`:booster:${requested}`));
+    if (!grant || !grant.sourceRef) throw new Error("STARTER_ONBOARDING_INVALID_STEP");
+    if (onboarding.status === "COMPLETE") return { profile:structuredClone(profile), booster:{ packNumber:requested, sourceRef:grant.sourceRef, cards:structuredClone(grant.cards) } };
+    if (onboarding.status !== "IN_PROGRESS") throw new Error("STARTER_ONBOARDING_NOT_STARTED");
+    if (requested > onboarding.boosterPresentationCount + 1) throw new Error("STARTER_ONBOARDING_INVALID_STEP");
+    if (requested <= onboarding.boosterPresentationCount) return { profile:structuredClone(profile), booster:{ packNumber:requested, sourceRef:grant.sourceRef, cards:structuredClone(grant.cards) } };
+
+    onboarding.boosterPresentationCount = requested;
+    if (requested === total) {
+      const config = normalizeStarterDepartment(onboarding.selectedDepartment);
+      if (!config) throw new Error("STARTER_DEPARTMENT_INVALID");
+      const plan = buildStarterPackagePlan(config.id, Object.values(this.deckDefinitions), this.deckFormat, profile.playerId, this.nowFactory());
+      const existing = profile.decks.find((deck) => deck.sourceRef === `starter-grant:v1:${config.id}:first-day-deck`);
+      const deckId = existing?.id ?? this.deckIdFactory();
+      const deckCards = existing?.cards ?? plan.firstDayDeck;
+      assertDeckInput({ cards:deckCards }, this.deckDefinitions, this.deckFormat);
+      if (!existing) profile.decks.push(normalizePlayerDeck({ id:deckId, name:"First Day Deck", cards:deckCards, source:"starter", sourceRef:`starter-grant:v1:${config.id}:first-day-deck`, revision:1 }, deckId, this.nowFactory()));
+      onboarding.status = "COMPLETE";
+      onboarding.completedAt = this.nowFactory();
+      onboarding.firstDayDeckId = deckId;
+      profile.selectedDeckId = deckId;
+    }
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return { profile:structuredClone(profile), booster:{ packNumber:requested, sourceRef:grant.sourceRef, cards:structuredClone(grant.cards) } };
   }
 
   importDecks(profileToken: string, drafts: Array<Partial<PlayerDeck>>): { profile: ServerPlayerProfile; imported: string[]; skipped: string[] } {

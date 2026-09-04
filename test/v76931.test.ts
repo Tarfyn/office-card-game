@@ -28,7 +28,7 @@ test("standard cosmetics are starter-owned while new avatars remain shop invento
   const owned = new Set(defaultCosmeticOwnership().map((grant) => grant.cosmeticId));
   assert.ok(owned.has("COS-AVA-001"));
   assert.ok(owned.has("COS-AVA-002"));
-  assert.ok(owned.has("COS-FRAME-002"));
+  assert.equal(owned.has("COS-FRAME-002"), false);
   for (const id of avatarIds) assert.equal(owned.has(id), false);
   for (const id of frameIds.slice(1)) assert.equal(owned.has(id), false);
   const shop = new Set<string>(COSMETIC_SHOP_CATALOG.map((item) => item.cosmeticId));

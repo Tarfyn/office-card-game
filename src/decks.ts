@@ -7,6 +7,8 @@ export interface DeckPreset {
   name: string;
   department: Department;
   description: string;
+  /** Curated archetypes may be used without ownership in Training/Tutorial only. */
+  trainingLoaner?: boolean;
   cards: DeckEntry[];
 }
 

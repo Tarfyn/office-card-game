@@ -4,6 +4,7 @@
     "name": "Customer Service Starter v0.3",
     "department": "CUSTOMER_SERVICE",
     "description": "React \u2192 Redirect \u2192 Reopen \u2192 Survive. Ticket/Call control with Archive recursion and defensive Incidents.",
+    "trainingLoaner": true,
     "cards": [
       {
         "definitionId": "CS-001",
@@ -100,6 +101,7 @@
     "name": "IT Starter v0.3",
     "department": "IT",
     "description": "Setup \u2192 Automate \u2192 Generate \u2192 Deploy. Systems, Ticket utility, Capacity and targeted technical interaction.",
+    "trainingLoaner": true,
     "cards": [
       {
         "definitionId": "IT-001",
@@ -200,6 +202,7 @@
     "name": "Office Starter v0.1",
     "department": "OFFICE",
     "description": "Coordinate \u2192 Approve \u2192 Delay \u2192 Organize. Meeting/Process control with approvals and deliberate tempo friction.",
+    "trainingLoaner": true,
     "cards": [
       {
         "definitionId": "OFC-001",
@@ -288,6 +291,7 @@
     "name": "Marketing Starter v0.1",
     "department": "MARKETING",
     "description": "Setup \u2192 Chain Actions \u2192 Build Pressure \u2192 Convert. Campaign/Content combo deck with Reputation burst.",
+    "trainingLoaner": true,
     "cards": [
       {
         "definitionId": "MKT-001",
@@ -376,6 +380,7 @@
     "name": "Production Starter v0.1",
     "department": "PRODUCTION",
     "description": "Staff the line \u2192 Increase Output \u2192 Overwhelm \u2192 Break Through. Employee-heavy battle deck with Shift and Machine support.",
+    "trainingLoaner": true,
     "cards": [
       {
         "definitionId": "PRD-001",

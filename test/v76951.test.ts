@@ -11,12 +11,12 @@ const helper = read("ops/ocg-db-helper");
 const marker = read("deploy/postgres-persistence-ready");
 const styles = read("public/styles.css");
 
-assert.equal(packageJson.version, "7.69.51");
-assert.equal(packageLock.version, "7.69.51");
-assert.equal(packageLock.packages[""].version, "7.69.51");
-assert.match(server, /version: "7\.69\.51"/);
-assert.match(server, /version:"7\.69\.51"/);
-assert.equal(marker, "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
+assert.equal(packageJson.version, "7.69.52");
+assert.equal(packageLock.version, "7.69.52");
+assert.equal(packageLock.packages[""].version, "7.69.52");
+assert.match(server, /version: "7\.69\.52"/);
+assert.match(server, /version:"7\.69\.52"/);
+assert.equal(marker.replace(/\r\n/g, "\n"), "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
 assert.match(helper, /CUTOVER_MARKER_REL="deploy\/postgres-persistence-ready"/);
 assert.match(helper, /OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1/);
 
@@ -35,4 +35,4 @@ assert.doesNotMatch(deploy, /"\$DB_HELPER" enable-postgres/);
 assert.match(styles, /\.ops-header-actions button\{min-height:44px\}/);
 assert.match(styles, /\.ops-header-actions \.ghost\{color:#ece7dc\}/);
 
-console.log("v7.69.51 Account/PostgreSQL release-gate markers passed.");
+console.log("v7.69.52 Starter Onboarding release-gate markers passed.");

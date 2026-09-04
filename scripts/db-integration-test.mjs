@@ -204,9 +204,11 @@ try {
       assert.match(registerCookie, /^ocg_session=[A-Za-z0-9_-]+;/);
       assert.match(registerCookie, /Path=\/.*HttpOnly.*SameSite=Lax.*Secure/);
       const registeredHttpBody = await registeredHttp.json();
-      assert.equal(registeredHttpBody.profile.selectedDeckId, "customer-service-starter");
+      assert.equal(registeredHttpBody.profile.selectedDeckId, null);
       assert.equal(registeredHttpBody.profile.meta.balances.OFFICE_CREDITS, 500);
-      assert.ok(Object.keys(registeredHttpBody.profile.meta.ownedCards).length > 0);
+      assert.deepEqual(registeredHttpBody.profile.meta.ownedCards, {});
+      assert.equal(registeredHttpBody.profile.meta.alphaPlaytestAccess.enabled, true);
+      assert.equal(registeredHttpBody.profile.meta.starterOnboarding.status, "PENDING");
       assert.equal(registeredHttpBody.profile.ranked.status, "PLACEMENT");
       assert.ok(registeredHttpBody.profile.meta.achievements);
       const currentHttp = await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:registerCookie.split(";")[0] } })).json();
@@ -217,6 +219,99 @@ try {
       assert.equal(loginHttp.status, 200);
       const loginCookie = String(loginHttp.headers.get("set-cookie") ?? "").split(";")[0];
       const httpSessionToken = registerCookie.split(";")[0].split("=")[1];
+
+      const onboardingResponse = await postAuth("/api/onboarding/department", { department:"CUSTOMER_SERVICE" }, registerCookie.split(";")[0]);
+      assert.equal(onboardingResponse.status, 200);
+      const onboardingBody = await onboardingResponse.json();
+      assert.equal(onboardingBody.profile.meta.starterOnboarding.status, "IN_PROGRESS");
+      assert.equal(onboardingBody.profile.meta.starterOnboarding.selectedDepartment, "CUSTOMER_SERVICE");
+      assert.equal(onboardingBody.profile.meta.starterOnboarding.boosterCount, 8);
+      assert.equal(onboardingBody.profile.meta.starterOnboarding.boosterPresentationCount, 0);
+      assert.equal(onboardingBody.profile.selectedDeckId, null);
+      assert.equal(onboardingBody.profile.decks.length, 0);
+      const starterGrants = onboardingBody.profile.meta.rewardGrants.filter((grant) => grant.sourceRef?.startsWith("starter-grant:v1:CUSTOMER_SERVICE:"));
+      assert.equal(starterGrants.length, 10);
+      assert.equal(starterGrants.reduce((sum, grant) => sum + grant.cards.reduce((count, card) => count + card.quantity, 0), 0), 60);
+      const persistedPending = await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:registerCookie.split(";")[0] } })).json();
+      assert.equal(persistedPending.profile.meta.starterOnboarding.status, "IN_PROGRESS");
+      assert.equal(persistedPending.profile.meta.starterOnboarding.boosterPresentationCount, 0);
+      assert.equal((await postAuth("/api/onboarding/booster", { packNumber:2 }, registerCookie.split(";")[0])).status, 400);
+      const duplicatePackOne = await Promise.all([
+        postAuth("/api/onboarding/booster", { packNumber:1 }, registerCookie.split(";")[0]),
+        postAuth("/api/onboarding/booster", { packNumber:1 }, loginCookie)
+      ]);
+      assert.deepEqual(duplicatePackOne.map((response) => response.status).sort(), [200, 200]);
+      const duplicatePackBodies = await Promise.all(duplicatePackOne.map((response) => response.json()));
+      assert.equal(duplicatePackBodies[0].booster.sourceRef, duplicatePackBodies[1].booster.sourceRef);
+      assert.equal(duplicatePackBodies[0].profile.meta.starterOnboarding.boosterPresentationCount, 1);
+      for (let packNumber = 2; packNumber <= 8; packNumber += 1) {
+        const boosterResponse = await postAuth("/api/onboarding/booster", { packNumber }, registerCookie.split(";")[0]);
+        assert.equal(boosterResponse.status, 200);
+        const boosterBody = await boosterResponse.json();
+        assert.equal(boosterBody.booster.packNumber, packNumber);
+        assert.equal(boosterBody.booster.cards.reduce((sum, card) => sum + card.quantity, 0), 5);
+        assert.equal(boosterBody.profile.meta.starterOnboarding.boosterPresentationCount, packNumber);
+        if (packNumber < 8) {
+          assert.equal(boosterBody.profile.meta.starterOnboarding.status, "IN_PROGRESS");
+          assert.equal(boosterBody.profile.selectedDeckId, null);
+          assert.equal(boosterBody.profile.decks.length, 0);
+        } else {
+          assert.equal(boosterBody.profile.meta.starterOnboarding.status, "COMPLETE");
+          assert.ok(boosterBody.profile.meta.starterOnboarding.firstDayDeckId);
+          assert.equal(boosterBody.profile.selectedDeckId, boosterBody.profile.meta.starterOnboarding.firstDayDeckId);
+          assert.equal(boosterBody.profile.decks.length, 1);
+          assert.equal(boosterBody.profile.decks[0].cards.reduce((sum, card) => sum + card.copies, 0), 40);
+        }
+        if (packNumber === 3) {
+          const interruptedReload = await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:registerCookie.split(";")[0] } })).json();
+          assert.equal(interruptedReload.profile.meta.starterOnboarding.boosterPresentationCount, 3);
+          assert.equal(interruptedReload.profile.meta.starterOnboarding.status, "IN_PROGRESS");
+        }
+      }
+      const repeatedBooster = await (await postAuth("/api/onboarding/booster", { packNumber:8 }, registerCookie.split(";")[0])).json();
+      assert.equal(repeatedBooster.booster.sourceRef, "starter-grant:v1:CUSTOMER_SERVICE:booster:8");
+      assert.equal(repeatedBooster.profile.decks.length, 1);
+      const reloadedOnboarding = await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:loginCookie } })).json();
+      assert.equal(reloadedOnboarding.profile.meta.starterOnboarding.status, "COMPLETE");
+      assert.equal(reloadedOnboarding.profile.meta.starterOnboarding.boosterPresentationCount, 8);
+      assert.equal(reloadedOnboarding.profile.decks.length, 1);
+      assert.equal(reloadedOnboarding.profile.selectedDeckId, reloadedOnboarding.profile.meta.starterOnboarding.firstDayDeckId);
+      const finalOwnedCopies = Object.values(reloadedOnboarding.profile.meta.ownedCards).reduce((sum, quantity) => sum + Number(quantity), 0);
+      const finalUniqueCards = Object.keys(reloadedOnboarding.profile.meta.ownedCards).length;
+      assert.equal(finalOwnedCopies, 60);
+      assert.ok(finalUniqueCards > 0);
+      console.log(`DB_ONBOARDING_OK · copies=${finalOwnedCopies} uniqueCardIds=${finalUniqueCards} department=CUSTOMER_SERVICE`);
+
+      const trainingCases = [
+        { playerDeck:reloadedOnboarding.profile.decks[0].id, botDeck:"customer-service-starter" },
+        { playerDeck:"it-starter", botDeck:"marketing-starter" },
+        { playerDeck:"production-starter", botDeck:"office-starter" }
+      ];
+      for (const trainingCase of trainingCases) {
+        const trainingResponse = await postAuth("/api/rooms/bot", { mode:"TRAINING", deckId:trainingCase.playerDeck, botDeckId:trainingCase.botDeck }, registerCookie.split(";")[0]);
+        assert.equal(trainingResponse.status, 201);
+        const trainingBody = await trainingResponse.json();
+        assert.equal(trainingBody.view.settings.mode, "TRAINING");
+        assert.ok(trainingBody.roomId);
+      }
+      for (const mode of ["FRIENDLY", "RANKED"]) {
+        const loanerResponse = await postAuth("/api/rooms", { mode, deckId:"it-starter" }, registerCookie.split(";")[0]);
+        assert.equal(loanerResponse.status, 400);
+        assert.equal((await loanerResponse.json()).error.code, "INVALID_DECK");
+      }
+      const presetsBody = await (await fetch(`${base}/api/presets`)).json();
+      const marketingPreset = presetsBody.presets.find((preset) => preset.id === "marketing-starter");
+      assert.ok(marketingPreset);
+      const importedAlphaDeck = await postAuth("/api/profiles/me/decks/import", { decks:[{ id:"alpha-only-test", name:"Alpha Only Test", cards:marketingPreset.cards }] }, registerCookie.split(";")[0]);
+      assert.equal(importedAlphaDeck.status, 200);
+      const importedAlphaDeckBody = await importedAlphaDeck.json();
+      assert.equal(importedAlphaDeckBody.imported.length, 1);
+      const alphaOnlyDeckId = importedAlphaDeckBody.imported[0];
+      const alphaOnlyPvP = await postAuth("/api/rooms", { mode:"FRIENDLY", deckId:alphaOnlyDeckId }, registerCookie.split(";")[0]);
+      assert.equal(alphaOnlyPvP.status, 400);
+      assert.equal((await alphaOnlyPvP.json()).error.code, "DECK_NOT_OWNED");
+      const afterTraining = (await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:registerCookie.split(";")[0] } })).json()).profile;
+      assert.equal(Object.values(afterTraining.meta.ownedCards).reduce((sum, quantity) => sum + Number(quantity), 0), 60, "Training loaners must not mint owned cards");
 
       await service.mutateProfile(httpSessionToken, (profile) => {
         profile.meta.balances.OFFICE_CREDITS = 100;
@@ -303,7 +398,7 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-      assert.equal(allowedOps.system.version, "7.69.51");
+      assert.equal(allowedOps.system.version, "7.69.52");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");

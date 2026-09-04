@@ -188,6 +188,7 @@ const state = {
   collectionCost: 'ALL',
   collectionPackFilter: 'ALL',
   collectionPreviewId: null,
+  collectionBrowseMode: null,
   collectionVariantSelection: {},
   deckSwapSourceId: null,
   deckEditBaselines: {},
@@ -221,6 +222,9 @@ const state = {
   serverInfo: null,
   inviteRoomCode: null,
   alphaOnboardingOpen: false,
+  starterOnboardingBusy: false,
+  starterOnboardingMessage: null,
+  starterDepartments: [],
   networkDiagnostics: { pingMs:null, checkedAt:null, busy:false },
   playtestAnalytics: null,
   playtestAnalyticsDimensions: null,
@@ -986,7 +990,7 @@ function cardCopyLimit(definitionId) {
 }
 
 function ownedDeckMode() {
-  return state.metaProfile?.collectionMode === 'OWNED_COPIES';
+  return (state.collectionBrowseMode ?? state.metaProfile?.collectionMode) === 'OWNED_COPIES';
 }
 
 function deckCopyCeiling(definitionId) {
@@ -996,9 +1000,11 @@ function deckCopyCeiling(definitionId) {
 
 async function setCollectionMode(mode) {
   const collectionMode = mode === 'OWNED_COPIES' ? 'OWNED_COPIES' : 'SANDBOX_ALL_AVAILABLE';
-  state.metaProfile.collectionMode = collectionMode;
+  state.collectionBrowseMode = collectionMode;
+  if (!state.account) state.metaProfile.collectionMode = collectionMode;
   saveMetaProfile();
-  if (hasProfileIdentity()) {
+  // Account ownership stays server-authoritative; this is a local browse switch.
+  if (hasProfileIdentity() && !state.account) {
     try {
       const result = await api('/api/profiles/me/collection-mode', { method:'POST', body:JSON.stringify({ profileToken:state.profileToken, collectionMode }) });
       applyServerProfile(result.profile);
@@ -4140,12 +4146,12 @@ function customDeckOptions() {
 }
 
 function lobbyDeckOptions() {
-  const presetOptions = state.presets.map((preset) => `<option value="${esc(preset.id)}" ${state.preferredDeckValue===preset.id?'selected':''}>${esc(preset.name)} — ${esc(preset.department)}</option>`).join('');
+  const presetOptions = state.presets.map((preset) => `<option value="${esc(preset.id)}" ${state.preferredDeckValue===preset.id?'selected':''}>${esc(preset.name)} — ${esc(preset.department)}${preset.trainingLoaner ? ` · ${esc(t('training.loaner'))}` : ''}</option>`).join('');
   return presetOptions + customDeckOptions();
 }
 
 function botDeckOptions() {
-  return state.presets.map((preset) => `<option value="${esc(preset.id)}" ${state.botDeckId === preset.id ? 'selected' : ''}>${esc(preset.name)} — ${esc(preset.department)}</option>`).join('');
+  return state.presets.filter((preset) => preset.trainingLoaner).map((preset) => `<option value="${esc(preset.id)}" ${state.botDeckId === preset.id ? 'selected' : ''}>${esc(preset.name)} — ${esc(preset.department)} · ${esc(t('training.loaner'))}</option>`).join('');
 }
 
 function effectiveLobbyDeckValue(value = state.preferredDeckValue) {
@@ -4170,6 +4176,7 @@ function lobbyDeckSummary(value = state.preferredDeckValue) {
   return {
     value:resolved,
     custom,
+    trainingLoaner:Boolean(!custom && source.trainingLoaner),
     name:source.name ?? 'Deck',
     department,
     identity,
@@ -4325,6 +4332,7 @@ function syncLobbyDeckChoice(value) {
 function trainingDeckStatus(value = state.preferredDeckValue) {
   const summary = lobbyDeckSummary(value);
   if (!summary?.formatReady) return { valid:false, message:t('training.deckNotReady'), summary };
+  if (summary.trainingLoaner || state.metaProfile?.alphaPlaytestAccess?.enabled === true) return { valid:true, message:null, summary };
   if (summary.ownedReady === false) return { valid:false, message:t('training.deckNeedsCopies'), summary };
   return { valid:true, message:null, summary };
 }
@@ -5039,10 +5047,12 @@ function renderCollectionCard(def, deck) {
   const finishSwapTarget = selectedFinish === 'EXECUTIVE' && standardDeckCopies > 0 && executiveOwned > 0 ? executiveId : selectedFinish === 'STANDARD' && executiveDeckCopies > 0 && ownedCopies(def.id) > 0 ? 'STANDARD' : null;
   const selected = state.collectionPreviewId === def.id;
   const isNew = state.newCollectionCards.has(def.id);
+  const alphaAccessOnly = Boolean(state.account && state.metaProfile?.alphaPlaytestAccess?.enabled && owned === 0);
   const swapSource = deckSwapSource(deck);
   const swapStatus = swapSource ? deckSwapTargetStatus(deck, def.id) : null;
-  return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${finishClass(selectedVariant)} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
+  return `<article class="collection-card catalog-frame type-${esc(def.cardType.toLowerCase())} tier-${esc(tier.toLowerCase())} ${finishClass(selectedVariant)} ${selected ? 'selected-preview' : ''} ${isNew ? 'new-acquisition' : ''} ${copies > 0 ? 'in-current-deck' : ''} ${copies >= deckCeiling ? 'deck-copy-maxed' : ''} ${ownedDeckMode() && owned === 0 ? 'unowned-card' : ''} ${alphaAccessOnly ? 'alpha-access-card' : ''} ${swapSource ? 'swap-target-mode' : ''} ${swapSource?.id===def.id ? 'swap-source-card' : ''}" data-collection-preview="${esc(def.id)}">
     ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, finishBadgePlacement:'artwork', isNew, artReady:Boolean(def.artId), owned })}
+    ${alphaAccessOnly ? '<span class="alpha-access-chip">ALPHA ACCESS · NOT OWNED</span>' : ''}
     ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))} <small>${esc(ownedCopies(def.id))}</small></button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))} <small>${esc(executiveOwned)}</small></button></div>` : ''}
     ${finishSwapTarget ? `<button class="collection-finish-swap" data-deck-finish-swap="${esc(def.id)}" data-deck-finish-to="${esc(finishSwapTarget)}">${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}</button>` : ''}
     ${swapSource ? `<div class="collection-swap-control"><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-swap-target="${esc(def.id)}" ${swapStatus?.allowed ? '' : 'disabled'} title="${esc(swapStatus?.reason ?? 'Swap in this card')}">${swapSource.id===def.id ? 'SWAP SOURCE' : 'SWAP IN'}</button></div>` : `<div class="collection-copy-control"><button data-deck-minus="${esc(def.id)}" ${copies <= 0 ? 'disabled' : ''}>−</button><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-plus="${esc(def.id)}" ${copies >= deckCeiling || deckCardCount(deck) >= state.format.deckSize ? 'disabled' : ''}>+</button></div>`}
@@ -6264,7 +6274,7 @@ async function startBotMatch(mode) {
     const deckId = effectiveLobbyDeckValue();
     const prep = lobbyDeckSummary(deckId);
     if (!prep?.formatReady) throw new Error(t('training.deckNotReady'));
-    if (prep.ownedReady === false) throw new Error(t('training.deckNeedsCopies'));
+    if (prep.ownedReady === false && !prep.trainingLoaner && state.metaProfile?.alphaPlaytestAccess?.enabled !== true) throw new Error(t('training.deckNeedsCopies'));
     const botDeckId = document.querySelector('#botOpponentDeck')?.value || state.botDeckId || 'it-starter';
     state.botDeckId = botDeckId;
     const result = await api('/api/rooms/bot', { method:'POST', body:JSON.stringify({ ...selectedDeckPayload(deckId), mode, botDeckId, profileToken:state.profileToken }) });
@@ -6320,6 +6330,79 @@ function bindResponsiveLobbySelects() {
   }
 }
 
+function starterOnboardingPending() {
+  return Boolean(state.account && state.serverProfile?.meta?.starterOnboarding?.status !== 'COMPLETE');
+}
+
+function renderStarterOnboarding() {
+  if (!starterOnboardingPending()) return '';
+  const onboarding = state.serverProfile?.meta?.starterOnboarding ?? {};
+  if (onboarding.status === 'IN_PROGRESS') {
+    const total = Math.max(0, Number(onboarding.boosterCount ?? 0));
+    const current = Math.min(total, Math.max(1, Number(onboarding.boosterPresentationCount ?? 0) + 1));
+    const sourceRef = `starter-grant:v1:${onboarding.selectedDepartment}:booster:${current}`;
+    const grant = (state.serverProfile?.meta?.rewardGrants ?? []).find((item) => item.sourceRef === sourceRef);
+    const cardIds = (grant?.cards ?? []).flatMap((item) => Array.from({ length:Math.max(0, Number(item.quantity ?? 0)) }, () => item.cardId));
+    const cards = cardIds.map((id) => {
+      const definition = localizedCard(state.catalog.get(id));
+      return `<article class="starter-booster-card">${definition ? renderCatalogCardFace(definition, { compact:true, artReady:Boolean(definition.artId), owned:ownedTotalCopies(id) }) : `<strong>${esc(id)}</strong>`}</article>`;
+    }).join('');
+    return `<div class="starter-access-backdrop" role="dialog" aria-modal="true" aria-labelledby="starterAccessTitle">
+      <section class="starter-access-dialog starter-booster-dialog"><span class="starter-access-kicker">${esc(t('starterAccess.kicker'))}</span><h2 id="starterAccessTitle">${esc(t('starterAccess.booster.title'))}</h2><p>${esc(t('starterAccess.booster.progress', { current, total }))}</p>
+        <div class="starter-booster-results" aria-live="polite">${cards}</div>
+        <div class="starter-booster-actions"><small>${esc(t('starterAccess.booster.resultNote'))}</small><button type="button" class="primary" data-starter-booster="${esc(current)}" ${state.starterOnboardingBusy ? 'disabled' : ''}>${esc(current >= total ? t('starterAccess.booster.finish') : t('starterAccess.booster.next'))}</button></div>
+        ${state.starterOnboardingMessage ? `<p class="starter-access-error" role="alert">${esc(state.starterOnboardingMessage)}</p>` : ''}
+      </section>
+    </div>`;
+  }
+  return `<div class="starter-access-backdrop" role="dialog" aria-modal="true" aria-labelledby="starterAccessTitle">
+    <section class="starter-access-dialog"><span class="starter-access-kicker">${esc(t('starterAccess.kicker'))}</span><h2 id="starterAccessTitle">${esc(t('starterAccess.title'))}</h2><p>${esc(t('starterAccess.description'))}</p>
+      <div class="starter-access-departments">${state.starterDepartments.map((department) => `<button type="button" data-starter-department="${esc(department.id)}" ${state.starterOnboardingBusy?'disabled':''}><strong>${esc(t(department.displayNameKey))}</strong><small>${esc(t(department.playstyleKey))}</small></button>`).join('')}</div>
+      ${state.starterOnboardingMessage ? `<p class="starter-access-error" role="alert">${esc(state.starterOnboardingMessage)}</p>` : ''}
+      <small class="starter-access-footnote">${esc(t('starterAccess.footnote'))}</small>
+    </section>
+  </div>`;
+}
+
+async function completeStarterOnboarding(department) {
+  if (state.starterOnboardingBusy || !starterOnboardingPending()) return;
+  state.starterOnboardingBusy = true;
+  state.starterOnboardingMessage = null;
+  renderLobby();
+  try {
+    const result = await api('/api/onboarding/department', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, department }) });
+    applyServerProfile(result.profile);
+    await syncServerDecks();
+    state.starterOnboardingMessage = null;
+  } catch (error) {
+    state.starterOnboardingMessage = error.message || t('starterAccess.failed');
+  } finally {
+    state.starterOnboardingBusy = false;
+    render();
+  }
+}
+
+async function advanceStarterBooster(packNumber) {
+  if (state.starterOnboardingBusy || !starterOnboardingPending()) return;
+  state.starterOnboardingBusy = true;
+  state.starterOnboardingMessage = null;
+  render();
+  try {
+    const result = await api('/api/onboarding/booster', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, packNumber:Number(packNumber) }) });
+    applyServerProfile(result.profile);
+    if (result.profile?.meta?.starterOnboarding?.status === 'COMPLETE') await syncServerDecks();
+  } catch (error) {
+    state.starterOnboardingMessage = error.message || t('starterAccess.failed');
+  } finally {
+    state.starterOnboardingBusy = false;
+    render();
+  }
+}
+
+function bindStarterOnboarding() {
+  document.querySelectorAll('[data-starter-department]').forEach((button) => button.addEventListener('click', () => completeStarterOnboarding(button.dataset.starterDepartment)));
+  document.querySelectorAll('[data-starter-booster]').forEach((button) => button.addEventListener('click', () => advanceStarterBooster(button.dataset.starterBooster)));
+}
 
 function alphaOnboardingSeen() {
   try { return localStorage.getItem(ALPHA_ONBOARDING_KEY) === 'seen'; } catch { return false; }
@@ -6529,12 +6612,13 @@ function renderLobby() {
         ${renderLobbyPlaytestDrawer()}
       </div>
     </section>
-  </section>${renderAlphaOnboarding()}${renderAuthDialog()}`;
+  </section>${renderStarterOnboarding()}${renderAlphaOnboarding()}${renderAuthDialog()}`;
   app.insertAdjacentHTML('beforeend', renderReplayModal());
   bindReplayControls();
   bindGuidanceHandlers();
   bindResponsiveLobbySelects();
   bindAlphaOnboarding();
+  bindStarterOnboarding();
   bindAccountControls();
   bindConnectionDiagnostics();
   bindBugReportControls();
@@ -8196,11 +8280,12 @@ async function boot() {
     loadRecentSession();
     const invited = new URLSearchParams(location.search).get('join');
     if (invited && /^[A-Za-z0-9]{6}$/.test(invited)) state.inviteRoomCode = invited.toUpperCase();
-    const [health, catalog, presets, format, economy, matchSettings] = await Promise.all([api('/api/health'), api('/api/catalog'), api('/api/presets'), api('/api/format'), api('/api/economy-config'), api('/api/match-settings')]);
+    const [health, catalog, presets, format, economy, matchSettings, starterAccess] = await Promise.all([api('/api/health'), api('/api/catalog'), api('/api/presets'), api('/api/format'), api('/api/economy-config'), api('/api/match-settings'), api('/api/starter-access')]);
     state.serverInfo = health;
     setDocumentTranslationParams({ version:health.version ?? '' });
     state.catalog = new Map(catalog.cards.map((c) => [c.id,c]));
     state.presets = presets.presets;
+    state.starterDepartments = starterAccess.departments ?? [];
     state.format = format.format;
     state.economyConfig = economy.economy;
     state.matchSettings = matchSettings.settings;
@@ -8210,7 +8295,7 @@ async function boot() {
       await refreshOperations({ renderAfter:false });
     }
     if (state.adminToken && opsModeAvailable()) await refreshPlaytestAnalytics(false);
-    if (!state.customDecks.length) newCustomDeck();
+    if (!state.customDecks.length && !starterOnboardingPending()) newCustomDeck();
     state.editingDeckId ??= state.customDecks[0]?.id ?? null;
     const saved = localStorage.getItem(SESSION_KEY);
     if (saved) {

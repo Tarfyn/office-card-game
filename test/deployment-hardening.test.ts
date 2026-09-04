@@ -2,7 +2,10 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const root = (name: string) => readFileSync(fileURLToPath(new URL(`../../${name}`, import.meta.url)), "utf8");
+const root = (name: string) => {
+  const content = readFileSync(fileURLToPath(new URL(`../../${name}`, import.meta.url)), "utf8");
+  return content.replace(/\r\n/g, "\n");
+};
 const deploy = root("ops/deploy.sh");
 const docs = root("ops/DEPLOYMENT_HARDENING.md");
 const marker = root("deploy/postgres-persistence-ready");
@@ -20,7 +23,7 @@ assert.match(deploy, /git show-ref --verify/);
 assert.match(deploy, /CHECK_ONLY.*-eq 0.*RELEASE_DIR.*PREVIOUS/);
 assert.match(deploy, /refusing to reuse existing target release directory/);
 assert.match(deploy, /refusing to overwrite existing immutable release/);
-assert.equal(marker, "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
+assert.equal(marker.replace(/\r\n/g, "\n"), "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
 assert.match(deploy, /DB_HELPER="\/usr\/local\/sbin\/ocg-db-helper"/);
 assert.match(deploy, /CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"/);
 assert.match(deploy, /npm ci --omit=dev/);

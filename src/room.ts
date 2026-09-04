@@ -384,16 +384,12 @@ export class RoomService {
     return this.persistence?.storageLabel ?? "MEMORY_ONLY";
   }
 
-  listPresets(): Array<Pick<DeckPreset, "id" | "name" | "department" | "description" | "cards">> {
+  listPresets(): Array<Pick<DeckPreset, "id" | "name" | "department" | "description" | "trainingLoaner" | "cards">> {
     // Starter blueprints are public match-prep data. The client needs their
     // complete 40-card lists to validate Quick Match / room readiness. Return
     // defensive copies so API consumers cannot mutate the preset registry.
-    return Object.values(this.presets).map(({ id, name, department, description, cards }) => ({
-      id,
-      name,
-      department,
-      description,
-      cards: cards.map((entry) => ({ ...entry }))
+    return Object.values(this.presets).map(({ id, name, department, description, trainingLoaner, cards }) => ({
+      id, name, department, description, trainingLoaner:Boolean(trainingLoaner), cards: cards.map((entry) => ({ ...entry }))
     }));
   }
 

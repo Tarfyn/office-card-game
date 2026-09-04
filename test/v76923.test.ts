@@ -15,7 +15,7 @@ const de = root("public/locales/de.js");
 
 test("cosmetic ownership starts with grants and hides unowned catalog items", () => {
   const profile = createAlphaMetaProfile();
-  assert.deepEqual(profile.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-AVA-001", "COS-AVA-002", "COS-BACK-001", "COS-FRAME-002"]);
+  assert.deepEqual(profile.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-AVA-001", "COS-AVA-002", "COS-BACK-001"]);
   assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-AVA-002"), true);
   assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-AVA-003"), false);
   assert.equal(cosmeticIsOwned(profile.cosmetics, "COS-FRAME-003"), false);

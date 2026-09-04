@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const read = (relative) => readFileSync(fileURLToPath(new URL(`../${relative}`, import.meta.url)), "utf8");
+const read = (relative) => {
+  const content = readFileSync(fileURLToPath(new URL(`../${relative}`, import.meta.url)), "utf8");
+  return content.replace(/\r\n/g, "\n");
+};
 const helper = read("ops/ocg-db-helper");
 const installer = read("ops/install-db-helper.sh");
 const sudoers = read("ops/office-card-game-db.sudoers");
@@ -74,7 +77,7 @@ assert.doesNotMatch(installer, /\bsystemctl\b/);
 assert.doesNotMatch(installer, /\/etc\/systemd\/system\/office-card-game-db-backup/);
 assert.match(helper, /MIGRATION_RUNNER_REL="scripts\/db-migrate\.mjs"/);
 assert.match(helper, /CUTOVER_MARKER_REL="deploy\/postgres-persistence-ready"/);
-assert.equal(cutoverMarker, "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
+assert.equal(cutoverMarker.replace(/\r\n/g, "\n"), "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
 assert.match(helper, /OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1/);
 assert.match(helper, /marker_expected_size=\$\(\(\$\{#marker_expected\} \+ 1\)\)/);
 assert.match(helper, /stat --format='%s' "\$\{marker\}"/);
