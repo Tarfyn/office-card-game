@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 0022
 
 REPO="${OCG_DEPLOY_REPO:-/opt/office-card-game/repo}"
 RELEASES="${OCG_RELEASES_DIR:-/srv/office-card-game/releases}"
@@ -16,6 +17,7 @@ REGISTRY_TIMEOUT_SECONDS="${REGISTRY_TIMEOUT_SECONDS:-30}"
 MIN_FREE_KB="${MIN_FREE_KB:-1048576}"
 CUTOVER_MARKER_REL="deploy/postgres-persistence-ready"
 CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"
+MIGRATION_RUNNER_REL="scripts/db-migrate.mjs"
 
 TARGET=""
 CHECK_ONLY=0
@@ -168,20 +170,6 @@ install_build_test() {
   run_timed 30 node --input-type=module -e "await import('argon2'); await import('pg');"
 }
 
-prepare_release() {
-  STAGE="9 prepare release"
-  sudo -n "$RELEASE_HELPER" prepare "$RELEASE_NAME"
-  PREPARED=1
-  tar --exclude="./.git" --exclude="./runtime" --exclude="./reports" -cf - . | tar -xf - -C "$RELEASE_DIR"
-  [[ -f "$RELEASE_DIR/package.json" && -f "$RELEASE_DIR/server/server.mjs" ]] || die "prepared release is missing runtime files"
-  [[ -f "$RELEASE_DIR/node_modules/argon2/package.json" && -f "$RELEASE_DIR/node_modules/pg/package.json" ]] || die "prepared release is missing required production dependencies"
-  sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"
-  local owner
-  owner="$(stat -c '%U:%G' "$RELEASE_DIR")"
-  [[ "$owner" == "officecardgame:officecardgame" ]] || die "unexpected release ownership: $owner"
-  log "9" "prepared immutable release: $RELEASE_DIR owner=$owner"
-}
-
 validate_cutover_marker() {
   [[ -f "$CUTOVER_MARKER" && ! -L "$CUTOVER_MARKER" ]] || die "PostgreSQL cutover marker must be a regular non-symlink file"
   local expected_size marker_value
@@ -189,6 +177,45 @@ validate_cutover_marker() {
   [[ "$(stat -c '%s' "$CUTOVER_MARKER")" == "$expected_size" ]] || die "PostgreSQL cutover marker has an invalid size"
   IFS= read -r marker_value < "$CUTOVER_MARKER" || die "PostgreSQL cutover marker must end with one newline"
   [[ "$marker_value" == "$CUTOVER_MARKER_VALUE" ]] || die "PostgreSQL cutover marker content is invalid"
+}
+
+normalize_postgres_release_modes() {
+  local runner="$RELEASE_DIR/$MIGRATION_RUNNER_REL"
+  local marker="$RELEASE_DIR/$CUTOVER_MARKER_REL"
+  local runner_mode marker_mode
+
+  if [[ ! -e "$marker" && ! -L "$marker" ]]; then
+    return 0
+  fi
+
+  [[ -d "$RELEASE_DIR/scripts" && ! -L "$RELEASE_DIR/scripts" ]] || die "prepared release scripts path must be a regular directory"
+  [[ -d "$RELEASE_DIR/deploy" && ! -L "$RELEASE_DIR/deploy" ]] || die "prepared release deploy path must be a regular directory"
+  [[ -f "$runner" && ! -L "$runner" ]] || die "prepared release is missing a regular non-symlink migration runner"
+  [[ -f "$marker" && ! -L "$marker" ]] || die "prepared release cutover marker must be a regular non-symlink file"
+  [[ "$(readlink -f -- "$runner")" == "$runner" ]] || die "prepared release migration runner escaped its fixed path"
+  [[ "$(readlink -f -- "$marker")" == "$marker" ]] || die "prepared release cutover marker escaped its fixed path"
+
+  validate_cutover_marker
+  chmod 0644 -- "$runner" "$marker"
+  runner_mode="$(stat -c '%a' "$runner")"
+  marker_mode="$(stat -c '%a' "$marker")"
+  [[ "$runner_mode" == "644" && "$marker_mode" == "644" ]] || die "could not normalize PostgreSQL release security modes"
+  log "9" "normalized PostgreSQL release contract files to mode 0644"
+}
+
+prepare_release() {
+  STAGE="9 prepare release"
+  sudo -n "$RELEASE_HELPER" prepare "$RELEASE_NAME"
+  PREPARED=1
+  tar --exclude="./.git" --exclude="./runtime" --exclude="./reports" -cf - . | tar -xf - -C "$RELEASE_DIR"
+  [[ -f "$RELEASE_DIR/package.json" && -f "$RELEASE_DIR/server/server.mjs" ]] || die "prepared release is missing runtime files"
+  [[ -f "$RELEASE_DIR/node_modules/argon2/package.json" && -f "$RELEASE_DIR/node_modules/pg/package.json" ]] || die "prepared release is missing required production dependencies"
+  normalize_postgres_release_modes
+  sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"
+  local owner
+  owner="$(stat -c '%U:%G' "$RELEASE_DIR")"
+  [[ "$owner" == "officecardgame:officecardgame" ]] || die "unexpected release ownership: $owner"
+  log "9" "prepared immutable release: $RELEASE_DIR owner=$owner"
 }
 
 migrate_if_required() {

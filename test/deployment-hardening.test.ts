@@ -4,12 +4,14 @@ import { fileURLToPath } from "node:url";
 
 const root = (name: string) => readFileSync(fileURLToPath(new URL(`../../${name}`, import.meta.url)), "utf8");
 const deploy = root("ops/deploy.sh");
+const dbHelper = root("ops/ocg-db-helper");
 const docs = root("ops/DEPLOYMENT_HARDENING.md");
 const marker = root("deploy/postgres-persistence-ready");
 const packageJson = JSON.parse(root("package.json"));
 
 assert.equal(packageJson.scripts["ops:security-audit"], "npm audit");
 assert.match(deploy, /npm ci --no-audit --no-fund --foreground-scripts/);
+assert.match(deploy, /^set -Eeuo pipefail\numask 0022$/m);
 assert.match(deploy, /NPM_CI_TIMEOUT_SECONDS="\$\{NPM_CI_TIMEOUT_SECONDS:-600\}"/);
 assert.match(deploy, /flock -n 9/);
 assert.match(deploy, /readlink -f.*CURRENT/);
@@ -23,6 +25,7 @@ assert.match(deploy, /refusing to overwrite existing immutable release/);
 assert.equal(marker, "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
 assert.match(deploy, /DB_HELPER="\/usr\/local\/sbin\/ocg-db-helper"/);
 assert.match(deploy, /CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"/);
+assert.match(deploy, /MIGRATION_RUNNER_REL="scripts\/db-migrate\.mjs"/);
 assert.match(deploy, /npm ci --omit=dev/);
 assert.doesNotMatch(deploy, /--exclude="\.\/node_modules"/);
 assert.match(deploy, /node_modules\/argon2\/package\.json/);
@@ -33,6 +36,29 @@ const finalize = deploy.indexOf('sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NA
 const migrate = deploy.indexOf('sudo -n "$DB_HELPER" migrate "$RELEASE_NAME"');
 const activate = deploy.indexOf('sudo -n "$RELEASE_HELPER" activate "$RELEASE_NAME"');
 assert.ok(finalize >= 0 && finalize < migrate && migrate < activate);
+const normalizationFunction = deploy.slice(
+  deploy.indexOf("normalize_postgres_release_modes() {"),
+  deploy.indexOf("prepare_release() {")
+);
+assert.match(normalizationFunction, /local runner="\$RELEASE_DIR\/\$MIGRATION_RUNNER_REL"/);
+assert.match(normalizationFunction, /local marker="\$RELEASE_DIR\/\$CUTOVER_MARKER_REL"/);
+assert.match(normalizationFunction, /! -L "\$runner"/);
+assert.match(normalizationFunction, /! -L "\$marker"/);
+assert.match(normalizationFunction, /readlink -f -- "\$runner"/);
+assert.match(normalizationFunction, /readlink -f -- "\$marker"/);
+assert.match(normalizationFunction, /validate_cutover_marker/);
+assert.match(normalizationFunction, /chmod 0644 -- "\$runner" "\$marker"/);
+assert.match(normalizationFunction, /"\$runner_mode" == "644" && "\$marker_mode" == "644"/);
+assert.doesNotMatch(normalizationFunction, /chown|chmod\s+-R|find\s+"\$RELEASE_DIR"/);
+const prepareFunction = deploy.slice(deploy.indexOf("prepare_release() {"), deploy.indexOf("migrate_if_required() {"));
+const extract = prepareFunction.indexOf('tar --exclude="./.git"');
+const normalize = prepareFunction.indexOf("normalize_postgres_release_modes");
+const prepareFinalize = prepareFunction.indexOf('sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"');
+assert.ok(extract >= 0 && extract < normalize && normalize < prepareFinalize, "mode normalization must happen after extraction and before finalize");
+assert.doesNotMatch(deploy.slice(finalize), /\bchmod\b/, "the immutable release must not be chmodded after finalize");
+assert.match(dbHelper, /MIGRATION_RUNNER_REL="scripts\/db-migrate\.mjs"/);
+assert.match(dbHelper, /CUTOVER_MARKER_REL="deploy\/postgres-persistence-ready"/);
+assert.match(dbHelper, /find "\$\{runner\}" -maxdepth 0 -perm \/022/);
 const serviceCheck = deploy.slice(deploy.indexOf("service_is_current() {"), deploy.indexOf("verify_live() {"));
 assert.match(serviceCheck, /systemctl is-active --quiet "\$SERVICE"/);
 assert.match(serviceCheck, /systemctl show -p MainPID --value "\$SERVICE"/);

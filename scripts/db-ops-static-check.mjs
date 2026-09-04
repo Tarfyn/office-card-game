@@ -14,10 +14,14 @@ const listenerClassifier = read("ops/ocg-db-listener-classifier.awk");
 const deployScript = read("ops/deploy.sh");
 const cutoverMarker = read("deploy/postgres-persistence-ready");
 
-const shellFunction = (name) => {
-  const match = helper.match(new RegExp(`^${name}\\(\\) \\{\\n([\\s\\S]*?)^\\}\\n`, "m"));
+const shellFunctionSource = (source, name) => {
+  const match = source.match(new RegExp(`^${name}\\(\\) \\{\\n[\\s\\S]*?^\\}\\n`, "m"));
   assert.ok(match, `missing shell function ${name}`);
-  return match[1];
+  return match[0];
+};
+const shellFunction = (name) => {
+  const source = shellFunctionSource(helper, name);
+  return source.slice(source.indexOf("\n") + 1, -2);
 };
 
 for (const [name, content] of [
@@ -82,10 +86,32 @@ assert.match(helper, /IFS= read -r marker_value < "\$\{marker\}"/);
 assert.match(deployScript, /DB_HELPER="\/usr\/local\/sbin\/ocg-db-helper"/);
 assert.match(deployScript, /CUTOVER_MARKER_REL="deploy\/postgres-persistence-ready"/);
 assert.match(deployScript, /CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"/);
+assert.match(deployScript, /MIGRATION_RUNNER_REL="scripts\/db-migrate\.mjs"/);
+assert.match(deployScript, /^set -Eeuo pipefail\numask 0022$/m);
 assert.match(deployScript, /expected_size=\$\(\(\$\{#CUTOVER_MARKER_VALUE\} \+ 1\)\)/);
 assert.match(deployScript, /stat -c '%s' "\$CUTOVER_MARKER"/);
 assert.match(deployScript, /IFS= read -r marker_value < "\$CUTOVER_MARKER"/);
 assert.match(deployScript, /"\$marker_value" == "\$CUTOVER_MARKER_VALUE"/);
+const normalizeReleaseModes = shellFunctionSource(deployScript, "normalize_postgres_release_modes");
+const validateDeployMarker = shellFunctionSource(deployScript, "validate_cutover_marker");
+assert.match(normalizeReleaseModes, /local runner="\$RELEASE_DIR\/\$MIGRATION_RUNNER_REL"/);
+assert.match(normalizeReleaseModes, /local marker="\$RELEASE_DIR\/\$CUTOVER_MARKER_REL"/);
+assert.match(normalizeReleaseModes, /! -L "\$runner"/);
+assert.match(normalizeReleaseModes, /! -L "\$marker"/);
+assert.match(normalizeReleaseModes, /readlink -f -- "\$runner"/);
+assert.match(normalizeReleaseModes, /readlink -f -- "\$marker"/);
+assert.match(normalizeReleaseModes, /validate_cutover_marker/);
+assert.match(normalizeReleaseModes, /chmod 0644 -- "\$runner" "\$marker"/);
+assert.match(normalizeReleaseModes, /"\$runner_mode" == "644" && "\$marker_mode" == "644"/);
+assert.doesNotMatch(normalizeReleaseModes, /chown|chmod\s+-R|find\s+"\$RELEASE_DIR"/);
+const preparedReleaseFlow = shellFunctionSource(deployScript, "prepare_release");
+const extractIndex = preparedReleaseFlow.indexOf('tar --exclude="./.git"');
+const normalizeIndex = preparedReleaseFlow.indexOf("normalize_postgres_release_modes");
+const preparedFinalizeIndex = preparedReleaseFlow.indexOf('sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"');
+assert.ok(
+  extractIndex >= 0 && extractIndex < normalizeIndex && normalizeIndex < preparedFinalizeIndex,
+  "fixed release modes must be normalized after extraction and before finalize"
+);
 for (const malformedMarker of ["", "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=0\n", "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1", "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\nextra\n"]) {
   assert.notEqual(malformedMarker, cutoverMarker, "malformed cutover marker was accepted by the exact-content contract");
 }
@@ -217,6 +243,7 @@ const migrateIndex = deployScript.indexOf('sudo -n "$DB_HELPER" migrate "$RELEAS
 const activateIndex = deployScript.indexOf('sudo -n "$RELEASE_HELPER" activate "$RELEASE_NAME"');
 assert.ok(finalizeIndex >= 0 && finalizeIndex < migrateIndex, "release must be immutable before database migration");
 assert.ok(migrateIndex < activateIndex, "database migration must finish before release activation");
+assert.doesNotMatch(deployScript.slice(finalizeIndex), /\bchmod\b/, "the immutable release must not be chmodded after finalize");
 assert.match(deployScript, /if \[\[ -e "\$CUTOVER_MARKER" \|\| -L "\$CUTOVER_MARKER" \]\]; then/);
 assert.match(deployScript, /PostgreSQL migration failed; release activation is blocked/);
 assert.doesNotMatch(deployScript, /ocg-db-helper enable-postgres|"\$DB_HELPER" enable-postgres/);
@@ -229,6 +256,55 @@ assert.ok(
   deployScript.indexOf("npm ci --omit=dev") < deployScript.indexOf('sudo -n "$RELEASE_HELPER" prepare'),
   "production dependencies must be installed before the release is prepared"
 );
+
+if (hasBash) {
+  const modeFixture = [
+    "set -Eeuo pipefail",
+    'STAGE="fixture"',
+    'TARGET="fixture"',
+    'MIGRATION_RUNNER_REL="scripts/db-migrate.mjs"',
+    'CUTOVER_MARKER_REL="deploy/postgres-persistence-ready"',
+    'CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"',
+    'log() { :; }',
+    'die() { printf "fixture failure: %s\\n" "$1" >&2; exit 1; }',
+    validateDeployMarker,
+    normalizeReleaseModes,
+    'fixture_root="$(mktemp -d)"',
+    'trap \'rm -rf -- "$fixture_root"\' EXIT',
+    'make_fixture() {',
+    '  RELEASE_DIR="$fixture_root/$1"',
+    '  CUTOVER_MARKER="$RELEASE_DIR/$CUTOVER_MARKER_REL"',
+    '  mkdir -p -- "$RELEASE_DIR/scripts" "$RELEASE_DIR/deploy"',
+    '  printf "console.log(\\"fixture\\");\\n" > "$RELEASE_DIR/$MIGRATION_RUNNER_REL"',
+    '  printf "%s\\n" "$CUTOVER_MARKER_VALUE" > "$CUTOVER_MARKER"',
+    '  chmod 0664 -- "$RELEASE_DIR/$MIGRATION_RUNNER_REL" "$CUTOVER_MARKER"',
+    '}',
+    'make_fixture valid',
+    'normalize_postgres_release_modes',
+    '[[ "$(stat -c \'%a\' "$RELEASE_DIR/$MIGRATION_RUNNER_REL")" == "644" ]]',
+    '[[ "$(stat -c \'%a\' "$CUTOVER_MARKER")" == "644" ]]',
+    '[[ -z "$(find "$RELEASE_DIR/$MIGRATION_RUNNER_REL" -maxdepth 0 -perm /022 -print -quit)" ]]',
+    'make_fixture missing-runner',
+    'rm -- "$RELEASE_DIR/$MIGRATION_RUNNER_REL"',
+    'if ( normalize_postgres_release_modes ); then exit 21; fi',
+    'make_fixture symlink-runner',
+    'rm -- "$RELEASE_DIR/$MIGRATION_RUNNER_REL"',
+    'if ln -s -- /etc/passwd "$RELEASE_DIR/$MIGRATION_RUNNER_REL" 2>/dev/null; then',
+    '  if ( normalize_postgres_release_modes ); then exit 22; fi',
+    'fi',
+    'make_fixture symlink-marker',
+    'rm -- "$CUTOVER_MARKER"',
+    'if ln -s -- /etc/passwd "$CUTOVER_MARKER" 2>/dev/null; then',
+    '  if ( normalize_postgres_release_modes ); then exit 23; fi',
+    'fi',
+    'make_fixture malformed-marker',
+    'printf "%s" "$CUTOVER_MARKER_VALUE" > "$CUTOVER_MARKER"',
+    'if ( normalize_postgres_release_modes ); then exit 24; fi'
+  ].join("\n");
+  const modeResult = spawnSync("bash", ["-s"], { encoding:"utf8", input:modeFixture });
+  assert.ifError(modeResult.error);
+  assert.equal(modeResult.status, 0, `release mode normalization fixtures failed: ${modeResult.stderr}`);
+}
 
 const unsafeNames = ["../../etc", "/tmp/release", "v1.2.3-deadbeef/..", "v1.2.3-DEADBEEF", "v1.2-deadbeef", "v1.2.3-deadbeef;id", "v1.2.3-deadbeef extra"];
 const releaseNamePattern = /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{8}$/;
