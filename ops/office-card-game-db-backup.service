@@ -1,0 +1,22 @@
+[Unit]
+Description=Office Card Game PostgreSQL backup
+After=postgresql.service
+ConditionPathExists=/usr/local/sbin/ocg-db-helper
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/ocg-db-helper backup-now
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/office-card-game/backups/postgresql /var/lib/office-card-game-db-helper /run/lock
