@@ -16,10 +16,10 @@ const de=root("public/locales/de.js");
 const polish=css.slice(css.lastIndexOf("/* v7.69.18 — archive direction + unified mobile mini live cards */"));
 
   test("v7.69.26 version markers are current",()=>{
-  assert.equal(pkg.version,"7.69.52");
+  assert.equal(pkg.version,"7.69.53");
   assert.match(pkg.scripts.test,/dist\/test\/v76918\.test\.js/);
   assert.match(pkg.scripts.test,/dist\/test\/v76921\.test\.js/);
-  assert.match(server,/version: "7\.69\.52"/);
+  assert.match(server,/version: "7\.69\.53"/);
   assert.doesNotMatch(en,/v7\.69\.15/);
   assert.doesNotMatch(de,/v7\.69\.15/);
   assert.match(en,/meta: \{ title: "Office Card Game — v\{version\} Alpha Playtest" \}/);

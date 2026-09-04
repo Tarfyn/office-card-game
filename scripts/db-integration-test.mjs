@@ -398,7 +398,7 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-      assert.equal(allowedOps.system.version, "7.69.52");
+      assert.equal(allowedOps.system.version, "7.69.53");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");

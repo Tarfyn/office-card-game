@@ -6334,6 +6334,29 @@ function starterOnboardingPending() {
   return Boolean(state.account && state.serverProfile?.meta?.starterOnboarding?.status !== 'COMPLETE');
 }
 
+function starterOnboardingErrorMessage(error) {
+  const messages = {
+    STARTER_DEPARTMENT_INVALID: 'starterAccess.departmentInvalid',
+    STARTER_ONBOARDING_COMPLETE: 'starterAccess.alreadyComplete',
+    STARTER_ONBOARDING_IN_PROGRESS: 'starterAccess.inProgress',
+    STARTER_ONBOARDING_INVALID_STEP: 'starterAccess.invalidStep',
+    STARTER_ONBOARDING_NOT_STARTED: 'starterAccess.notStarted'
+  };
+  return t(messages[error?.code] ?? 'starterAccess.failed');
+}
+
+async function reconcileStarterOnboardingAfterError() {
+  try {
+    const profile = await refreshServerProfile();
+    const status = profile?.meta?.starterOnboarding?.status;
+    if (status === 'IN_PROGRESS' || status === 'COMPLETE') {
+      state.starterOnboardingMessage = null;
+      return true;
+    }
+  } catch { /* preserve the actionable localized error when the refresh also fails */ }
+  return false;
+}
+
 function renderStarterOnboarding() {
   if (!starterOnboardingPending()) return '';
   const onboarding = state.serverProfile?.meta?.starterOnboarding ?? {};
@@ -6372,10 +6395,10 @@ async function completeStarterOnboarding(department) {
   try {
     const result = await api('/api/onboarding/department', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, department }) });
     applyServerProfile(result.profile);
-    await syncServerDecks();
     state.starterOnboardingMessage = null;
   } catch (error) {
-    state.starterOnboardingMessage = error.message || t('starterAccess.failed');
+    const reconciled = await reconcileStarterOnboardingAfterError();
+    if (!reconciled) state.starterOnboardingMessage = starterOnboardingErrorMessage(error);
   } finally {
     state.starterOnboardingBusy = false;
     render();
@@ -6392,7 +6415,8 @@ async function advanceStarterBooster(packNumber) {
     applyServerProfile(result.profile);
     if (result.profile?.meta?.starterOnboarding?.status === 'COMPLETE') await syncServerDecks();
   } catch (error) {
-    state.starterOnboardingMessage = error.message || t('starterAccess.failed');
+    const reconciled = await reconcileStarterOnboardingAfterError();
+    if (!reconciled) state.starterOnboardingMessage = starterOnboardingErrorMessage(error);
   } finally {
     state.starterOnboardingBusy = false;
     render();

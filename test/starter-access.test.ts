@@ -24,8 +24,15 @@ for (const loanerId of trainingLoanerIds()) {
   assert.equal(validatePlayerDeck(alphaDeckPresets[loanerId], alphaDefinitions, ALPHA_FORMAT).state, "VALID");
 }
 const serverSource = readFileSync(fileURLToPath(new URL("../../server/server.mjs", import.meta.url)), "utf8");
+const appSource = readFileSync(fileURLToPath(new URL("../../public/app.js", import.meta.url)), "utf8");
 assert.match(serverSource, /!trainingMode[\s\S]*isTrainingLoanerDeck\(selection\)[\s\S]*Training loaner decks are only available in Training/);
 assert.match(serverSource, /validateOwnedDeck\(profile, deckSelection, mode\)/);
+assert.match(appSource, /function starterOnboardingErrorMessage\(error\)/);
+assert.match(appSource, /await reconcileStarterOnboardingAfterError\(\)/);
+assert.doesNotMatch(appSource, /state\.starterOnboardingMessage = error\.message/);
+const departmentHandler = appSource.match(/async function completeStarterOnboarding[\s\S]*?async function advanceStarterBooster/)?.[0] ?? "";
+assert.ok(departmentHandler, "department onboarding handler should remain discoverable");
+assert.doesNotMatch(departmentHandler, /await syncServerDecks\(\)/);
 
 for (const department of ["CUSTOMER_SERVICE", "IT", "OFFICE", "MARKETING", "PRODUCTION"]) {
   const plan = buildStarterPackagePlan(department, definitions, ALPHA_FORMAT, "account-1", 100);
@@ -108,6 +115,9 @@ assert.equal(started.meta.starterOnboarding.boosterCount, 8);
 assert.equal(started.meta.starterOnboarding.boosterPresentationCount, 0);
 assert.equal(started.meta.alphaPlaytestAccess?.enabled, true);
 assert.equal(started.decks.length, 0, "First Day Deck waits until the final booster presentation");
+const repeatedDepartment = service.completeStarterOnboarding(created.profileToken, "IT");
+assert.equal(repeatedDepartment.meta.starterOnboarding.status, "IN_PROGRESS", "repeated department selection must resume the saved booster step");
+assert.deepEqual(repeatedDepartment.meta.ownedCards, started.meta.ownedCards, "repeated department selection must not duplicate the core grants");
 assert.throws(() => service.advanceStarterBooster(created.profileToken, 2), /starter/i, "packs must be presented sequentially");
 let completed = started;
 for (let packNumber = 1; packNumber <= 8; packNumber += 1) {
@@ -121,6 +131,9 @@ assert.equal(completed.meta.starterOnboarding.status, "COMPLETE");
 assert.equal(completed.selectedDeckId, completed.meta.starterOnboarding.firstDayDeckId);
 assert.equal(completed.decks.length, 1);
 assert.equal(completed.decks[0].name, "First Day Deck");
+const repeatedCompletion = service.completeStarterOnboarding(created.profileToken, "IT");
+assert.equal(repeatedCompletion.meta.starterOnboarding.status, "COMPLETE", "completed onboarding must remain complete after a repeated request");
+assert.equal(repeatedCompletion.meta.starterOnboarding.firstDayDeckId, completed.meta.starterOnboarding.firstDayDeckId);
 const repeated = service.advanceStarterBooster(created.profileToken, 8);
 assert.equal(repeated.profile.decks.length, 1, "final booster presentation must be idempotent");
 assert.deepEqual(repeated.profile.meta.ownedCards, completed.meta.ownedCards);
