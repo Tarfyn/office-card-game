@@ -652,7 +652,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.50",
+    version: "7.69.51",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -686,7 +686,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.46", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.51", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -907,11 +907,11 @@ const server = createServer(async (req, res) => {
     validateAuthenticatedMutation(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.50", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.51", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.50", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.51", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -1555,7 +1555,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.50 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.51 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

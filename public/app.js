@@ -5705,7 +5705,8 @@ function renderAccountControls() {
 function renderAuthDialog() {
   if (!state.authDialog) return '';
   const registering = state.authDialog === 'REGISTER';
-  return `<div class="account-dialog-backdrop" role="presentation"><section class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="accountDialogTitle"><button type="button" class="account-dialog-close" id="closeAuthDialog" aria-label="${lobbyCopy('Close','Schließen')}">×</button><span>${lobbyCopy('OFFICE ACCOUNT','OFFICE-KONTO')}</span><h2 id="accountDialogTitle">${registering ? lobbyCopy('Create account','Konto erstellen') : lobbyCopy('Welcome back','Willkommen zurück')}</h2><p>${registering ? lobbyCopy('Start a fresh persistent Alpha profile. Existing Guest progress is not migrated.','Starte ein neues dauerhaftes Alpha-Profil. Bestehender Gastfortschritt wird nicht übernommen.') : lobbyCopy('Continue your PostgreSQL-backed profile on this device.','Setze dein PostgreSQL-gesichertes Profil auf diesem Gerät fort.')}</p><form id="accountForm" novalidate><label>${lobbyCopy('Email','E-Mail')}<input id="accountEmail" type="email" maxlength="254" autocomplete="email" inputmode="email" value="${esc(state.authEmail)}" required /></label><label>${lobbyCopy('Password','Passwort')}<input id="accountPassword" type="password" minlength="10" maxlength="128" autocomplete="${registering ? 'new-password' : 'current-password'}" required /><small>${registering ? lobbyCopy('10–128 characters. Email verification is not enabled yet.','10–128 Zeichen. E-Mail-Verifizierung ist noch nicht aktiviert.') : ''}</small></label>${registering ? `<label>${lobbyCopy('Confirm password','Passwort bestätigen')}<input id="accountPasswordConfirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" required /></label>` : ''}${state.authMessage ? `<div class="account-form-message error" role="alert">${esc(state.authMessage)}</div>` : ''}<button class="primary" type="submit" ${state.authBusy ? 'disabled' : ''}>${state.authBusy ? lobbyCopy('Working…','Wird verarbeitet…') : registering ? lobbyCopy('Create fresh account','Neues Konto erstellen') : lobbyCopy('Log in','Anmelden')}</button></form></section></div>`;
+  const passwordControl = (id, label, autocomplete) => `<div class="account-field"><label for="${id}">${label}</label><div class="account-secret-field"><input id="${id}" type="password" minlength="10" maxlength="128" autocomplete="${autocomplete}" required /><button type="button" class="ghost account-password-toggle" data-account-password-target="${id}" aria-pressed="false" aria-label="${lobbyCopy('Show password','Passwort anzeigen')}">${lobbyCopy('Show','Anzeigen')}</button></div></div>`;
+  return `<div class="account-dialog-backdrop" role="presentation"><section class="account-dialog" role="dialog" aria-modal="true" aria-labelledby="accountDialogTitle"><button type="button" class="account-dialog-close" id="closeAuthDialog" aria-label="${lobbyCopy('Close','Schließen')}">×</button><span>${lobbyCopy('OFFICE ACCOUNT','OFFICE-KONTO')}</span><h2 id="accountDialogTitle">${registering ? lobbyCopy('Create account','Konto erstellen') : lobbyCopy('Welcome back','Willkommen zurück')}</h2><p>${registering ? lobbyCopy('Start a fresh persistent Alpha profile. Existing Guest progress is not migrated.','Starte ein neues dauerhaftes Alpha-Profil. Bestehender Gastfortschritt wird nicht übernommen.') : lobbyCopy('Continue your PostgreSQL-backed profile on this device.','Setze dein PostgreSQL-gesichertes Profil auf diesem Gerät fort.')}</p><form id="accountForm" novalidate><div class="account-field"><label for="accountEmail">${lobbyCopy('Email','E-Mail')}</label><input id="accountEmail" type="email" maxlength="254" autocomplete="email" inputmode="email" value="${esc(state.authEmail)}" required /></div>${passwordControl('accountPassword',lobbyCopy('Password','Passwort'),registering ? 'new-password' : 'current-password')}${registering ? `<small id="accountPasswordHelp">${lobbyCopy('Use 10–128 characters. Email verification is not enabled yet.','Verwende 10–128 Zeichen. E-Mail-Verifizierung ist noch nicht aktiviert.')}</small>${passwordControl('accountPasswordConfirm',lobbyCopy('Confirm password','Passwort bestätigen'),'new-password')}` : ''}${state.authMessage ? `<div class="account-form-message error" role="alert">${esc(state.authMessage)}</div>` : ''}<button class="primary" type="submit" ${state.authBusy ? 'disabled' : ''}>${state.authBusy ? lobbyCopy('Working…','Wird verarbeitet…') : registering ? lobbyCopy('Create fresh account','Neues Konto erstellen') : lobbyCopy('Log in','Anmelden')}</button></form></section></div>`;
 }
 
 function openAuthDialog(mode) {
@@ -5713,6 +5714,27 @@ function openAuthDialog(mode) {
   state.authMessage = null;
   renderLobby();
   requestAnimationFrame(() => document.querySelector('#accountEmail')?.focus());
+}
+
+function closeAuthDialog({ restoreFocus=true } = {}) {
+  if (state.authBusy) return;
+  const triggerId = state.authDialog === 'REGISTER' ? '#openRegister' : '#openLogin';
+  state.authDialog=null;
+  state.authMessage=null;
+  state.authEmail='';
+  renderLobby();
+  if (restoreFocus) requestAnimationFrame(() => document.querySelector(triggerId)?.focus());
+}
+
+function toggleAccountPassword(button) {
+  const input=document.querySelector(`#${CSS.escape(button.dataset.accountPasswordTarget??'')}`);
+  if (!(input instanceof HTMLInputElement)) return;
+  const revealing=input.type === 'password';
+  input.type=revealing?'text':'password';
+  button.setAttribute('aria-pressed',String(revealing));
+  button.setAttribute('aria-label',revealing?lobbyCopy('Hide password','Passwort ausblenden'):lobbyCopy('Show password','Passwort anzeigen'));
+  button.textContent=revealing?lobbyCopy('Hide','Ausblenden'):lobbyCopy('Show','Anzeigen');
+  input.focus({ preventScroll:true });
 }
 
 async function submitAccountForm(event) {
@@ -5728,6 +5750,12 @@ async function submitAccountForm(event) {
   }
   state.authBusy = true;
   state.authMessage = null;
+  const form=event.currentTarget;
+  form.setAttribute('aria-busy','true');
+  const submit=form.querySelector('button[type="submit"]');
+  if (submit) { submit.disabled=true; submit.textContent=lobbyCopy('Working…','Wird verarbeitet…'); }
+  const closeButton=document.querySelector('#closeAuthDialog');
+  if (closeButton) closeButton.disabled=true;
   try {
     const path = state.authDialog === 'REGISTER' ? '/api/auth/register' : '/api/auth/login';
     const result = await api(path, { method:'POST', body:JSON.stringify({ email, password }) });
@@ -5764,7 +5792,8 @@ async function logoutAccount() {
 function bindAccountControls() {
   document.querySelector('#openLogin')?.addEventListener('click', () => openAuthDialog('LOGIN'));
   document.querySelector('#openRegister')?.addEventListener('click', () => openAuthDialog('REGISTER'));
-  document.querySelector('#closeAuthDialog')?.addEventListener('click', () => { state.authDialog=null; state.authMessage=null; state.authEmail=''; renderLobby(); });
+  document.querySelector('#closeAuthDialog')?.addEventListener('click', () => closeAuthDialog());
+  document.querySelectorAll('[data-account-password-target]').forEach((button) => button.addEventListener('click', () => toggleAccountPassword(button)));
   document.querySelector('#accountForm')?.addEventListener('submit', submitAccountForm);
   document.querySelector('#logoutAccount')?.addEventListener('click', logoutAccount);
   document.querySelector('#openAccountOps')?.addEventListener('click', () => location.assign('/ops'));
@@ -6386,6 +6415,7 @@ async function refreshOperations({ renderAfter=true } = {}) {
 }
 function renderOpsDashboard() {
   state.mode='OPS';
+  document.title=lobbyCopy('Operations — Office Card Game','Betrieb — Office Card Game');
   const ops=state.operations;
   if (!ops) {
     app.innerHTML=`<section class="ops-shell ops-login"><div class="ops-login-panel"><span>OFFICE CARD GAME · OPERATIONS</span><h1>${state.operationsBusy?'Loading production status…':'Operations unavailable'}</h1><p>${esc(state.operationsMessage??'Reading the protected, account-authorized status contract.')}</p><div class="ops-header-actions"><button class="primary" id="opsRefresh" ${state.operationsBusy?'disabled':''}>Retry</button><button class="ghost" id="opsBack">Lobby</button></div></div></section>`;
@@ -8235,6 +8265,17 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('orientationchange', () => setTimeout(()=>scheduleAttackConnectorDraw(),120));
 
 document.addEventListener('keydown', (event) => {
+  if (state.authDialog) {
+    const dialog=document.querySelector('.account-dialog');
+    if (event.key === 'Escape' && !state.authBusy) { event.preventDefault(); closeAuthDialog(); return; }
+    if (event.key === 'Tab') {
+      const focusable=[...(dialog?.querySelectorAll('button:not(:disabled),input:not(:disabled),[href],[tabindex]:not([tabindex="-1"])')??[])];
+      const first=focusable[0], last=focusable.at(-1);
+      if (first && event.shiftKey && document.activeElement===first) { event.preventDefault(); last.focus(); }
+      else if (last && !event.shiftKey && document.activeElement===last) { event.preventDefault(); first.focus(); }
+    }
+    return;
+  }
   // Regression compatibility marker for the original attack Escape contract:
   // event.key === 'Escape' && ['ATTACK','EMPLOYEE','SUPPORT'].includes(state.interaction?.type ?? '') cancelInteraction();
   if (!state.focusedCardRef) {

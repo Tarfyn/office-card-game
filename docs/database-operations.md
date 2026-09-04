@@ -102,8 +102,9 @@ restricted to localhost. It also requires the exact fixed marker
 OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1
 ```
 
-Do not add that marker until the application genuinely supports PostgreSQL persistence and its
-readiness endpoint requires the database.
+The marker is present only in a release that has passed the real PostgreSQL integration suite and
+whose readiness endpoint requires the database whenever PostgreSQL is selected. It is a capability
+gate, not evidence that production has already been migrated or cut over.
 
 The generated database password is 32 random bytes represented as 64 lowercase hexadecimal
 characters. It is written directly into `DATABASE_URL` in the root-owned environment file. The
@@ -260,24 +261,64 @@ fixed named ACL per protected parent and performs the real-user access probe bef
 success. `backup-now` also revalidates the same policy through `require_bootstrap` and fails closed
 if the ACL chain later regresses.
 
+## Deployment migration gate installation
+
+The reviewed repository source for the production `/opt/office-card-game/deploy.sh` entry point is
+`ops/deploy.sh`. It preserves the release-helper hardening and adds:
+
+- production-only dependency installation plus explicit `argon2` and `pg` runtime verification;
+- inclusion of `node_modules` in the immutable release;
+- an exact regular, non-symlink marker check after release finalization;
+- `ocg-db-helper migrate <validated-release>` before activation, with any non-zero result blocking
+  activation and triggering cleanup of only that inactive prepared release;
+- bounded version/readiness/health/service verification and one bounded rollback attempt without
+  cross-user `/proc/<pid>/cwd` inspection.
+
+Installing or replacing this entry point remains human-root-only. From the reviewed candidate
+checkout, the administrator must inspect the diff and use a staged replacement such as:
+
+```bash
+sudo /usr/bin/bash -n ops/deploy.sh
+sudo /usr/bin/test ! -e /opt/office-card-game/deploy.sh.pre-postgres
+sudo /usr/bin/install --owner=root --group=root --mode=0755 \
+  /opt/office-card-game/deploy.sh /opt/office-card-game/deploy.sh.pre-postgres
+sudo /usr/bin/install --owner=root --group=root --mode=0755 \
+  ops/deploy.sh /opt/office-card-game/deploy.sh.candidate
+sudo /usr/bin/bash -n /opt/office-card-game/deploy.sh.candidate
+sudo /usr/bin/cmp --silent ops/deploy.sh /opt/office-card-game/deploy.sh.candidate
+sudo /usr/bin/mv -- /opt/office-card-game/deploy.sh.candidate /opt/office-card-game/deploy.sh
+sudo /usr/bin/chown root:root /opt/office-card-game/deploy.sh /opt/office-card-game
+sudo /usr/bin/chmod 0755 /opt/office-card-game/deploy.sh /opt/office-card-game
+sudo /usr/bin/test "$(/usr/bin/stat --format='%U:%G:%a' /opt/office-card-game)" = "root:root:755"
+sudo /usr/bin/test "$(/usr/bin/stat --format='%U:%G:%a' /opt/office-card-game/deploy.sh)" = "root:root:755"
+```
+
+These are one-time human-root commands, not sudoers grants. `/opt/office-card-game/repo` remains a
+separate `ocgadmin`-managed checkout. Do not grant passwordless access to `install`, `mv`, `chown`,
+`chmod`, a shell, or the deployment artifact.
+
 ## Migration and cutover flow
 
-1. Build and fully test an application release containing additive SQL migrations, the fixed
-   runner, the exact readiness marker, PostgreSQL account/profile support, and DB-dependent
-   readiness.
-2. Prepare and finalize it with the existing `/usr/local/sbin/ocg-release-helper`; do not activate
-   it yet.
-3. Run `backup-legacy` immediately before the cutover window.
-4. Run `migrate <release>`. A non-zero result blocks activation.
-5. Review `audit` and `backup-status`.
-6. Run `enable-postgres` and note the exact release it prints.
-7. Activate exactly that release through `ocg-release-helper activate <release>`.
-8. Verify `/api/ready`, `/api/health`, authentication, persistence, and an external scan proving
-   that 5432 is unreachable.
+1. Confirm the live application is still `FILE_JSON_LOCAL` and READY; verify installed artifact
+   hashes, PostgreSQL loopback-only listeners, migration/backup state, and the timer.
+2. Run a fresh `backup-legacy`, then `backup-now`, and review `audit` plus `backup-status`.
+3. Approve, merge, and tag the fully tested release containing additive migrations, the exact
+   marker, Account/PostgreSQL support, DB-dependent readiness, and production dependencies.
+4. Deploy the tag through the installed repository-managed wrapper. It builds/tests, prepares and
+   finalizes the immutable release, validates the marker, and invokes
+   `ocg-db-helper migrate <release>` before activation. Failure leaves the previous release active.
+5. Verify the newly active candidate while production is still `FILE_JSON_LOCAL`, including Guest
+   behavior, version, readiness, and health.
+6. Review migration counts and the helper's validated pre/post-migration PostgreSQL dumps.
+7. Explicitly run `enable-postgres` and record the exact migrated release it prints.
+8. Re-activate that exact release through `ocg-release-helper activate <release>`; this restart is
+   the persistence cutover.
+9. Verify PostgreSQL-backed readiness/health, Account registration/login, restart persistence,
+   second-session state, Ops authorization, a fresh backup, and an external scan proving port 5432
+   is unreachable.
 
-The repository deployment script must be updated in the application implementation release so the
-pre-activation legacy backup and migration are mandatory. This helper intentionally does not modify
-the existing root-owned release helper.
+The DB helper intentionally does not modify the root-owned release helper. The deployment wrapper
+does not call `enable-postgres`; backend activation remains a separate explicit operator gate.
 
 ## Restore and rollback
 
@@ -287,11 +328,12 @@ fresh database using `pg_restore`, validate ownership/schema/migrations, and onl
 application. Never use `--clean` or drop the production database without a separate reviewed
 recovery plan.
 
-Code rollback remains available through `ocg-release-helper activate <previous-release>`, but SQL
-migrations are forward-only and are not automatically reversed. Therefore every migration must be
-additive and compatible with the previous application release during the rollback window. If that
-compatibility is not possible, cutover is NO-GO until a tested expand/migrate/contract sequence is
-designed.
+Before `enable-postgres`, JSON remains authoritative. A migration or candidate-readiness failure
+leaves player data and the previous release intact; additive schema objects may remain. After
+`enable-postgres`, new Account writes are authoritative in PostgreSQL. Never blindly activate a
+release that cannot use the current schema, and never automatically switch back to stale JSON.
+Migrations are forward-only and are not automatically reversed, so rollback must use a previously
+tested PostgreSQL-compatible release or a separate human-reviewed recovery plan.
 
 Disabling PostgreSQL persistence is also human-root-only because the helper intentionally has no
 rollback or arbitrary environment-edit action. A root administrator must restore the reviewed
@@ -302,6 +344,7 @@ environment state and activate a compatible release.
 Human root remains required to:
 
 - inspect and install the helper/sudoers/systemd artifacts;
+- install the reviewed deployment wrapper and protect its fixed parent directory;
 - remove any pre-existing public firewall rule for 5432;
 - approve the first bootstrap and final production cutover;
 - perform restores or emergency environment rollback;
@@ -325,6 +368,8 @@ Stop without cutover if any of these is true:
 - the release name/path/ownership/readiness marker fails validation;
 - migrations or checksum validation fail;
 - the post-migration dump fails validation;
+- the installed deployment wrapper does not match the reviewed repository artifact;
+- the immutable release omits working production `argon2` or `pg` dependencies;
 - the candidate does not make `/api/ready` depend on PostgreSQL;
 - standard, DB integration, concurrency, desktop/mobile, or cross-browser QA is incomplete;
 - explicit production cutover approval has not been given.
@@ -456,8 +501,10 @@ duplicate rewards, double spending, concurrent mutations, stale Deck revisions, 
 history, transactional migration failure, and secret-free Ops responses. Missing
 `OCG_TEST_DATABASE_URL` is a hard failure, not a skipped green test.
 
-The cutover marker must remain absent until this database suite plus browser cross-context and
-responsive QA have passed against the release candidate.
+The cutover marker may be committed only after this database suite plus browser cross-context and
+responsive QA pass against the candidate. Its presence means the code satisfies the reviewed
+technical contract; it does not authorize production migration, backend enablement, tagging, or
+deployment.
 
 ## PostgreSQL references
 

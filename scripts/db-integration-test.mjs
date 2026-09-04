@@ -303,7 +303,7 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-      assert.equal(allowedOps.system.version, "7.69.46");
+      assert.equal(allowedOps.system.version, "7.69.51");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");
@@ -313,8 +313,8 @@ try {
       assert.equal(allowedOps.accounts.total, 4);
       assert.equal(allowedOps.accounts.profiles, 4);
       assert.ok(allowedOps.accounts.activeSessions >= 4);
-      assert.equal(allowedOps.cutover.marker, "NOT_SET");
-      assert.equal(allowedOps.cutover.readyForCutover, "NO");
+      assert.equal(allowedOps.cutover.marker, "SET");
+      assert.equal(allowedOps.cutover.readyForCutover, "YES");
       assert.equal(allowedOps.backups.database.status, "UNAVAILABLE");
       assert.equal((await fetch(`${base}/ops`, { headers:{ cookie:`ocg_session=${first.sessionToken}` } })).status, 200);
       assert.equal((await fetch(`${base}/api/ops/overview`, { headers:{ cookie:`ocg_session=${administrator.sessionToken}` } })).status, 200);

@@ -2,10 +2,13 @@
 
 The production wrapper is `/opt/office-card-game/deploy.sh` on the VPS. The reviewed source
 replacement is `ops/deploy.sh`; it is not copied to the VPS automatically by an application
-release. Activation is a separate, reviewed operations change, for example:
+release. Installation or replacement is a separate human-root operations change. The entry point
+and its parent must not be writable by `ocgadmin`, for example:
 
 ```sh
-sudo install -o ocgadmin -g ocgadmin -m 0755 ops/deploy.sh /opt/office-card-game/deploy.sh
+sudo install -o root -g root -m 0755 ops/deploy.sh /opt/office-card-game/deploy.sh
+sudo chown root:root /opt/office-card-game
+sudo chmod 0755 /opt/office-card-game
 ```
 
 No application version bump or tag is required to activate the wrapper itself. The wrapper must
@@ -26,6 +29,10 @@ and full tests before preparing a release. The npm advisory service is intention
 deployment-critical path. The separate informational check is `npm run ops:security-audit` and
 does not run `npm audit fix`.
 
+After tests, the wrapper installs production-only dependencies, verifies that `argon2` and `pg`
+load, and includes `node_modules` in the immutable release. This avoids relying on the mutable
+checkout for native authentication or database runtime modules.
+
 There is no repository-wide vulnerability threshold policy today. An unavailable or slow advisory
 endpoint does not block deployment when install, build, tests and live checks pass. Audit findings
 remain visible and require a separately reviewed dependency change.
@@ -35,7 +42,12 @@ remain visible and require a separately reviewed dependency change.
 The wrapper validates an explicit release tag or full commit, verifies the checked-out commit and
 package/version surfaces, acquires a kernel-managed `flock`, checks disk/registry/service
 preconditions, then runs install, build and tests with visible stage logging. A fresh helper-owned
-release is prepared from the validated tree. The active symlink is never modified in place.
+release is prepared from the validated tree. The active symlink is never modified in place. Once
+the release is finalized, the wrapper validates the exact `deploy/postgres-persistence-ready`
+marker. Marked releases must complete
+`sudo -n /usr/local/sbin/ocg-db-helper migrate <validated-release>` before activation. Migration
+failure leaves the previous release active and discards only the inactive release prepared by that
+attempt. The wrapper never calls `enable-postgres`.
 
 After activation it requires the service to be active with a valid main PID, `/api/ready` to be
 `READY`, and `/api/health` to be healthy with the expected version and `timerActive:false`. The

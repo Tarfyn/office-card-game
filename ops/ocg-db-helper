@@ -733,8 +733,13 @@ validate_release_migration_contract() {
   [[ $(/usr/bin/realpath --canonicalize-existing "${marker}") == "${marker}" ]] || die "Readiness marker escaped its fixed release path."
   [[ -f ${runner} && ! -L ${runner} ]] || die "Release migration runner is missing or unsafe."
   [[ -f ${marker} && ! -L ${marker} ]] || die "Release is not marked PostgreSQL-persistence-ready."
-  [[ $(<"${marker}") == "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1" ]] ||
-    die "Release PostgreSQL readiness marker is invalid."
+  local marker_value=""
+  local marker_expected="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"
+  local marker_expected_size=$((${#marker_expected} + 1))
+  [[ $(/usr/bin/stat --format='%s' "${marker}") == "${marker_expected_size}" ]] ||
+    die "Release PostgreSQL readiness marker has an invalid size."
+  IFS= read -r marker_value < "${marker}" || die "Release PostgreSQL readiness marker must end with one newline."
+  [[ ${marker_value} == "${marker_expected}" ]] || die "Release PostgreSQL readiness marker is invalid."
   [[ $(/usr/bin/stat --format='%U' "${runner}") == "${APP_USER}" ]] || die "Migration runner has the wrong owner."
   if /usr/bin/find "${runner}" -maxdepth 0 -perm /022 -print -quit | /usr/bin/grep --quiet .; then
     die "Migration runner must not be group- or world-writable."

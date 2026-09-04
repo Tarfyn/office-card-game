@@ -11,6 +11,8 @@ const migrationRunner = read("scripts/db-migrate.mjs");
 const backupService = read("ops/office-card-game-db-backup.service");
 const backupTimer = read("ops/office-card-game-db-backup.timer");
 const listenerClassifier = read("ops/ocg-db-listener-classifier.awk");
+const deployScript = read("ops/deploy.sh");
+const cutoverMarker = read("deploy/postgres-persistence-ready");
 
 const shellFunction = (name) => {
   const match = helper.match(new RegExp(`^${name}\\(\\) \\{\\n([\\s\\S]*?)^\\}\\n`, "m"));
@@ -24,7 +26,9 @@ for (const [name, content] of [
   ["ops/office-card-game-db.sudoers", sudoers],
   ["ops/office-card-game-db-backup.service", backupService],
   ["ops/office-card-game-db-backup.timer", backupTimer],
-  ["ops/ocg-db-listener-classifier.awk", listenerClassifier]
+  ["ops/ocg-db-listener-classifier.awk", listenerClassifier],
+  ["ops/deploy.sh", deployScript],
+  ["deploy/postgres-persistence-ready", cutoverMarker]
 ]) {
   assert.doesNotMatch(content, /\r/, `${name} must use LF line endings`);
   assert.doesNotMatch(content, /[ \t]+$/m, `${name} contains trailing whitespace`);
@@ -33,7 +37,7 @@ for (const [name, content] of [
 const bashProbe = spawnSync("bash", ["--version"], { encoding:"utf8" });
 const hasBash = !bashProbe.error && bashProbe.status === 0;
 if (hasBash) {
-  for (const relative of ["ops/ocg-db-helper", "ops/install-db-helper.sh"]) {
+  for (const relative of ["ops/ocg-db-helper", "ops/install-db-helper.sh", "ops/deploy.sh"]) {
     const path = fileURLToPath(new URL(`../${relative}`, import.meta.url));
     const syntax = spawnSync("bash", ["-n", path], { encoding:"utf8" });
     assert.equal(syntax.status, 0, `${relative} failed bash -n: ${syntax.stderr}`);
@@ -53,6 +57,7 @@ for (const action of ["audit", "bootstrap", "backup-legacy", "backup-now", "back
 for (const forbidden of [/\beval\b/, /bash\s+-c/, /sh\s+-c/, /exec\s+"?\$[@*]/]) {
   assert.doesNotMatch(helper, forbidden, `unsafe helper construct ${forbidden}`);
   assert.doesNotMatch(installer, forbidden, `unsafe installer construct ${forbidden}`);
+  assert.doesNotMatch(deployScript, forbidden, `unsafe deploy construct ${forbidden}`);
 }
 assert.doesNotMatch(sudoers, /\b(?:apt|psql|systemctl|bash|sh|cp|rm|mv|visudo)\b/);
 assert.match(installer, /EXPECTED_RELEASE_RULE="\(root\) NOPASSWD: \/usr\/local\/sbin\/ocg-release-helper"/);
@@ -69,6 +74,21 @@ assert.doesNotMatch(installer, /\bsystemctl\b/);
 assert.doesNotMatch(installer, /\/etc\/systemd\/system\/office-card-game-db-backup/);
 assert.match(helper, /MIGRATION_RUNNER_REL="scripts\/db-migrate\.mjs"/);
 assert.match(helper, /CUTOVER_MARKER_REL="deploy\/postgres-persistence-ready"/);
+assert.equal(cutoverMarker, "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\n");
+assert.match(helper, /OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1/);
+assert.match(helper, /marker_expected_size=\$\(\(\$\{#marker_expected\} \+ 1\)\)/);
+assert.match(helper, /stat --format='%s' "\$\{marker\}"/);
+assert.match(helper, /IFS= read -r marker_value < "\$\{marker\}"/);
+assert.match(deployScript, /DB_HELPER="\/usr\/local\/sbin\/ocg-db-helper"/);
+assert.match(deployScript, /CUTOVER_MARKER_REL="deploy\/postgres-persistence-ready"/);
+assert.match(deployScript, /CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"/);
+assert.match(deployScript, /expected_size=\$\(\(\$\{#CUTOVER_MARKER_VALUE\} \+ 1\)\)/);
+assert.match(deployScript, /stat -c '%s' "\$CUTOVER_MARKER"/);
+assert.match(deployScript, /IFS= read -r marker_value < "\$CUTOVER_MARKER"/);
+assert.match(deployScript, /"\$marker_value" == "\$CUTOVER_MARKER_VALUE"/);
+for (const malformedMarker of ["", "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=0\n", "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1", "OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1\nextra\n"]) {
+  assert.notEqual(malformedMarker, cutoverMarker, "malformed cutover marker was accepted by the exact-content contract");
+}
 assert.doesNotMatch(backupService, /ConditionPathIsExecutable/);
 assert.match(backupService, /^ConditionPathExists=\/usr\/local\/sbin\/ocg-db-helper$/m);
 assert.match(helper, /SERVICE_TEMPLATE="\$\{TEMPLATE_ROOT\}\/office-card-game-db-backup\.service"/);
@@ -191,6 +211,24 @@ assert.match(backupService, /^ExecStart=\/usr\/local\/sbin\/ocg-db-helper backup
 assert.match(backupService, /^ProtectSystem=strict$/m);
 assert.match(backupTimer, /^Persistent=true$/m);
 assert.match(backupTimer, /^Unit=office-card-game-db-backup\.service$/m);
+
+const finalizeIndex = deployScript.indexOf('sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"');
+const migrateIndex = deployScript.indexOf('sudo -n "$DB_HELPER" migrate "$RELEASE_NAME"');
+const activateIndex = deployScript.indexOf('sudo -n "$RELEASE_HELPER" activate "$RELEASE_NAME"');
+assert.ok(finalizeIndex >= 0 && finalizeIndex < migrateIndex, "release must be immutable before database migration");
+assert.ok(migrateIndex < activateIndex, "database migration must finish before release activation");
+assert.match(deployScript, /if \[\[ -e "\$CUTOVER_MARKER" \|\| -L "\$CUTOVER_MARKER" \]\]; then/);
+assert.match(deployScript, /PostgreSQL migration failed; release activation is blocked/);
+assert.doesNotMatch(deployScript, /ocg-db-helper enable-postgres|"\$DB_HELPER" enable-postgres/);
+assert.doesNotMatch(deployScript, /\|\| true/);
+assert.match(deployScript, /npm ci --omit=dev/);
+assert.doesNotMatch(deployScript, /--exclude="\.\/node_modules"/);
+assert.match(deployScript, /node_modules\/argon2\/package\.json/);
+assert.match(deployScript, /node_modules\/pg\/package\.json/);
+assert.ok(
+  deployScript.indexOf("npm ci --omit=dev") < deployScript.indexOf('sudo -n "$RELEASE_HELPER" prepare'),
+  "production dependencies must be installed before the release is prepared"
+);
 
 const unsafeNames = ["../../etc", "/tmp/release", "v1.2.3-deadbeef/..", "v1.2.3-DEADBEEF", "v1.2-deadbeef", "v1.2.3-deadbeef;id", "v1.2.3-deadbeef extra"];
 const releaseNamePattern = /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{8}$/;

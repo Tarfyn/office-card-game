@@ -5,6 +5,7 @@ REPO="${OCG_DEPLOY_REPO:-/opt/office-card-game/repo}"
 RELEASES="${OCG_RELEASES_DIR:-/srv/office-card-game/releases}"
 CURRENT="${OCG_CURRENT_LINK:-/srv/office-card-game/current}"
 RELEASE_HELPER="${OCG_RELEASE_HELPER:-/usr/local/sbin/ocg-release-helper}"
+DB_HELPER="/usr/local/sbin/ocg-db-helper"
 SERVICE="${OCG_SERVICE:-office-card-game.service}"
 PUBLIC_URL="${PUBLIC_URL:-https://office-card-game-185-94-29-30.nip.io}"
 LOCK_FILE="${OCG_DEPLOY_LOCK:-/tmp/office-card-game-deploy.lock}"
@@ -13,6 +14,8 @@ BUILD_TIMEOUT_SECONDS="${BUILD_TIMEOUT_SECONDS:-300}"
 TEST_TIMEOUT_SECONDS="${TEST_TIMEOUT_SECONDS:-900}"
 REGISTRY_TIMEOUT_SECONDS="${REGISTRY_TIMEOUT_SECONDS:-30}"
 MIN_FREE_KB="${MIN_FREE_KB:-1048576}"
+CUTOVER_MARKER_REL="deploy/postgres-persistence-ready"
+CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"
 
 TARGET=""
 CHECK_ONLY=0
@@ -25,6 +28,7 @@ PREVIOUS_RELEASE=""
 PREVIOUS_VERSION=""
 RELEASE_NAME=""
 RELEASE_DIR=""
+CUTOVER_MARKER=""
 VERSION=""
 
 log() { printf '[%s] %s\n' "$1" "$2"; }
@@ -93,7 +97,9 @@ acquire_lock() {
 
 read_active_release() {
   local active_link_target
-  PREVIOUS="$(sudo -n "$RELEASE_HELPER" current || true)"
+  if ! PREVIOUS="$(sudo -n "$RELEASE_HELPER" current)"; then
+    die "release helper failed to report the active release"
+  fi
   [[ -n "$PREVIOUS" ]] || die "no active release reported by release helper"
   active_link_target="$(readlink -f "$CURRENT")"
   [[ "$PREVIOUS" == "$active_link_target" ]] || die "release helper current path differs from configured current link: helper=$PREVIOUS link=$active_link_target"
@@ -114,6 +120,7 @@ validate_project() {
   grep -Fq "version:\"$VERSION\"" <<< "$server_source" || die "compact server version marker does not match package version"
   RELEASE_NAME="v${VERSION}-$(git rev-parse --short=8 HEAD)"
   RELEASE_DIR="$RELEASES/$RELEASE_NAME"
+  CUTOVER_MARKER="$RELEASE_DIR/$CUTOVER_MARKER_REL"
   if [[ "$CHECK_ONLY" -eq 0 && "$RELEASE_DIR" == "$PREVIOUS" ]]; then
     die "requested release is already active"
   fi
@@ -154,19 +161,45 @@ install_build_test() {
   run_timed "$BUILD_TIMEOUT_SECONDS" npm run build
   STAGE="7 test"
   run_timed "$TEST_TIMEOUT_SECONDS" npm test
+  STAGE="8 production dependencies"
+  run_timed "$NPM_CI_TIMEOUT_SECONDS" npm ci --omit=dev --no-audit --no-fund --foreground-scripts \
+    --fetch-retries=2 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 \
+    --fetch-retry-maxtimeout=10000 --fetch-timeout=30000
+  run_timed 30 node --input-type=module -e "await import('argon2'); await import('pg');"
 }
 
 prepare_release() {
-  STAGE="8 prepare release"
+  STAGE="9 prepare release"
   sudo -n "$RELEASE_HELPER" prepare "$RELEASE_NAME"
   PREPARED=1
-  tar --exclude="./.git" --exclude="./node_modules" --exclude="./runtime" --exclude="./reports" -cf - . | tar -xf - -C "$RELEASE_DIR"
-  sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"
+  tar --exclude="./.git" --exclude="./runtime" --exclude="./reports" -cf - . | tar -xf - -C "$RELEASE_DIR"
   [[ -f "$RELEASE_DIR/package.json" && -f "$RELEASE_DIR/server/server.mjs" ]] || die "prepared release is missing runtime files"
+  [[ -f "$RELEASE_DIR/node_modules/argon2/package.json" && -f "$RELEASE_DIR/node_modules/pg/package.json" ]] || die "prepared release is missing required production dependencies"
+  sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"
   local owner
   owner="$(stat -c '%U:%G' "$RELEASE_DIR")"
   [[ "$owner" == "officecardgame:officecardgame" ]] || die "unexpected release ownership: $owner"
-  log "8" "prepared immutable release: $RELEASE_DIR owner=$owner"
+  log "9" "prepared immutable release: $RELEASE_DIR owner=$owner"
+}
+
+validate_cutover_marker() {
+  [[ -f "$CUTOVER_MARKER" && ! -L "$CUTOVER_MARKER" ]] || die "PostgreSQL cutover marker must be a regular non-symlink file"
+  local expected_size marker_value
+  expected_size=$((${#CUTOVER_MARKER_VALUE} + 1))
+  [[ "$(stat -c '%s' "$CUTOVER_MARKER")" == "$expected_size" ]] || die "PostgreSQL cutover marker has an invalid size"
+  IFS= read -r marker_value < "$CUTOVER_MARKER" || die "PostgreSQL cutover marker must end with one newline"
+  [[ "$marker_value" == "$CUTOVER_MARKER_VALUE" ]] || die "PostgreSQL cutover marker content is invalid"
+}
+
+migrate_if_required() {
+  STAGE="10 database migration gate"
+  if [[ -e "$CUTOVER_MARKER" || -L "$CUTOVER_MARKER" ]]; then
+    validate_cutover_marker
+    sudo -n "$DB_HELPER" migrate "$RELEASE_NAME" || die "PostgreSQL migration failed; release activation is blocked"
+    log "10" "PostgreSQL migrations completed for $RELEASE_NAME"
+  else
+    log "10" "no PostgreSQL cutover marker; migration gate skipped"
+  fi
 }
 
 check_endpoint() {
@@ -192,11 +225,11 @@ service_is_current() {
 }
 
 verify_live() {
-  STAGE="11 readiness and health"
+  STAGE="12 readiness and health"
   local i
   for i in $(seq 1 30); do
     if check_endpoint /api/ready "$VERSION" ready && check_endpoint /api/health "$VERSION" health && service_is_current; then
-      log "11" "READY and HEALTHY version=$VERSION service=$SERVICE path=$(readlink -f "$CURRENT")"
+      log "12" "READY and HEALTHY version=$VERSION service=$SERVICE path=$(readlink -f "$CURRENT")"
       return 0
     fi
     sleep 1
@@ -229,10 +262,10 @@ abort_after_cutover() {
 }
 
 smoke() {
-  STAGE="12 smoke"
+  STAGE="13 smoke"
   curl -fsS --max-time 15 "$PUBLIC_URL/" >/dev/null || return 1
   curl -fsS --max-time 15 "$PUBLIC_URL/app.js" >/dev/null || return 1
-  log "12" "root and application shell smoke passed"
+  log "13" "root and application shell smoke passed"
 }
 
 main() {
@@ -248,14 +281,15 @@ main() {
   fi
   install_build_test
   prepare_release
-  STAGE="9 atomic cutover"
+  migrate_if_required
+  STAGE="11 atomic cutover"
   sudo -n "$RELEASE_HELPER" activate "$RELEASE_NAME" || abort_after_cutover "release activation failed"
   ACTIVATED=1
-  log "9" "activated $RELEASE_DIR"
+  log "11" "activated $RELEASE_DIR"
   verify_live || abort_after_cutover "bounded ready/health/service verification failed"
   smoke || abort_after_cutover "production smoke failed"
-  STAGE="13 complete"
-  log "13" "deployment successful target=$TARGET release=$RELEASE_NAME previous=$PREVIOUS_RELEASE"
+  STAGE="14 complete"
+  log "14" "deployment successful target=$TARGET release=$RELEASE_NAME previous=$PREVIOUS_RELEASE"
 }
 
 main "$@"
