@@ -19,6 +19,9 @@ assert.match(deploy, /git show-ref --verify/);
 assert.match(deploy, /CHECK_ONLY.*-eq 0.*RELEASE_DIR.*PREVIOUS/);
 assert.match(deploy, /refusing to reuse existing target release directory/);
 assert.match(deploy, /refusing to overwrite existing immutable release/);
+const preflight = deploy.slice(deploy.indexOf("preflight() {"), deploy.indexOf("install_build_test() {"));
+assert.match(preflight, /if \[\[ "\$CHECK_ONLY" -eq 1 \]\]; then/);
+assert.match(preflight, /\n  fi\n  return 0\n\}/);
 assert.match(docs, /npm advisory service is intentionally not on the\s+deployment-critical path/);
 assert.match(docs, /deploy\.sh --check <tag>/);
 
