@@ -92,9 +92,11 @@ acquire_lock() {
 }
 
 read_active_release() {
+  local active_link_target
   PREVIOUS="$(sudo -n "$RELEASE_HELPER" current || true)"
   [[ -n "$PREVIOUS" ]] || die "no active release reported by release helper"
-  [[ "$PREVIOUS" == "$CURRENT" ]] || die "release helper current path differs from configured current link: $PREVIOUS"
+  active_link_target="$(readlink -f "$CURRENT")"
+  [[ "$PREVIOUS" == "$active_link_target" ]] || die "release helper current path differs from configured current link: helper=$PREVIOUS link=$active_link_target"
   PREVIOUS_RELEASE="$(basename "$PREVIOUS")"
   sudo -n "$RELEASE_HELPER" exists "$PREVIOUS_RELEASE" >/dev/null || die "active release is not helper-validated: $PREVIOUS_RELEASE"
   PREVIOUS_VERSION="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version)' "$PREVIOUS/package.json")"

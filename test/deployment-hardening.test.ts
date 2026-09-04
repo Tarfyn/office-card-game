@@ -11,6 +11,7 @@ assert.equal(packageJson.scripts["ops:security-audit"], "npm audit");
 assert.match(deploy, /npm ci --no-audit --no-fund --foreground-scripts/);
 assert.match(deploy, /NPM_CI_TIMEOUT_SECONDS="\$\{NPM_CI_TIMEOUT_SECONDS:-600\}"/);
 assert.match(deploy, /flock -n 9/);
+assert.match(deploy, /readlink -f.*CURRENT/);
 assert.match(deploy, /check_endpoint \/api\/ready/);
 assert.match(deploy, /check_endpoint \/api\/health/);
 assert.match(deploy, /ROLLBACK_ATTEMPTED/);
