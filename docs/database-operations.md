@@ -40,6 +40,16 @@ Do not describe production as fully PostgreSQL-backed. The recorded VPS baseline
 with PostgreSQL 18.6, loopback-only listeners on `127.0.0.1` and `::1`, no public 5432 exposure, a
 working backup timer, and 30-day dump retention.
 
+## Repository workflow after cutover
+
+The PostgreSQL production cutover is complete. The historical helper-foundation branch was
+preparation work, not a permanent safety branch for future feature passes. Normal feature work
+continues from current `main`; future database changes use ordinary feature or migration branches
+and the reviewed production helper contract remains the operational source.
+
+Legacy JSON is retained for historical backup and migration provenance. It is not the normal
+rollback source for authenticated Account/Profile data.
+
 ## Production architecture
 
 The fixed resources are:

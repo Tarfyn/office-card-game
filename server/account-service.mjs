@@ -122,6 +122,7 @@ export class PostgresAccountService {
   constructor(options) {
     parseOfficeCardGameDatabaseUrl(options.databaseUrl, { test:options.testDatabase === true });
     this.profileFactory = options.profileFactory;
+    this.firstSessionGuideUpdater = options.firstSessionGuideUpdater ?? ((meta) => meta);
     this.preserveMutationError = options.preserveMutationError ?? (() => false);
     this.migrations = discoverMigrations(options.migrationDir);
     this.passwordWork = new PasswordWorkGate({
@@ -312,6 +313,45 @@ export class PostgresAccountService {
       await client.query("ROLLBACK").catch(() => {});
       if (error instanceof AccountError || this.preserveMutationError(error)) throw error;
       console.error("PostgreSQL profile mutation failed", safeDbError(error));
+      throw new AccountError("PROFILE_MUTATION_FAILED", "Profile update failed.");
+    } finally {
+      client.release();
+    }
+  }
+
+  async mutateFirstSessionGuide(token, update) {
+    this.requireReady();
+    const tokenHash = hashOpaqueToken(token);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(`SELECT s.user_id, s.expires_at, u.email, u.status, u.role, u.created_at, p.profile_data, p.revision
+        FROM public.sessions s
+        JOIN public.users u ON u.id = s.user_id
+        JOIN public.player_profiles p ON p.user_id = u.id
+        WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status = 'ACTIVE'
+        FOR UPDATE OF p, s`, [tokenHash]);
+      const row = result.rows[0];
+      if (!row) throw new AccountError("AUTH_REQUIRED", "Sign in is required.");
+      const beforeGuide = row.profile_data?.meta?.firstSessionGuide ?? null;
+      const meta = this.firstSessionGuideUpdater(structuredClone(row.profile_data?.meta ?? {}), update, Date.now());
+      const nextGuide = meta?.firstSessionGuide ?? null;
+      const changed = JSON.stringify(beforeGuide) !== JSON.stringify(nextGuide);
+      if (changed) {
+        const updated = await client.query(`UPDATE public.player_profiles
+          SET profile_data = jsonb_set(COALESCE(profile_data, '{}'::jsonb), '{meta,firstSessionGuide}', $2::jsonb, true), revision = revision + 1, updated_at = now()
+          WHERE user_id = $1
+          RETURNING profile_data, revision`, [row.user_id, JSON.stringify(nextGuide)]);
+        row.profile_data = updated.rows[0].profile_data;
+        row.revision = updated.rows[0].revision;
+      }
+      await client.query("UPDATE public.sessions SET last_used_at = now() WHERE token_hash = $1", [tokenHash]);
+      await client.query("COMMIT");
+      return { profile:row.profile_data, revision:Number(row.revision), account:accountView(row) };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (error instanceof AccountError || this.preserveMutationError(error)) throw error;
+      console.error("PostgreSQL first-session guide mutation failed", safeDbError(error));
       throw new AccountError("PROFILE_MUTATION_FAILED", "Profile update failed.");
     } finally {
       client.release();

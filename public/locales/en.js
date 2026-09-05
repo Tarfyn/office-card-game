@@ -130,4 +130,46 @@ enCatalog.tutorial.stepIncident = "Set the highlighted Incident face down. It wi
 Object.assign(enCatalog.tutorial, {
   openingLabel: "Opening hand", startLabel: "Start phase", drawLabel: "Draw phase", employeeLabel: "Play an Employee", supportLabel: "Play Support", incidentLabel: "Prepare a response", battleLabel: "Battle phase", attackEmployeeLabel: "Attack an Employee", directAttackLabel: "Direct attack", endLabel: "End phase", coachLabel: "Coach turn", responseLabel: "Response window", completeLabel: "Lesson complete"
 });
+enCatalog.firstSession = {
+  nextTitle: "Your first day is complete.",
+  nextCopy: "Your First Day Deck is real and owned. Train safely, then tune it in the Deckbuilder before PvP.",
+  startTraining: "Start Training",
+  viewFirstDayDeck: "View First Day Deck",
+  openDeckbuilder: "Open Deckbuilder",
+  continueLobby: "Continue to Lobby",
+  goalsTitle: "First Day Goals",
+  goalsHint: "A short route through your first session.",
+  goalTutorial: "Complete the Tutorial",
+  goalTraining: "Play a Training Match",
+  goalDeck: "Inspect your First Day Deck",
+  goalPvp: "Play a PvP Match",
+  complete: "Complete",
+  firstDayDeckTitle: "First Day Deck",
+  firstDayDeckCopy: "This is your first real deck. Every card in it belongs to your Collection, and you can edit it for legal PvP.",
+  starterDeckLabel: "STARTER DECK",
+  ownedDeckLabel: "OWNED DECK",
+  alphaTitle: "Alpha Access",
+  alphaCopy: "Alpha Access lets you test all current Alpha cards. These cards are not permanently owned.",
+  dismiss: "Dismiss",
+  loanerCopy: "Loaner decks are free to test in Training. Their cards are not added to your Collection.",
+  loanerLabel: "TRAINING LOANER",
+  pvpHint: "When you are ready, Quick Match is the next step. Your selected deck must be owned and format-ready.",
+  firstTraining: "Practice first, then make your deck your own.",
+  progression: "You earned progress. Open your Player File to see your level and Achievements.",
+  syncUnavailable: "Progress sync is unavailable. Your changes are safe; try again shortly.",
+  funnel: {
+    accountRegistered: "account_registered",
+    departmentSelected: "starter_department_selected",
+    boosterOpened: "starter_booster_opened",
+    starterCompleted: "first_day_deck_created",
+    tutorialStarted: "tutorial_started",
+    tutorialCompleted: "tutorial_completed",
+    trainingStarted: "training_started",
+    trainingCompleted: "training_completed",
+    deckbuilderOpened: "deckbuilder_opened",
+    deckOpened: "first_day_deck_opened",
+    pvpAttempted: "pvp_attempted",
+    pvpStarted: "pvp_started"
+  }
+};
 export const en = Object.freeze(enCatalog);

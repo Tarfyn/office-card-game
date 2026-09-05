@@ -17,10 +17,10 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.14 — provisional Classic Offi
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.17 version markers are current",()=>{
-assert.equal(pkg.version,"7.69.57");
-assert.match(server,/version: "7\.69\.57"/);
-assert.match(server,/version:"7\.69\.57"/);
-assert.match(server,/Office Card Game v7\.69\.57 server/);
+assert.equal(pkg.version,"7.69.58");
+assert.match(server,/version: "7\.69\.58"/);
+assert.match(server,/version:"7\.69\.58"/);
+assert.match(server,/Office Card Game v7\.69\.58 server/);
   assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.17 — Cosmetic Loadout Foundation \+ Visual Root Fixes/);
   assert.match(pkg.scripts.test,/dist\/test\/v76914\.test\.js/);

@@ -13058,3 +13058,138 @@ body.match-mode .player-identity-copy { min-width:0; flex:1 1 auto; overflow:hid
 @media (max-width:760px) {
   .player-badge-mark { flex-basis:22px; width:22px; height:22px; border-width:1px; box-shadow:inset 0 0 0 1px rgba(255,244,192,.34); }
 }
+
+/* First-session guidance stays compact, contextual and readable on the desk. */
+.first-session-guidance {
+  display:grid;
+  gap:9px;
+  margin:0 0 12px;
+}
+.first-session-next-steps,
+.first-session-goals,
+.first-session-context-hint {
+  position:relative;
+  min-width:0;
+  border:1px solid rgba(214,190,133,.28);
+  border-radius:10px;
+  background:linear-gradient(135deg,rgba(46,57,48,.96),rgba(24,31,27,.97));
+  color:#eee7d9;
+  box-shadow:inset 0 1px rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.18);
+}
+.first-session-next-steps,
+.first-session-goals { padding:13px 15px; }
+.first-session-next-steps > div:first-child,
+.first-session-section-head { display:grid; gap:3px; min-width:0; }
+.first-session-next-steps > div:first-child > span,
+.first-session-section-head span {
+  color:#d5b66d;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.first-session-next-steps > div:first-child > strong,
+.first-session-section-head strong {
+  min-width:0;
+  color:#f5efe2;
+  font-size:12px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+.first-session-next-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:11px;
+  padding-right:72px;
+}
+.first-session-next-actions button {
+  min-height:44px;
+  max-width:100%;
+  white-space:normal;
+}
+.first-session-next-steps .first-session-dismiss,
+.first-session-context-hint > button {
+  min-height:36px;
+  border:0;
+  color:#c7c0b4;
+  background:transparent;
+  font-size:10px;
+}
+.first-session-next-steps .first-session-dismiss {
+  position:absolute;
+  right:10px;
+  bottom:11px;
+}
+.first-session-goal-list {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px 15px;
+  margin-top:10px;
+}
+.first-session-goal {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  color:#e5ded2;
+  font-size:11px;
+  line-height:1.35;
+}
+.first-session-goal i {
+  flex:0 0 18px;
+  width:18px;
+  height:18px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(214,190,133,.52);
+  border-radius:50%;
+  color:#d5b66d;
+  font-style:normal;
+  font-weight:900;
+}
+.first-session-goal span { min-width:0; overflow-wrap:anywhere; }
+.first-session-goal b { margin-left:auto; color:#82ca98; font-size:8px; white-space:nowrap; }
+.first-session-goal.is-done { color:#a9b8aa; }
+.first-session-context-hint {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:10px 0;
+  padding:10px 12px;
+  border-left:3px solid #6aa47a;
+  border-radius:0 9px 9px 0;
+  background:rgba(60,116,75,.15);
+}
+.first-session-context-hint > div { display:grid; gap:3px; min-width:0; }
+.first-session-context-hint strong { color:#f0eadf; font-size:11px; line-height:1.35; }
+.first-session-context-hint span { color:#c2c5bc; font-size:10px; line-height:1.45; overflow-wrap:anywhere; }
+.first-session-context-hint > button { flex:0 0 auto; }
+.first-session-inline-hint {
+  display:block;
+  margin:4px 0 0;
+  color:#c6c8bf;
+  font-size:10px;
+  line-height:1.4;
+}
+.first-session-inline-hint button,
+.training-loaner-guidance button {
+  min-height:32px;
+  margin-left:5px;
+  padding:3px 7px;
+  border:1px solid rgba(214,190,133,.35);
+  color:#eee5d3;
+  background:rgba(255,255,255,.06);
+}
+.first-session-starter-label { color:#e0c27e; font-weight:800; }
+.first-day-deck-hint { margin:0 0 10px; }
+@media (max-width:760px) {
+  .first-session-next-steps,
+  .first-session-goals { padding:12px; }
+  .first-session-next-actions { display:grid; grid-template-columns:1fr; padding-right:0; }
+  .first-session-next-actions button { width:100%; }
+  .first-session-next-steps .first-session-dismiss { position:static; justify-self:start; margin-top:4px; padding-inline:0; }
+  .first-session-goal-list { grid-template-columns:1fr; gap:8px; }
+  .first-session-context-hint { align-items:flex-start; }
+}

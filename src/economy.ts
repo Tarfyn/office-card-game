@@ -51,6 +51,38 @@ export interface AchievementProgressState {
   children?: Record<string, AchievementProgressState>;
 }
 
+export const FIRST_SESSION_GUIDE_VERSION = 1 as const;
+export const FIRST_SESSION_GOAL_IDS = [
+  "tutorial_completed",
+  "training_completed",
+  "first_day_deck_opened",
+  "pvp_started"
+] as const;
+export type FirstSessionGoalId = typeof FIRST_SESSION_GOAL_IDS[number];
+export const FIRST_SESSION_EVENT_NAMES = [
+  "account_registered",
+  "starter_department_selected",
+  "starter_booster_1_opened",
+  "starter_booster_8_opened",
+  "first_day_deck_created",
+  "tutorial_started",
+  "tutorial_completed",
+  "training_started",
+  "training_completed",
+  "deckbuilder_opened",
+  "first_day_deck_opened",
+  "pvp_attempted",
+  "pvp_started"
+] as const;
+
+export interface FirstSessionGuideState {
+  version: typeof FIRST_SESSION_GUIDE_VERSION;
+  eligible: true;
+  hints: Record<string, number>;
+  goals: Partial<Record<FirstSessionGoalId, number>>;
+  events: Array<{ name: string; at: number }>;
+}
+
 export interface PlayerMetaProfile {
   profileVersion: number;
   /** Explicit marker for a partial browser Guest snapshot; never set for Accounts. */
@@ -76,6 +108,8 @@ export interface PlayerMetaProfile {
   /** Alpha access is entitlement-only; it never increments ownedCards. */
   alphaPlaytestAccess: AlphaPlaytestAccess | null;
   starterOnboarding: StarterOnboardingState;
+  /** Versioned, lightweight first-session guidance. Null means grandfathered. */
+  firstSessionGuide: FirstSessionGuideState | null;
 }
 
 export interface RewardGrantItem {
@@ -127,6 +161,7 @@ export function createAlphaMetaProfile(): PlayerMetaProfile {
     cosmetics: { owned:defaultCosmeticOwnership(), loadout:defaultCosmeticLoadout("P1") },
     alphaPlaytestAccess: null,
     starterOnboarding: { version:1, status:"COMPLETE", selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 },
+    firstSessionGuide: null,
     progression: {
       level: 1,
       xp: 0,
@@ -145,6 +180,7 @@ export function createPlayerMetaProfile(starterCards: OwnedDeckEntry[] = [], sta
   profile.collectionMode = "OWNED_COPIES";
   profile.balances.OFFICE_CREDITS = Math.max(0, Math.floor(Number(startingOfficeCredits) || 0));
   profile.cosmetics = { owned: defaultCosmeticOwnership(now), loadout: defaultCosmeticLoadout("P1") };
+  profile.firstSessionGuide = createFirstSessionGuide(now);
   profile.rewardGrants = [];
   if (starterCards.length) {
     return applyRewardGrant(profile, {
@@ -159,6 +195,10 @@ export function createPlayerMetaProfile(starterCards: OwnedDeckEntry[] = [], sta
     }, now).profile;
   }
   return profile;
+}
+
+export function createFirstSessionGuide(_now = Date.now()): FirstSessionGuideState {
+  return { version:FIRST_SESSION_GUIDE_VERSION, eligible:true, hints:{}, goals:{}, events:[] };
 }
 
 export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | null | undefined, now = Date.now()): PlayerMetaProfile {
@@ -233,10 +273,45 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
       Math.floor(Number(onboarding?.boosterPresentationCount) || 0)
     ))
   };
+  const guide = next.firstSessionGuide;
+  next.firstSessionGuide = guide?.version === FIRST_SESSION_GUIDE_VERSION && guide.eligible === true
+    ? {
+      version:FIRST_SESSION_GUIDE_VERSION,
+      eligible:true,
+      hints:Object.fromEntries(Object.entries(guide.hints ?? {}).filter(([id, seenAt]) => id && Number(seenAt) > 0).map(([id, seenAt]) => [String(id), Number(seenAt)])),
+      goals:Object.fromEntries(FIRST_SESSION_GOAL_IDS.flatMap((id) => Number(guide.goals?.[id]) > 0 ? [[id, Number(guide.goals[id])]] : [])),
+      events:Array.isArray(guide.events)
+        ? guide.events.filter((event) => event && typeof event.name === "string" && event.name.length <= 80 && Number(event.at) > 0).slice(-40).map((event) => ({ name:event.name, at:Number(event.at) }))
+        : []
+    }
+    : null;
   next.progression = { ...base.progression, ...(next.progression ?? {}) };
   for (const key of Object.keys(base.progression) as Array<keyof PlayerProgression>) next.progression[key] = Math.max(0, Math.floor(Number(next.progression[key]) || 0));
   next.progression.level = Math.max(1, next.progression.level);
   next.cosmetics = normalizePlayerCosmetics(next.cosmetics, now);
+  return next;
+}
+
+export interface FirstSessionGuideUpdate {
+  hintId?: string | null;
+  goalId?: FirstSessionGoalId | null;
+  eventName?: string | null;
+}
+
+/** Applies only idempotent guide markers; it never grants rewards or changes gameplay state. */
+export function updateFirstSessionGuide(profile: PlayerMetaProfile, update: FirstSessionGuideUpdate, now = Date.now()): PlayerMetaProfile {
+  const next = normalizePlayerMetaProfile(profile, now);
+  if (!next.firstSessionGuide?.eligible) return next;
+  const guide = next.firstSessionGuide;
+  const timestamp = Math.max(1, Math.floor(Number(now) || Date.now()));
+  const hintId = typeof update.hintId === "string" ? update.hintId.trim().slice(0, 80) : "";
+  if (hintId && !guide.hints[hintId]) guide.hints[hintId] = timestamp;
+  if (FIRST_SESSION_GOAL_IDS.includes(update.goalId as FirstSessionGoalId) && !guide.goals[update.goalId as FirstSessionGoalId]) {
+    guide.goals[update.goalId as FirstSessionGoalId] = timestamp;
+  }
+  const eventName = typeof update.eventName === "string" ? update.eventName.trim().slice(0, 80) : "";
+  if (FIRST_SESSION_EVENT_NAMES.includes(eventName as typeof FIRST_SESSION_EVENT_NAMES[number]) && !guide.events.some((event) => event.name === eventName)) guide.events.push({ name:eventName, at:timestamp });
+  guide.events = guide.events.slice(-40);
   return next;
 }
 

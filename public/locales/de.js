@@ -130,6 +130,48 @@ deCatalog.tutorial.stepIncident = "Setze den hervorgehobenen Incident verdeckt. 
 Object.assign(deCatalog.tutorial, {
   openingLabel: "Starthand", startLabel: "Startphase", drawLabel: "Ziehphase", employeeLabel: "Mitarbeiter spielen", supportLabel: "Support spielen", incidentLabel: "Antwort vorbereiten", battleLabel: "Kampfphase", attackEmployeeLabel: "Mitarbeiter angreifen", directAttackLabel: "Direkter Angriff", endLabel: "Endphase", coachLabel: "Coach-Zug", responseLabel: "Reaktionsfenster", completeLabel: "Lektion abgeschlossen"
 });
+deCatalog.firstSession = {
+  nextTitle: "Dein erster Arbeitstag ist geschafft.",
+  nextCopy: "Dein First Day Deck gehört dir wirklich. Übe sicher im Training und passe es im Deckbuilder an, bevor du PvP spielst.",
+  startTraining: "Training starten",
+  viewFirstDayDeck: "First Day Deck ansehen",
+  openDeckbuilder: "Deckbuilder öffnen",
+  continueLobby: "In der Lobby bleiben",
+  goalsTitle: "Ziele für den ersten Tag",
+  goalsHint: "Ein kurzer Weg durch deine erste Sitzung.",
+  goalTutorial: "Tutorial abschließen",
+  goalTraining: "Ein Training-Match spielen",
+  goalDeck: "First Day Deck ansehen",
+  goalPvp: "Ein PvP-Match spielen",
+  complete: "Abgeschlossen",
+  firstDayDeckTitle: "First Day Deck",
+  firstDayDeckCopy: "Das ist dein erstes echtes Deck. Jede Karte darin gehört zu deiner Sammlung und kann für legales PvP bearbeitet werden.",
+  starterDeckLabel: "STARTERDECK",
+  ownedDeckLabel: "EIGENES DECK",
+  alphaTitle: "Alpha-Zugang",
+  alphaCopy: "Mit dem Alpha-Zugang kannst du alle aktuellen Alpha-Karten testen. Diese Karten gehören dir nicht dauerhaft.",
+  dismiss: "Schließen",
+  loanerCopy: "Leihdecks kannst du im Training kostenlos testen. Die Karten werden deiner Sammlung nicht hinzugefügt.",
+  loanerLabel: "TRAININGS-LOANER",
+  pvpHint: "Wenn du bereit bist, ist Quick Match der nächste Schritt. Dein gewähltes Deck muss dir gehören und formatbereit sein.",
+  firstTraining: "Erst üben, dann dein Deck selbst weiterentwickeln.",
+  progression: "Du hast Fortschritt erzielt. Öffne deine Spielerakte für Stufe und Erfolge.",
+  syncUnavailable: "Die Fortschrittssynchronisierung ist nicht verfügbar. Deine Änderungen sind sicher; versuche es gleich noch einmal.",
+  funnel: {
+    accountRegistered: "account_registered",
+    departmentSelected: "starter_department_selected",
+    boosterOpened: "starter_booster_opened",
+    starterCompleted: "first_day_deck_created",
+    tutorialStarted: "tutorial_started",
+    tutorialCompleted: "tutorial_completed",
+    trainingStarted: "training_started",
+    trainingCompleted: "training_completed",
+    deckbuilderOpened: "deckbuilder_opened",
+    deckOpened: "first_day_deck_opened",
+    pvpAttempted: "pvp_attempted",
+    pvpStarted: "pvp_started"
+  }
+};
 export const de = Object.freeze(deCatalog);
 
 // Temporary migration bridge for legacy UI that predates translation keys.

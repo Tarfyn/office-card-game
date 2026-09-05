@@ -240,6 +240,7 @@ const state = {
   profileHistoryLimit: 20,
   profileMessage: null,
   guidance: { enabled:true, seen:{} },
+  guideSyncChain: Promise.resolve(),
   replay: null,
   replayBusy: false,
   replayError: null,
@@ -264,7 +265,7 @@ const state = {
   recentSessionView: null,
   serverClockOffsetMs: 0,
   rankedRefreshRoomId: null,
-  metaProfile: { profileVersion:1, balances:{OFFICE_CREDITS:0,SHREDDER_SCRAPS:0}, ownedCards:{}, collectionMode:'SANDBOX_ALL_AVAILABLE', claimedRewardRooms:[], progression:{level:1,xp:0,matchesCompleted:0,boostersOpened:0,cardsScrapped:0,cardsCrafted:0} },
+  metaProfile: { profileVersion:1, balances:{OFFICE_CREDITS:0,SHREDDER_SCRAPS:0}, ownedCards:{}, collectionMode:'SANDBOX_ALL_AVAILABLE', claimedRewardRooms:[], progression:{level:1,xp:0,matchesCompleted:0,boostersOpened:0,cardsScrapped:0,cardsCrafted:0}, firstSessionGuide:null },
   format: { id:'alpha', deckSize:40, defaultCopyLimit:3, cardLimits:{} }
 };
 
@@ -405,6 +406,72 @@ function loadMetaProfile() {
 function saveMetaProfile() {
   if (state.account) return;
   localStorage.setItem(META_PROFILE_KEY, JSON.stringify(state.metaProfile));
+}
+
+const FIRST_SESSION_HINT_IDS = Object.freeze({
+  nextSteps:'post_tutorial_next_steps_v1',
+  firstDayDeck:'first_day_deck_intro_v1',
+  alphaAccess:'alpha_access_intro_v1',
+  trainingLoaner:'training_loaner_intro_v1',
+  firstPvp:'first_pvp_intro_v1',
+  progression:'progression_callout_v1'
+});
+function firstSessionGuide() { return state.metaProfile?.firstSessionGuide ?? null; }
+function firstSessionGuideEligible() { const guide = firstSessionGuide(); return guide?.version === 1 && guide.eligible === true; }
+function firstSessionHintSeen(id) { return Boolean(firstSessionGuide()?.hints?.[id]); }
+function firstSessionGoalDone(id) { return Boolean(firstSessionGuide()?.goals?.[id]); }
+function firstSessionEventSeen(name) { return Boolean(firstSessionGuide()?.events?.some((event) => event.name === name)); }
+function optimisticFirstSessionGuideUpdate({ hintId = null, goalId = null, eventName = null } = {}) {
+  const guide = firstSessionGuide();
+  if (!guide?.eligible) return false;
+  const at = Math.max(1, Date.now());
+  if (hintId && !guide.hints?.[hintId]) guide.hints = { ...(guide.hints ?? {}), [hintId]:at };
+  if (goalId && !guide.goals?.[goalId]) guide.goals = { ...(guide.goals ?? {}), [goalId]:at };
+  if (eventName && !firstSessionEventSeen(eventName)) guide.events = [...(guide.events ?? []), { name:eventName, at }].slice(-40);
+  saveMetaProfile();
+  return true;
+}
+function queueFirstSessionGuideUpdate(update = {}) {
+  if (!firstSessionGuideEligible()) return;
+  const hintId = typeof update.hintId === 'string' ? update.hintId : null;
+  const goalId = typeof update.goalId === 'string' ? update.goalId : null;
+  const eventName = typeof update.eventName === 'string' ? update.eventName : null;
+  const alreadyApplied = (!hintId || firstSessionHintSeen(hintId)) && (!goalId || firstSessionGoalDone(goalId)) && (!eventName || firstSessionEventSeen(eventName));
+  if (alreadyApplied) return;
+  optimisticFirstSessionGuideUpdate({ hintId, goalId, eventName });
+  if (!state.account) return;
+  const payload = { profileToken:state.profileToken, hintId, goalId, eventName };
+  const recoverableGuideError = (error) => ['PROFILE_MUTATION_FAILED','ACCOUNT_PERSISTENCE_UNAVAILABLE','DB_OPERATION_FAILED','DB_CONNECTION_REFUSED','DB_SHUTTING_DOWN','DATABASE_UNAVAILABLE','NETWORK_UNREACHABLE','NETWORK_TIMEOUT'].includes(error?.code);
+  const applyGuideUpdate = async () => {
+    const result = await api('/api/profiles/me/first-session-guide', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify(payload) });
+    if (result.profile) applyServerProfile(result.profile);
+  };
+  state.guideSyncChain = state.guideSyncChain.catch(() => {}).then(async () => {
+    try {
+      await applyGuideUpdate();
+      return;
+    } catch (error) {
+      if (!recoverableGuideError(error)) throw error;
+      try {
+        const current = await api('/api/profiles/me', { headers:profileAuthHeaders() });
+        if (current.profile) applyServerProfile(current.profile);
+        if ((hintId && firstSessionHintSeen(hintId)) || (goalId && firstSessionGoalDone(goalId)) || (eventName && firstSessionEventSeen(eventName))) return;
+        await applyGuideUpdate();
+      } catch (retryError) {
+        throw retryError;
+      }
+    }
+  }).catch((error) => {
+    state.lastError = recoverableGuideError(error) ? t('firstSession.syncUnavailable') : error.message;
+    if (!state.session) renderLobby();
+  });
+}
+function bindFirstSessionDismissHandlers(root = document, rerender = root === document ? renderLobby : null) {
+  root.querySelectorAll('[data-first-session-dismiss]').forEach((button) => button.addEventListener('click', () => {
+    queueFirstSessionGuideUpdate({ hintId:button.dataset.firstSessionDismiss });
+    if (rerender) rerender();
+    else button.closest('[data-pvp-validation-host],[data-training-validation-host],[data-collection-context]')?.replaceChildren();
+  }));
 }
 
 function applyServerProfile(profile) {
@@ -1835,6 +1902,10 @@ function clearSession() {
 }
 
 function parkSession() {
+  const completedMode = state.view?.settings?.mode;
+  const completed = state.view?.match?.status === 'ENDED';
+  if (completed && completedMode === 'TUTORIAL') queueFirstSessionGuideUpdate({ goalId:'tutorial_completed', eventName:'tutorial_completed' });
+  if (completed && completedMode === 'TRAINING') queueFirstSessionGuideUpdate({ goalId:'training_completed', eventName:'training_completed' });
   if (state.session) saveRecentSession(state.session, state.view);
   resetLiveSessionState();
   state.mode = 'PLAY';
@@ -4291,15 +4362,16 @@ function renderLobbyDeckPrep(value, context = 'QUICK') {
   if (!deck) return '<div class="lobby-deck-prep invalid"><strong>No deck selected</strong></div>';
   const size = Number(state.format?.deckSize ?? 40);
   const contextLabel = context === 'CREATE' ? lobbyCopy('ROOM DECK','RAUM-DECK') : context === 'JOIN' ? lobbyCopy('JOINING WITH','BEITRITT MIT') : lobbyCopy('MATCH DECK','MATCH-DECK');
+  const firstDay = firstSessionGuideEligible() && deck.id === firstDayDeckId();
   const ownedLabel = deck.trainingLoaner
-    ? t('training.loanerStatus')
+    ? (firstSessionGuideEligible() ? t('firstSession.loanerLabel') : t('training.loanerStatus'))
     : deck.ownedReady
-      ? lobbyCopy('COLLECTION READY','SAMMLUNG BEREIT')
+      ? (firstSessionGuideEligible() ? t('firstSession.ownedDeckLabel') : lobbyCopy('COLLECTION READY','SAMMLUNG BEREIT'))
       : lobbyCopy(`${deck.missingCopies} ${deck.missingCopies===1?'COPY':'COPIES'} MISSING`,`${deck.missingCopies} ${deck.missingCopies===1?'EXEMPLAR FEHLT':'EXEMPLARE FEHLEN'}`);
   return `<div class="lobby-deck-prep ${deck.formatReady?'ready':'invalid'} ${esc(departmentThemeClass(deck.department))}" data-lobby-deck-prep="${esc(context)}">
     <div class="lobby-deck-prep-code"><span>${esc(departmentCode(deck.department))}</span><small>${esc(contextLabel)}</small></div>
     <div class="lobby-deck-prep-copy"><strong>${esc(deck.name)}</strong><b>${esc(deck.identity.loop)}</b><small>${deck.topTags.length ? deck.topTags.map((tag)=>`#${esc(tag)}`).join(' · ') : esc(deck.identity.note)}</small></div>
-    <div class="lobby-deck-prep-status"><span class="${deck.total===size?'ready':'warn'}">${esc(deck.total)}/${esc(size)}</span><span class="${deck.formatReady?'ready':'warn'}">${deck.formatReady?lobbyCopy('FORMAT READY','FORMAT BEREIT'):lobbyCopy('DRAFT','ENTWURF')}</span><span class="${deck.ownedReady?'ready':'info'}">${esc(ownedLabel)}</span></div>
+    <div class="lobby-deck-prep-status"><span class="${deck.total===size?'ready':'warn'}">${esc(deck.total)}/${esc(size)}</span><span class="${deck.formatReady?'ready':'warn'}">${deck.formatReady?lobbyCopy('FORMAT READY','FORMAT BEREIT'):lobbyCopy('DRAFT','ENTWURF')}</span><span class="${deck.ownedReady?'ready':'info'}">${esc(ownedLabel)}</span>${firstDay ? `<span class="first-session-starter-label">${esc(t('firstSession.starterDeckLabel'))}</span>` : ''}</div>
   </div>`;
 }
 
@@ -4319,7 +4391,10 @@ function pvpValidationMarkup(status) {
   const firstDayDeckId = state.serverProfile?.meta?.starterOnboarding?.firstDayDeckId;
   const firstDayReady = Boolean(status.valid && status.summary?.custom && status.summary.value === `custom:${firstDayDeckId}`);
   const message = firstDayReady ? t('starterAccess.complete.next') : status.message;
-  return `<p class="deck-access-guidance ${status.valid ? 'ready' : 'blocked'}" role="${status.valid ? 'status' : 'alert'}">${esc(message)}</p>`;
+  const hint = firstSessionGuideEligible() && status.valid && firstSessionGoalDone('tutorial_completed') && !firstSessionHintSeen(FIRST_SESSION_HINT_IDS.firstPvp)
+    ? `<small class="first-session-inline-hint">${esc(t('firstSession.pvpHint'))} <button type="button" data-first-session-dismiss="${FIRST_SESSION_HINT_IDS.firstPvp}">${esc(t('firstSession.dismiss'))}</button></small>`
+    : '';
+  return `<p class="deck-access-guidance ${status.valid ? 'ready' : 'blocked'}" role="${status.valid ? 'status' : 'alert'}">${esc(message)}</p>${hint}`;
 }
 
 async function persistSelectedDeck(value) {
@@ -4369,6 +4444,7 @@ function syncLobbyDeckChoice(value) {
   if (join) join.disabled = !pvpStatus.valid;
   document.querySelectorAll('[data-pvp-validation-host]').forEach((host) => { host.innerHTML = pvpValidationMarkup(pvpStatus); });
   updateTrainingControls(resolved);
+  document.querySelectorAll('[data-pvp-validation-host],[data-training-validation-host]').forEach((host) => bindFirstSessionDismissHandlers(host));
 }
 
 // Regression compatibility marker: quick.disabled = state.matchmakingBusy || !legal;
@@ -4383,7 +4459,10 @@ function trainingDeckStatus(value = state.preferredDeckValue) {
 
 function trainingValidationMarkup(status) {
   if (!status.valid) return `<p class="desk-matchmaking-message error training-validation-message" role="alert">${esc(status.message)}</p>`;
-  if (status.summary?.trainingLoaner) return `<p class="training-loaner-guidance" role="status">${esc(t('training.loanerExplanation'))}</p>`;
+  if (status.summary?.trainingLoaner && (!firstSessionGuideEligible() || !firstSessionHintSeen(FIRST_SESSION_HINT_IDS.trainingLoaner))) {
+    const copy = firstSessionGuideEligible() ? t('firstSession.loanerCopy') : t('training.loanerExplanation');
+    return `<p class="training-loaner-guidance" role="status">${esc(copy)} ${firstSessionGuideEligible() ? `<button type="button" data-first-session-dismiss="${FIRST_SESSION_HINT_IDS.trainingLoaner}">${esc(t('firstSession.dismiss'))}</button>` : ''}</p>`;
+  }
   return '';
 }
 
@@ -4765,6 +4844,8 @@ async function enterAlphaDeckbuilder(message = null) {
   // browser/server profiles may persist OWNED_COPIES from economy testing;
   // normalize the lobby entry back to all Alpha cards and clear stale filters.
   resetCollectionFilters();
+  queueFirstSessionGuideUpdate({ eventName:'deckbuilder_opened' });
+  if (state.editingDeckId && state.editingDeckId === firstDayDeckId()) queueFirstSessionGuideUpdate({ goalId:'first_day_deck_opened', eventName:'first_day_deck_opened' });
   if (ownedDeckMode()) await setCollectionMode('SANDBOX_ALL_AVAILABLE');
   state.mode = 'COLLECTION';
   if (message) state.deckBuilderMessage = message;
@@ -5582,6 +5663,8 @@ function renderCollection() {
     ${renderEconomyLab()}
     ${renderEconomyRoadmap()}
     ${renderStarterDeckShelf()}
+    ${renderFirstDayDeckHint(deck)}
+    ${renderFirstSessionAlphaHint()}
     <div class="collection-layout">
       <main class="collection-browser">
         ${renderDeckSwapBar(deck)}
@@ -5628,6 +5711,7 @@ function renderCollection() {
     cancelDeckSwap(); state.mode='PLAY'; render();
   };
   document.querySelectorAll('[data-collection-mode]').forEach((button) => button.onclick = async () => { await setCollectionMode(button.dataset.collectionMode); renderCollection(); });
+  bindFirstSessionDismissHandlers(document, renderCollection);
   document.querySelector('#startEconomySandbox')?.addEventListener('click', startEconomySandbox);
   document.querySelector('#refillEconomySandbox')?.addEventListener('click', refillEconomySandbox);
   document.querySelector('#resetEconomySandbox')?.addEventListener('click', resetEconomySandbox);
@@ -5894,6 +5978,63 @@ function renderStarterDeckGuide() {
     const identity = departmentIdentity(preset.department);
     return `<button type="button" class="starter-identity dept-${esc(String(preset.department).toLowerCase())}" data-starter-deck="${esc(preset.id)}"><div><span>${esc(departmentCode(preset.department))}</span><b>${esc(identity.label)}</b></div><strong>${esc(identity.loop)}</strong><small>${esc(identity.note)}</small><em>${esc(preset.name)}</em><i>${lobbyCopy('Select deck','Deck wählen')}</i></button>`;
   }).join('')}</div></section>`;
+}
+
+function firstDayDeckId() {
+  return state.metaProfile?.starterOnboarding?.firstDayDeckId ?? state.serverProfile?.meta?.starterOnboarding?.firstDayDeckId ?? null;
+}
+
+function renderFirstSessionGoals() {
+  if (!firstSessionGuideEligible()) return '';
+  const goals = [
+    ['tutorial_completed', 'firstSession.goalTutorial'],
+    ['training_completed', 'firstSession.goalTraining'],
+    ['first_day_deck_opened', 'firstSession.goalDeck'],
+    ['pvp_started', 'firstSession.goalPvp']
+  ];
+  if (goals.every(([id]) => firstSessionGoalDone(id))) return '';
+  return `<section class="first-session-goals"><div class="first-session-section-head"><div><span>${esc(t('firstSession.goalsTitle'))}</span><strong>${esc(t('firstSession.goalsHint'))}</strong></div></div><div class="first-session-goal-list">${goals.map(([id, key]) => {
+    const done = firstSessionGoalDone(id);
+    return `<div class="first-session-goal ${done ? 'is-done' : ''}"><i aria-hidden="true">${done ? '✓' : '○'}</i><span>${esc(t(key))}</span>${done ? `<b>${esc(t('firstSession.complete'))}</b>` : ''}</div>`;
+  }).join('')}</div></section>`;
+}
+
+function renderFirstSessionNextSteps() {
+  if (!firstSessionGuideEligible() || !firstSessionGoalDone('tutorial_completed') || firstSessionHintSeen(FIRST_SESSION_HINT_IDS.nextSteps)) return '';
+  return `<section class="first-session-next-steps"><div><span>${esc(t('firstSession.nextTitle'))}</span><strong>${esc(t('firstSession.nextCopy'))}</strong></div><div class="first-session-next-actions"><button type="button" class="primary" data-first-session-action="training">${esc(t('firstSession.startTraining'))}</button><button type="button" data-first-session-action="first-day">${esc(t('firstSession.viewFirstDayDeck'))}</button><button type="button" data-first-session-action="deckbuilder">${esc(t('firstSession.openDeckbuilder'))}</button><button type="button" class="ghost" data-first-session-action="lobby">${esc(t('firstSession.continueLobby'))}</button></div><button type="button" class="first-session-dismiss" data-first-session-dismiss="${FIRST_SESSION_HINT_IDS.nextSteps}">${esc(t('firstSession.dismiss'))}</button></section>`;
+}
+
+function renderFirstSessionProgressionCallout() {
+  if (!firstSessionGuideEligible() || firstSessionHintSeen(FIRST_SESSION_HINT_IDS.progression)) return '';
+  const hasProgress = firstSessionEventSeen('training_completed') || firstSessionEventSeen('pvp_started');
+  if (!hasProgress) return '';
+  return `<section class="first-session-context-hint"><strong>${esc(t('firstSession.progression'))}</strong><button type="button" data-first-session-dismiss="${FIRST_SESSION_HINT_IDS.progression}">${esc(t('firstSession.dismiss'))}</button></section>`;
+}
+
+function renderFirstSessionLobbyGuidance() {
+  if (!firstSessionGuideEligible()) return '';
+  const next = renderFirstSessionNextSteps();
+  const goals = renderFirstSessionGoals();
+  const progression = next || goals ? '' : renderFirstSessionProgressionCallout();
+  if (!next && !goals && !progression) return '';
+  return `<section class="first-session-guidance">${next}${goals}${progression}</section>`;
+}
+
+function renderFirstDayDeckHint(deck) {
+  if (!firstSessionGuideEligible() || !deck || !firstDayDeckId() || deck.id !== firstDayDeckId() || firstSessionHintSeen(FIRST_SESSION_HINT_IDS.firstDayDeck)) return '';
+  return `<aside class="first-session-context-hint first-day-deck-hint"><div><strong>${esc(t('firstSession.firstDayDeckTitle'))}</strong><span>${esc(t('firstSession.firstDayDeckCopy'))}</span></div><button type="button" data-first-session-dismiss="${FIRST_SESSION_HINT_IDS.firstDayDeck}">${esc(t('firstSession.dismiss'))}</button></aside>`;
+}
+
+function renderFirstSessionAlphaHint() {
+  if (!firstSessionGuideEligible() || ownedDeckMode() || firstSessionHintSeen(FIRST_SESSION_HINT_IDS.alphaAccess)) return '';
+  return `<aside class="first-session-context-hint"><div><strong>${esc(t('firstSession.alphaTitle'))}</strong><span>${esc(t('firstSession.alphaCopy'))}</span></div><button type="button" data-first-session-dismiss="${FIRST_SESSION_HINT_IDS.alphaAccess}">${esc(t('firstSession.dismiss'))}</button></aside>`;
+}
+
+function openFirstDayDeck() {
+  const id = firstDayDeckId();
+  if (id) state.editingDeckId = id;
+  queueFirstSessionGuideUpdate({ goalId:'first_day_deck_opened', eventName:'first_day_deck_opened' });
+  void enterAlphaDeckbuilder();
 }
 
 function renderExecutiveAlphaMemo() {
@@ -6246,6 +6387,7 @@ function enterMatchedSession(ticket) {
   state.matchmakingTicket = null;
   saveMatchmakingTicket(null);
   state.matchmakingMessage = null;
+  if (ticket.mode === 'FRIENDLY' || ticket.mode === 'RANKED') queueFirstSessionGuideUpdate({ eventName:'pvp_started', goalId:'pvp_started' });
   saveSession({ roomId:session.roomId, token:session.token, playerId:session.playerId });
   acceptView(session.view);
   appendEvents(session.view.events);
@@ -6290,6 +6432,7 @@ function rankedQueueMessage(ranked, ticket) {
 
 async function beginQuickMatch() {
   if (!hasProfileIdentity() || state.matchmakingBusy) return;
+  queueFirstSessionGuideUpdate({ eventName:'pvp_attempted' });
   state.matchmakingBusy = true;
   state.matchmakingMessage = null;
   try {
@@ -6327,6 +6470,7 @@ async function startBotMatch(mode) {
     const botDeckId = document.querySelector('#botOpponentDeck')?.value || state.botDeckId || 'it-starter';
     state.botDeckId = botDeckId;
     const result = await api('/api/rooms/bot', { method:'POST', body:JSON.stringify({ ...selectedDeckPayload(deckId), mode, botDeckId, profileToken:state.profileToken }) });
+    queueFirstSessionGuideUpdate({ eventName:mode === 'TUTORIAL' ? 'tutorial_started' : 'training_started' });
     saveSession({ roomId:result.roomId, token:result.token, playerId:result.playerId });
     acceptView(result.view);
     appendEvents(result.view.events);
@@ -6445,6 +6589,7 @@ async function completeStarterOnboarding(department) {
   try {
     const result = await api('/api/onboarding/department', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, department }) });
     applyServerProfile(result.profile);
+    queueFirstSessionGuideUpdate({ eventName:'starter_department_selected' });
     state.starterOnboardingMessage = null;
   } catch (error) {
     const reconciled = await reconcileStarterOnboardingAfterError();
@@ -6463,8 +6608,12 @@ async function advanceStarterBooster(packNumber) {
   try {
     const result = await api('/api/onboarding/booster', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, packNumber:Number(packNumber) }) });
     applyServerProfile(result.profile);
+    const openedPack = Number(packNumber);
+    if (openedPack === 1) queueFirstSessionGuideUpdate({ eventName:'starter_booster_1_opened' });
+    if (openedPack === 8) queueFirstSessionGuideUpdate({ eventName:'starter_booster_8_opened' });
     if (result.profile?.meta?.starterOnboarding?.status === 'COMPLETE') {
       await syncServerDecks();
+      queueFirstSessionGuideUpdate({ eventName:'first_day_deck_created' });
       state.starterOnboardingCompleteNotice = true;
     }
   } catch (error) {
@@ -6620,6 +6769,7 @@ function renderLobby() {
     ${renderRecentSessionCard()}
     ${renderAccountControls()}
     ${renderStarterCompletionNotice()}
+    ${renderFirstSessionLobbyGuidance()}
     <div class="executive-desk-surface">
       <aside class="executive-desk-left" aria-label="${esc(lobbyCopy('Lobby navigation and utilities','Lobby-Navigation und Werkzeuge'))}">
         <div class="desk-nav-rail">
@@ -6722,6 +6872,14 @@ function renderLobby() {
   document.querySelector('#abandonRecentRoom')?.addEventListener('click', abandonRecentWaitingRoom);
   document.querySelector('#forgetRecentRoom')?.addEventListener('click', forgetRecentSession);
   document.querySelector('#openCollection').onclick = async () => { await enterAlphaDeckbuilder(); };
+  bindFirstSessionDismissHandlers();
+  document.querySelectorAll('[data-first-session-action]').forEach((button) => button.addEventListener('click', () => {
+    queueFirstSessionGuideUpdate({ hintId:FIRST_SESSION_HINT_IDS.nextSteps });
+    if (button.dataset.firstSessionAction === 'training') return startBotMatch('TRAINING');
+    if (button.dataset.firstSessionAction === 'first-day') return openFirstDayDeck();
+    if (button.dataset.firstSessionAction === 'deckbuilder') return enterAlphaDeckbuilder();
+    renderLobby();
+  }));
   document.querySelector('#openPlayerFile')?.addEventListener('click',()=>enterPlayerFile());
   document.querySelector('#openPersonnel')?.addEventListener('click',()=>enterCosmeticSurface('PERSONNEL'));
   document.querySelector('#openStore')?.addEventListener('click',()=>enterCosmeticSurface('SHOP'));
@@ -8405,6 +8563,7 @@ async function boot() {
     state.economyConfig = economy.economy;
     state.matchSettings = matchSettings.settings;
     await ensureServerProfile();
+    queueFirstSessionGuideUpdate({ eventName:'account_registered' });
     if (location.pathname === '/ops') {
       state.mode='OPS';
       await refreshOperations({ renderAfter:false });

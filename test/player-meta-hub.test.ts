@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
+import { createAlphaMetaProfile, createPlayerMetaProfile, updateFirstSessionGuide } from "../src/economy.js";
 import { PlayerProfileService, type PlayerProfileStoreSnapshot } from "../src/profile.js";
 import { RoomService } from "../src/room.js";
 
@@ -190,4 +191,33 @@ test("Ranked season identifiers use localized display labels and mobile cards ca
   assert.match(stylesSource, /\.player-file-name h1.*overflow-wrap:anywhere/);
 });
 
-console.log(`${passed}/10 player meta hub tests passed.`);
+test("First-session guide is fresh-account eligible, idempotent and legacy-safe", () => {
+  const fresh = createPlayerMetaProfile();
+  assert.equal(fresh.firstSessionGuide?.eligible, true);
+  const marked = updateFirstSessionGuide(fresh, { hintId:'alpha_access_intro_v1', goalId:'training_completed', eventName:'training_completed' }, 100);
+  const repeated = updateFirstSessionGuide(marked, { hintId:'alpha_access_intro_v1', goalId:'training_completed', eventName:'training_completed' }, 200);
+  assert.equal(repeated.firstSessionGuide?.hints.alpha_access_intro_v1, 100);
+  assert.equal(repeated.firstSessionGuide?.goals.training_completed, 100);
+  assert.deepEqual(repeated.firstSessionGuide?.events, [{ name:'training_completed', at:100 }]);
+  assert.equal(createAlphaMetaProfile().firstSessionGuide, null);
+});
+
+test("First-session guidance uses account-backed markers and stable funnel events", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  const serverSource = readFileSync("server/server.mjs", "utf8");
+  const enSource = readFileSync("public/locales/en.js", "utf8");
+  const deSource = readFileSync("public/locales/de.js", "utf8");
+  assert.match(appSource, /post_tutorial_next_steps_v1/);
+  assert.match(appSource, /first_day_deck_intro_v1/);
+  assert.match(appSource, /first_day_deck_opened/);
+  assert.match(appSource, /starter_booster_8_opened/);
+  assert.match(appSource, /training_started/);
+  assert.match(appSource, /pvp_started/);
+  assert.match(serverSource, /\/api\/profiles\/me\/first-session-guide/);
+  assert.match(enSource, /Your first day is complete\./);
+  assert.match(deSource, /Dein erster Arbeitstag ist geschafft\./);
+  assert.match(enSource, /Alpha Access lets you test all current Alpha cards/);
+  assert.match(deSource, /Mit dem Alpha-Zugang kannst du alle aktuellen Alpha-Karten testen/);
+});
+
+console.log(`${passed}/12 player meta hub tests passed.`);

@@ -10,6 +10,7 @@ import { discoverMigrations, migrationStatus } from "../server/storage/migration
 import { parseOfficeCardGameDatabaseUrl } from "../server/storage/database-url.mjs";
 import { grantInitialOperationsRole } from "./account-role.mjs";
 import { runMigrations } from "./db-migrate.mjs";
+import { updateFirstSessionGuide } from "../dist/src/economy.js";
 
 const databaseUrl = String(process.env.OCG_TEST_DATABASE_URL ?? "");
 if (!databaseUrl) throw new Error("OCG_TEST_DATABASE_URL is required; no PostgreSQL integration test was run");
@@ -28,7 +29,7 @@ function profileFactory(id) {
   const now = Date.now();
   return {
     playerId:id, profileId:id, displayName:"Employee TEST",
-    meta:{ profileVersion:2, balances:{ OFFICE_CREDITS:100, SHREDDER_SCRAPS:0 }, ownedCards:{ "CS-001":3 }, ownedCardVariants:{}, ownedPacks:{}, collectionMode:"OWNED_COPIES", claimedRewardRooms:[], rewardGrants:[], achievements:{}, progression:{ level:1, xp:0, matchesCompleted:0, boostersOpened:0, cardsScrapped:0, cardsCrafted:0 }, cosmetics:{ owned:[], loadout:{ boardSkinId:"COS-BOARD-001", avatarId:"COS-AVA-001", avatarFrameId:"COS-FRAME-006", avatarDecorationId:null, cardBackId:"COS-BACK-001", badgeId:null, titleId:null } } },
+    meta:{ profileVersion:2, balances:{ OFFICE_CREDITS:100, SHREDDER_SCRAPS:0 }, ownedCards:{ "CS-001":3 }, ownedCardVariants:{}, ownedPacks:{}, collectionMode:"OWNED_COPIES", claimedRewardRooms:[], rewardGrants:[], achievements:{}, progression:{ level:1, xp:0, matchesCompleted:0, boostersOpened:0, cardsScrapped:0, cardsCrafted:0 }, cosmetics:{ owned:[], loadout:{ boardSkinId:"COS-BOARD-001", avatarId:"COS-AVA-001", avatarFrameId:"COS-FRAME-006", avatarDecorationId:null, cardBackId:"COS-BACK-001", badgeId:null, titleId:null } }, firstSessionGuide:{ version:1, eligible:true, hints:{}, goals:{}, events:[] } },
     stats:{ matchesPlayed:0 }, ranked:{ status:"PLACEMENT", tierId:"BRONZE", rating:1000 }, matchHistory:[], decks:[], selectedDeckId:null, createdAt:now, updatedAt:now
   };
 }
@@ -43,7 +44,7 @@ try {
   const repeatedMigration = await runMigrations({ databaseUrl, testDatabase:true });
   assert.equal(repeatedMigration.applied, 0);
 
-  const service = await new PostgresAccountService({ databaseUrl, testDatabase:true, migrationDir, profileFactory, preserveMutationError:(error) => ["INSUFFICIENT_FUNDS","DECK_CONFLICT"].includes(error?.message) }).initialize();
+  const service = await new PostgresAccountService({ databaseUrl, testDatabase:true, migrationDir, profileFactory, firstSessionGuideUpdater:(meta, update, now) => updateFirstSessionGuide(meta, update, now), preserveMutationError:(error) => ["INSUFFICIENT_FUNDS","DECK_CONFLICT"].includes(error?.message) }).initialize();
   try {
     assert.equal((await service.checkReadiness()).ok, true);
     await assert.rejects(() => service.register("invalid", "valid-password-1"), (error) => error.code === "EMAIL_INVALID");
@@ -116,6 +117,17 @@ try {
     const xpBefore = (await service.session(first.sessionToken)).profile.meta.progression.xp;
     await Promise.all([increment(), increment()]);
     assert.equal((await service.session(first.sessionToken)).profile.meta.progression.xp, xpBefore + 2);
+
+    await Promise.all([
+      service.mutateFirstSessionGuide(first.sessionToken, { goalId:"tutorial_completed" }),
+      service.mutateFirstSessionGuide(first.sessionToken, { hintId:"alpha_access_intro_v1" }),
+      service.mutateFirstSessionGuide(first.sessionToken, { eventName:"pvp_attempted" }),
+      service.mutateFirstSessionGuide(first.sessionToken, { eventName:"pvp_attempted", goalId:"tutorial_completed", hintId:"alpha_access_intro_v1" })
+    ]);
+    const concurrentGuide = (await service.session(first.sessionToken)).profile.meta.firstSessionGuide;
+    assert.ok(concurrentGuide.goals.tutorial_completed);
+    assert.ok(concurrentGuide.hints.alpha_access_intro_v1);
+    assert.equal(concurrentGuide.events.filter((event) => event.name === "pvp_attempted").length, 1);
 
     const staleDeckSave = () => service.mutateProfile(first.sessionToken, (profile) => {
       const deck = profile.decks.find((item) => item.id === "deck-1");
@@ -398,7 +410,7 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-assert.equal(allowedOps.system.version, "7.69.57");
+assert.equal(allowedOps.system.version, "7.69.58");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");
