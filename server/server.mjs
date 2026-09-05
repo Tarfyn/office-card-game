@@ -192,7 +192,7 @@ const PRESERVED_PROFILE_MUTATION_ERRORS = new Set([
   "COSMETIC_NOT_OWNED", "COSMETIC_WRONG_SLOT", "COSMETIC_SLOT_INVALID", "COSMETIC_REQUIRED",
   "DECK_UNKNOWN_CARD", "DECK_UNKNOWN_VARIANT", "DECK_MALFORMED", "DECK_COPY_LIMIT", "DECK_NOT_FOUND", "DECK_NOT_VALID", "DECK_NOT_OWNED", "DECK_CONFLICT",
   "CARD_VARIANT_INVALID", "COLLECTION_FLOOR", "DECKS_AFFECTED_BY_SCRAP", "INSUFFICIENT_FUNDS", "PROFILE_MISMATCH",
-  "PLAYER_NOT_FOUND", "RANKED_SETTLEMENT_INCONSISTENT", "STARTER_DEPARTMENT_INVALID", "STARTER_GRANT_EMPTY_POOL", "STARTER_ONBOARDING_COMPLETE", "STARTER_ONBOARDING_IN_PROGRESS", "STARTER_ONBOARDING_INVALID_STEP", "STARTER_ONBOARDING_NOT_STARTED"
+  "PLAYER_NOT_FOUND", "RANKED_SETTLEMENT_INCONSISTENT", "STARTER_AVATAR_INVALID", "STARTER_AVATAR_REQUIRED", "STARTER_AVATAR_ALREADY_CHOSEN", "STARTER_AVATAR_CHOICE_UNAVAILABLE", "STARTER_DEPARTMENT_INVALID", "STARTER_GRANT_EMPTY_POOL", "STARTER_ONBOARDING_COMPLETE", "STARTER_ONBOARDING_IN_PROGRESS", "STARTER_ONBOARDING_INVALID_STEP", "STARTER_ONBOARDING_NOT_STARTED"
 ]);
 // Once POSTGRES is explicitly enabled, legacy player JSON is archive material.
 // Guest Alpha profiles remain available in memory and may be re-seeded from the
@@ -669,7 +669,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.58",
+    version: "7.69.59",
     releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -703,7 +703,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.58", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.59", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -756,7 +756,7 @@ function errorResponse(res, error) {
   }
   const code = error instanceof Error ? error.message : "";
   if (["INVALID_PROFILE_TOKEN", "PROFILE_REQUIRED"].includes(code)) return json(res, 401, { error:{ code, message: code === "PROFILE_REQUIRED" ? "A playtest profile is required." : "Profile token is invalid or expired." } });
-  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_UNKNOWN_VARIANT","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","CARD_VARIANT_INVALID","COLLECTION_FLOOR","INSUFFICIENT_FUNDS","STARTER_DEPARTMENT_INVALID","STARTER_GRANT_EMPTY_POOL","STARTER_ONBOARDING_COMPLETE","STARTER_ONBOARDING_IN_PROGRESS","STARTER_ONBOARDING_INVALID_STEP","STARTER_ONBOARDING_NOT_STARTED"].includes(code)) return json(res, 400, { error:{ code, message:code } });
+  if (["COSMETIC_NOT_FOUND","COSMETIC_NOT_IN_SHOP","COSMETIC_ALREADY_OWNED","COSMETIC_INSUFFICIENT_CREDITS","COSMETIC_NOT_OWNED","COSMETIC_WRONG_SLOT","COSMETIC_SLOT_INVALID","COSMETIC_REQUIRED","DECK_UNKNOWN_CARD","DECK_UNKNOWN_VARIANT","DECK_MALFORMED","DECK_COPY_LIMIT","DECK_NOT_FOUND","DECK_NOT_VALID","DECK_NOT_OWNED","CARD_VARIANT_INVALID","COLLECTION_FLOOR","INSUFFICIENT_FUNDS","STARTER_AVATAR_INVALID","STARTER_AVATAR_REQUIRED","STARTER_AVATAR_ALREADY_CHOSEN","STARTER_AVATAR_CHOICE_UNAVAILABLE","STARTER_DEPARTMENT_INVALID","STARTER_GRANT_EMPTY_POOL","STARTER_ONBOARDING_COMPLETE","STARTER_ONBOARDING_IN_PROGRESS","STARTER_ONBOARDING_INVALID_STEP","STARTER_ONBOARDING_NOT_STARTED"].includes(code)) return json(res, 400, { error:{ code, message:code } });
   if (["DECK_CONFLICT","DECKS_AFFECTED_BY_SCRAP","RANKED_SETTLEMENT_INCONSISTENT"].includes(code)) return json(res, 409, { error:{ code, message:code } });
   if (code === "PROFILE_MISMATCH") return json(res, 403, { error:{ code, message:"This room seat belongs to a different playtest profile." } });
   if (code === "MATCHMAKING_TICKET_NOT_FOUND") return json(res, 404, { error:{ code, message:"Matchmaking ticket not found." } });
@@ -928,11 +928,11 @@ const server = createServer(async (req, res) => {
     validateAuthenticatedMutation(req, path);
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.58", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.59", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.58", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.59", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -988,6 +988,11 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && path === "/api/presets") return json(res, 200, { presets: rooms.listPresets() });
     if (req.method === "GET" && path === "/api/starter-access") return json(res, 200, { departments:availableStarterDepartments().map(({ id, displayNameKey, playstyleKey }) => ({ id, displayNameKey, playstyleKey })) });
+    if (req.method === "POST" && path === "/api/onboarding/avatar") {
+      const body = await readJson(req);
+      const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => ({ profile:service.selectStarterAvatar(token, String(body?.avatarId ?? "")) }));
+      return json(res, 200, { ...result, storage:accountService && sessionTokenFromRequest(req) ? "POSTGRES" : profiles.playerStorageLabel });
+    }
     if (req.method === "POST" && path === "/api/onboarding/department") {
       const body = await readJson(req);
       const result = await mutateProfileForRequest(req, body?.profileToken, (service, token) => ({ profile:service.completeStarterOnboarding(token, String(body?.department ?? "")) }));
@@ -1615,7 +1620,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.58 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.59 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

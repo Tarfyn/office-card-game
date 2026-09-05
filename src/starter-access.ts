@@ -4,6 +4,14 @@ import type { CardDefinition, CardType, DeckEntry, Department, DeckFormat } from
 
 export type StarterDepartment = Exclude<Department, "NEUTRAL">;
 
+export const STARTER_AVATAR_IDS = Object.freeze([COSMETIC_IDS.internFemaleAvatar, COSMETIC_IDS.internMaleAvatar] as const);
+export type StarterAvatarId = typeof STARTER_AVATAR_IDS[number];
+
+export function normalizeStarterAvatar(value: unknown): StarterAvatarId | null {
+  const id = String(value ?? "").trim();
+  return (STARTER_AVATAR_IDS as readonly string[]).includes(id) ? id as StarterAvatarId : null;
+}
+
 export interface StarterDepartmentConfig {
   id: string;
   testOnly?: boolean;
@@ -227,13 +235,13 @@ export function buildFirstDayDeck(profile: PlayerMetaProfile, cards: CardDefinit
 
 export function createPendingAccountMeta(startingOfficeCredits = 0, now = Date.now()): PlayerMetaProfile {
   const meta = createPlayerMetaProfile([], startingOfficeCredits, now);
-  const withStarterCosmetic = applyRewardGrant(meta, {
-    source: "starter",
-    sourceRef: "starter:cosmetics:v2",
-    cards: [], officeCredits: 0, scrap: 0,
-    cosmetics: [COSMETIC_IDS.internFemaleAvatar], packs: [], grantedAt: now
-  }, now).profile;
+  // The avatar is a deliberate choice, so only the fixed board/card-back
+  // cosmetics are owned before confirmation. The default Intern loadout is a
+  // non-owned rendering fallback and is never a grant.
+  const withStarterCosmetic = structuredClone(meta);
+  withStarterCosmetic.cosmetics.owned = withStarterCosmetic.cosmetics.owned.filter((grant) => grant.cosmeticId !== COSMETIC_IDS.internFemaleAvatar && grant.cosmeticId !== COSMETIC_IDS.internMaleAvatar);
+  withStarterCosmetic.cosmetics.loadout.avatarId = COSMETIC_IDS.internFemaleAvatar;
   withStarterCosmetic.alphaPlaytestAccess = { enabled:true, source:"alpha_playtest", grantedAt:now };
-  withStarterCosmetic.starterOnboarding = { version:1, status:"PENDING", selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 };
+  withStarterCosmetic.starterOnboarding = { version:1, status:"PENDING", avatarChoiceVersion:1, selectedAvatarId:null, selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 };
   return withStarterCosmetic;
 }

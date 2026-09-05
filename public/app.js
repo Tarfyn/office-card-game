@@ -6530,6 +6530,10 @@ function starterOnboardingPending() {
 
 function starterOnboardingErrorMessage(error) {
   const messages = {
+    STARTER_AVATAR_INVALID: 'starterAvatar.avatarInvalid',
+    STARTER_AVATAR_REQUIRED: 'starterAvatar.avatarRequired',
+    STARTER_AVATAR_ALREADY_CHOSEN: 'starterAvatar.avatarAlreadyChosen',
+    STARTER_AVATAR_CHOICE_UNAVAILABLE: 'starterAvatar.avatarUnavailable',
     STARTER_DEPARTMENT_INVALID: 'starterAccess.departmentInvalid',
     STARTER_ONBOARDING_COMPLETE: 'starterAccess.alreadyComplete',
     STARTER_ONBOARDING_IN_PROGRESS: 'starterAccess.inProgress',
@@ -6543,7 +6547,7 @@ async function reconcileStarterOnboardingAfterError() {
   try {
     const profile = await refreshServerProfile();
     const status = profile?.meta?.starterOnboarding?.status;
-    if (status === 'IN_PROGRESS' || status === 'COMPLETE') {
+    if (status === 'IN_PROGRESS' || status === 'COMPLETE' || profile?.meta?.starterOnboarding?.selectedAvatarId) {
       state.starterOnboardingMessage = null;
       return true;
     }
@@ -6572,6 +6576,18 @@ function renderStarterOnboarding() {
       </section>
     </div>`;
   }
+  if (onboarding.avatarChoiceVersion === 1 && !onboarding.selectedAvatarId) {
+    const choices = [
+      { id:'COS-AVA-007', asset:'/cosmetics/avatars/intern-female.webp' },
+      { id:'COS-AVA-008', asset:'/cosmetics/avatars/intern-male.webp' }
+    ];
+    return `<div class="starter-access-backdrop" role="dialog" aria-modal="true" aria-labelledby="starterAccessTitle">
+      <section class="starter-access-dialog starter-avatar-dialog"><span class="starter-access-kicker">${esc(t('starterAccess.kicker'))}</span><h2 id="starterAccessTitle">${esc(t('starterAvatar.title'))}</h2><p>${esc(t('starterAvatar.description'))}</p>
+        <div class="starter-avatar-options" role="radiogroup" aria-label="${esc(t('starterAvatar.title'))}">${choices.map((choice) => `<button type="button" class="starter-avatar-choice" role="radio" aria-checked="false" data-starter-avatar="${choice.id}" ${state.starterOnboardingBusy?'disabled':''}><span class="starter-avatar-art"><img src="${choice.asset}" alt="${esc(t('cosmetics.internName'))}" /></span><strong>${esc(t('cosmetics.internName'))}</strong></button>`).join('')}</div>
+        ${state.starterOnboardingMessage ? `<p class="starter-access-error" role="alert">${esc(state.starterOnboardingMessage)}</p>` : ''}
+      </section>
+    </div>`;
+  }
   return `<div class="starter-access-backdrop" role="dialog" aria-modal="true" aria-labelledby="starterAccessTitle">
     <section class="starter-access-dialog"><span class="starter-access-kicker">${esc(t('starterAccess.kicker'))}</span><h2 id="starterAccessTitle">${esc(t('starterAccess.title'))}</h2><p>${esc(t('starterAccess.description'))}</p>
       <div class="starter-access-departments">${state.starterDepartments.map((department) => `<button type="button" data-starter-department="${esc(department.id)}" ${state.starterOnboardingBusy?'disabled':''}><strong>${esc(t(department.displayNameKey))}</strong><small>${esc(t(department.playstyleKey))}</small></button>`).join('')}</div>
@@ -6579,6 +6595,24 @@ function renderStarterOnboarding() {
       <small class="starter-access-footnote">${esc(t('starterAccess.footnote'))}</small>
     </section>
   </div>`;
+}
+
+async function selectStarterAvatar(avatarId) {
+  if (state.starterOnboardingBusy || !starterOnboardingPending()) return;
+  state.starterOnboardingBusy = true;
+  state.starterOnboardingMessage = null;
+  render();
+  try {
+    const result = await api('/api/onboarding/avatar', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ profileToken:state.profileToken, avatarId }) });
+    applyServerProfile(result.profile);
+    queueFirstSessionGuideUpdate({ eventName:'starter_avatar_selected' });
+  } catch (error) {
+    const reconciled = await reconcileStarterOnboardingAfterError();
+    if (!reconciled) state.starterOnboardingMessage = starterOnboardingErrorMessage(error);
+  } finally {
+    state.starterOnboardingBusy = false;
+    render();
+  }
 }
 
 async function completeStarterOnboarding(department) {
@@ -6626,6 +6660,7 @@ async function advanceStarterBooster(packNumber) {
 }
 
 function bindStarterOnboarding() {
+  document.querySelectorAll('[data-starter-avatar]').forEach((button) => button.addEventListener('click', () => selectStarterAvatar(button.dataset.starterAvatar)));
   document.querySelectorAll('[data-starter-department]').forEach((button) => button.addEventListener('click', () => completeStarterOnboarding(button.dataset.starterDepartment)));
   document.querySelectorAll('[data-starter-booster]').forEach((button) => button.addEventListener('click', () => advanceStarterBooster(button.dataset.starterBooster)));
 }

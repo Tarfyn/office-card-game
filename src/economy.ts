@@ -14,6 +14,9 @@ export interface AlphaPlaytestAccess {
 export interface StarterOnboardingState {
   version: 1;
   status: "PENDING" | "IN_PROGRESS" | "COMPLETE";
+  /** New accounts explicitly opt into the v1 starter-avatar choice. */
+  avatarChoiceVersion?: 1;
+  selectedAvatarId?: string | null;
   selectedDepartment: string | null;
   completedAt: number | null;
   firstDayDeckId: string | null;
@@ -61,6 +64,7 @@ export const FIRST_SESSION_GOAL_IDS = [
 export type FirstSessionGoalId = typeof FIRST_SESSION_GOAL_IDS[number];
 export const FIRST_SESSION_EVENT_NAMES = [
   "account_registered",
+  "starter_avatar_selected",
   "starter_department_selected",
   "starter_booster_1_opened",
   "starter_booster_8_opened",
@@ -264,6 +268,7 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
   next.starterOnboarding = {
     version:1,
     status: onboarding?.status === "PENDING" || onboarding?.status === "IN_PROGRESS" || onboarding?.status === "COMPLETE" ? onboarding.status : "COMPLETE",
+    ...(onboarding?.avatarChoiceVersion === 1 ? { avatarChoiceVersion:1 as const, selectedAvatarId:onboarding.selectedAvatarId == null ? null : String(onboarding.selectedAvatarId) } : {}),
     selectedDepartment: onboarding?.selectedDepartment == null ? null : String(onboarding.selectedDepartment),
     completedAt: Number(onboarding?.completedAt) > 0 ? Number(onboarding.completedAt) : null,
     firstDayDeckId: onboarding?.firstDayDeckId == null ? null : String(onboarding.firstDayDeckId),

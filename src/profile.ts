@@ -6,7 +6,7 @@ import { normalizeProgressionConfig, processProgressionEvents, rewardGrantFromRe
 import { assertDeckInput, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
 import { createEmptyPlayerStats, DEFAULT_MATCH_HISTORY_LIMIT, normalizeMatchHistoryRecord, normalizePlayerStats, type MatchHistoryInput, type MatchHistoryRecord, type PlayerStats } from "./match-history.js";
 import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
-import { buildFirstDayDeck, buildStarterPackagePlan, normalizeStarterDepartment } from "./starter-access.js";
+import { buildFirstDayDeck, buildStarterPackagePlan, normalizeStarterAvatar, normalizeStarterDepartment } from "./starter-access.js";
 
 export type MatchHistoryOutcome = import("./match-history.js").MatchHistoryOutcome;
 export type PlayerMatchHistoryEntry = MatchHistoryRecord;
@@ -389,12 +389,37 @@ export class PlayerProfileService {
    * Starts the one-time account starter flow in the same profile mutation as
    * its idempotent grants. Pack presentation is advanced separately so a
    * reload cannot reroll or skip an unresolved server result.
-   */
+  */
+  selectStarterAvatar(profileToken: string, avatarId: string): ServerPlayerProfile {
+    const profile = this.requireByToken(profileToken);
+    const selected = normalizeStarterAvatar(avatarId);
+    if (!selected) throw new Error("STARTER_AVATAR_INVALID");
+    const current = profile.meta.starterOnboarding;
+    if (current?.avatarChoiceVersion !== 1) throw new Error("STARTER_AVATAR_CHOICE_UNAVAILABLE");
+    if (current.status !== "PENDING") throw new Error("STARTER_AVATAR_CHOICE_UNAVAILABLE");
+    if (current.selectedAvatarId) {
+      if (current.selectedAvatarId === selected) return structuredClone(profile);
+      throw new Error("STARTER_AVATAR_ALREADY_CHOSEN");
+    }
+    const sourceRef = `starter:v1:avatar:${selected}`;
+    const meta = applyRewardGrant(profile.meta, {
+      source:"starter", sourceRef, cards:[], officeCredits:0, scrap:0,
+      cosmetics:[selected], packs:[], grantedAt:this.nowFactory()
+    }, this.nowFactory()).profile;
+    meta.cosmetics.loadout.avatarId = selected;
+    meta.starterOnboarding = { ...meta.starterOnboarding, avatarChoiceVersion:1, selectedAvatarId:selected };
+    profile.meta = meta;
+    profile.updatedAt = this.nowFactory();
+    this.persist();
+    return structuredClone(profile);
+  }
+
   completeStarterOnboarding(profileToken: string, department: string): ServerPlayerProfile {
     const profile = this.requireByToken(profileToken);
     const config = normalizeStarterDepartment(department);
     if (!config) throw new Error("STARTER_DEPARTMENT_INVALID");
     const current = profile.meta.starterOnboarding;
+    if (current?.avatarChoiceVersion === 1 && !current.selectedAvatarId) throw new Error("STARTER_AVATAR_REQUIRED");
     if (current?.status === "COMPLETE") {
       if (current.selectedDepartment === config.id && current.firstDayDeckId && profile.decks.some((deck) => deck.id === current.firstDayDeckId)) return structuredClone(profile);
       throw new Error("STARTER_ONBOARDING_COMPLETE");
@@ -406,7 +431,7 @@ export class PlayerProfileService {
     const plan = buildStarterPackagePlan(config.id, Object.values(this.deckDefinitions), this.deckFormat, profile.playerId, this.nowFactory());
     let meta = normalizePlayerMetaProfile(profile.meta, this.nowFactory());
     for (const starterGrant of plan.grants) meta = applyRewardGrant(meta, starterGrant, this.nowFactory()).profile;
-    meta.starterOnboarding = { version:1, status:"IN_PROGRESS", selectedDepartment:config.id, completedAt:null, firstDayDeckId:null, boosterCount:plan.grants.filter((grant) => grant.sourceRef?.includes(":booster:")).length, boosterPresentationCount:0 };
+    meta.starterOnboarding = { version:1, status:"IN_PROGRESS", ...(current?.avatarChoiceVersion === 1 ? { avatarChoiceVersion:1, selectedAvatarId:current.selectedAvatarId ?? null } : {}), selectedDepartment:config.id, completedAt:null, firstDayDeckId:null, boosterCount:plan.grants.filter((grant) => grant.sourceRef?.includes(":booster:")).length, boosterPresentationCount:0 };
     profile.meta = meta;
     profile.updatedAt = this.nowFactory();
     this.persist();

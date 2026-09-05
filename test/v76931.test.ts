@@ -46,6 +46,16 @@ test("the Intern is the sole starter Avatar while secondary avatars remain inven
   for (const id of frameIds.slice(1)) assert.equal(shop.has(id), false);
 });
 
+test("fresh onboarding exposes a compact, non-gendered Intern choice", () => {
+  assert.match(app, /data-starter-avatar/);
+  assert.match(app, /intern-female\.webp/);
+  assert.match(app, /intern-male\.webp/);
+  assert.match(app, /starterAvatar\.title/);
+  assert.doesNotMatch(app, /Male Intern|Female Intern/);
+  assert.match(en, /starterAvatar: \{ title: "Choose your Intern"/);
+  assert.match(de, /starterAvatar: \{ title: "Wähle deinen Intern"/);
+});
+
 test("ranked frames remain reward-only until an explicit ranked grant", () => {
   const fresh = normalizePlayerCosmetics(undefined, 1);
   assert.equal(cosmeticIsOwned(fresh, "COS-AVA-007"), true);

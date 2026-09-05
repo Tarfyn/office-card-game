@@ -2,12 +2,12 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { alphaDefinitions } from "../src/cards.js";
-import { applyRewardGrant, collectionPlayableCapacity, createPlayerMetaProfile, starterOnboardingRequired } from "../src/economy.js";
+import { applyRewardGrant, collectionPlayableCapacity, createPlayerMetaProfile, starterOnboardingRequired, updateFirstSessionGuide } from "../src/economy.js";
 import { cosmeticIsOwned, normalizePlayerCosmetics } from "../src/cosmetics.js";
 import { PlayerProfileService } from "../src/profile.js";
 import { ALPHA_FORMAT } from "../src/formats.js";
 import { alphaDeckPresets } from "../src/decks.js";
-import { buildStarterPackagePlan, createPendingAccountMeta, isTrainingLoanerDeck, normalizeStarterDepartment, STARTER_BOOSTER_CONFIG, STARTER_DEPARTMENT_CONFIG, trainingLoanerAllowed, trainingLoanerIds } from "../src/starter-access.js";
+import { buildStarterPackagePlan, createPendingAccountMeta, isTrainingLoanerDeck, normalizeStarterAvatar, normalizeStarterDepartment, STARTER_AVATAR_IDS, STARTER_BOOSTER_CONFIG, STARTER_DEPARTMENT_CONFIG, trainingLoanerAllowed, trainingLoanerIds } from "../src/starter-access.js";
 import { validatePlayerDeck } from "../src/player-decks.js";
 
 const definitions = Object.values(alphaDefinitions);
@@ -112,10 +112,13 @@ assert.equal(starterOnboardingRequired({ meta:{ profileVersion:2, ownedCards:{} 
 assert.equal(pendingMeta.alphaPlaytestAccess?.enabled, true);
 assert.equal(Object.keys(pendingMeta.ownedCards).length, 0, "Alpha access must not mint owned cards");
 assert.equal(pendingMeta.starterOnboarding.status, "PENDING");
+assert.equal(pendingMeta.starterOnboarding.avatarChoiceVersion, 1);
+assert.equal(pendingMeta.starterOnboarding.selectedAvatarId, null);
 assert.equal(pendingMeta.cosmetics.loadout.avatarId, "COS-AVA-007");
 assert.equal(pendingMeta.cosmetics.loadout.avatarFrameId, null);
-assert.deepEqual(pendingMeta.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-AVA-007", "COS-BACK-001"]);
-assert.equal(pendingMeta.rewardGrants.filter((grant) => grant.sourceRef === "starter:cosmetics:v2").length, 1, "starter avatar grant is idempotently sourced");
+assert.deepEqual(pendingMeta.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-BACK-001"]);
+assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-AVA-007"), false, "pre-selection fallback must not be ownership");
+assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-AVA-008"), false, "pre-selection must not grant the other Intern");
 assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-AVA-001"), false);
 assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-AVA-002"), false);
 assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-FRAME-002"), false, "Blue Silver must not be a fresh-account starter cosmetic");
@@ -140,6 +143,23 @@ const service = new PlayerProfileService({
   alphaPlaytest:true
 });
 const created = service.create(createPendingAccountMeta());
+assert.equal(normalizeStarterAvatar(STARTER_AVATAR_IDS[0]), STARTER_AVATAR_IDS[0]);
+assert.equal(normalizeStarterAvatar("intern-female"), null, "internal slugs are not accepted as client choices");
+assert.throws(() => service.completeStarterOnboarding(created.profileToken, "IT"), /STARTER_AVATAR_REQUIRED/);
+const selected007 = service.selectStarterAvatar(created.profileToken, "COS-AVA-007");
+assert.equal(selected007.meta.starterOnboarding.selectedAvatarId, "COS-AVA-007");
+assert.equal(selected007.meta.cosmetics.loadout.avatarId, "COS-AVA-007");
+assert.equal(cosmeticIsOwned(selected007.meta.cosmetics, "COS-AVA-007"), true);
+assert.equal(cosmeticIsOwned(selected007.meta.cosmetics, "COS-AVA-008"), false);
+assert.equal(selected007.meta.cosmetics.loadout.avatarFrameId, null);
+const repeated007 = service.selectStarterAvatar(created.profileToken, "COS-AVA-007");
+assert.equal(repeated007.meta.cosmetics.owned.filter((grant) => grant.cosmeticId === "COS-AVA-007").length, 1);
+assert.equal(repeated007.meta.rewardGrants.filter((grant) => grant.sourceRef === "starter:v1:avatar:COS-AVA-007").length, 1);
+const avatarEventOnce = updateFirstSessionGuide(selected007.meta, { eventName:"starter_avatar_selected" }, 100);
+const avatarEventRepeated = updateFirstSessionGuide(avatarEventOnce, { eventName:"starter_avatar_selected" }, 101);
+assert.equal(avatarEventOnce.firstSessionGuide?.events.filter((event) => event.name === "starter_avatar_selected").length, 1);
+assert.equal(avatarEventRepeated.firstSessionGuide?.events.filter((event) => event.name === "starter_avatar_selected").length, 1);
+assert.throws(() => service.selectStarterAvatar(created.profileToken, "COS-AVA-008"), /STARTER_AVATAR_ALREADY_CHOSEN/);
 const started = service.completeStarterOnboarding(created.profileToken, "IT");
 assert.equal(started.meta.starterOnboarding.status, "IN_PROGRESS");
 assert.equal(started.meta.starterOnboarding.selectedDepartment, "IT");
@@ -170,5 +190,30 @@ const repeated = service.advanceStarterBooster(created.profileToken, 8);
 assert.equal(repeated.profile.decks.length, 1, "final booster presentation must be idempotent");
 assert.deepEqual(repeated.profile.meta.ownedCards, completed.meta.ownedCards);
 assert.throws(() => service.completeStarterOnboarding(created.profileToken, "OFFICE"), /STARTER_ONBOARDING_COMPLETE/);
+
+const alternateService = new PlayerProfileService({
+  playerIdFactory:() => "alternate-player",
+  tokenFactory:() => "alternate-token",
+  nowFactory:() => 100,
+  deckDefinitions:alphaDefinitions,
+  deckFormat:ALPHA_FORMAT,
+  alphaPlaytest:true
+});
+const alternate = alternateService.create(createPendingAccountMeta());
+const selected008 = alternateService.selectStarterAvatar(alternate.profileToken, "COS-AVA-008");
+assert.equal(selected008.meta.cosmetics.loadout.avatarId, "COS-AVA-008");
+assert.equal(cosmeticIsOwned(selected008.meta.cosmetics, "COS-AVA-008"), true);
+assert.equal(cosmeticIsOwned(selected008.meta.cosmetics, "COS-AVA-007"), false);
+const alternateDepartment = alternateService.completeStarterOnboarding(alternate.profileToken, "IT");
+assert.equal(alternateDepartment.meta.starterOnboarding.selectedAvatarId, "COS-AVA-008");
+
+const legacyPending = structuredClone(pendingMeta);
+delete (legacyPending.starterOnboarding as { avatarChoiceVersion?: number; selectedAvatarId?: string | null }).avatarChoiceVersion;
+delete (legacyPending.starterOnboarding as { avatarChoiceVersion?: number; selectedAvatarId?: string | null }).selectedAvatarId;
+const legacyService = new PlayerProfileService({ playerIdFactory:() => "legacy-player", tokenFactory:() => "legacy-token", nowFactory:() => 100, deckDefinitions:alphaDefinitions, deckFormat:ALPHA_FORMAT, alphaPlaytest:true });
+const legacy = legacyService.create(legacyPending);
+assert.throws(() => legacyService.selectStarterAvatar(legacy.profileToken, "COS-AVA-008"), /STARTER_AVATAR_CHOICE_UNAVAILABLE/);
+const legacyDepartment = legacyService.completeStarterOnboarding(legacy.profileToken, "IT");
+assert.equal(legacyDepartment.meta.starterOnboarding.selectedDepartment, "IT");
 
 console.log("Starter grant, Alpha access and Training loaner tests passed.");

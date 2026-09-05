@@ -175,7 +175,7 @@ try {
     writeFileSync(legacyCredentialsPath, legacyCredentialsSentinel);
     const child = spawn(process.execPath, [join(root, "server", "server.mjs"), `--port=${port}`, "--host=127.0.0.1", `--runtime-dir=${runtimeDir}`], {
       cwd:root,
-      env:{ ...process.env, NODE_ENV:"test", PROFILE_STORAGE_BACKEND:"POSTGRES", DATABASE_REQUIRED:"1", DATABASE_URL:databaseUrl, PUBLIC_BASE_URL:`http://127.0.0.1:${port}`, REQUIRE_HTTPS:"0", ADMIN_TOKEN:"integration-only-admin-token" },
+      env:{ ...process.env, NODE_ENV:"test", PROFILE_STORAGE_BACKEND:"POSTGRES", DATABASE_REQUIRED:"1", DATABASE_URL:databaseUrl, PUBLIC_BASE_URL:`http://127.0.0.1:${port}`, REQUIRE_HTTPS:"0", TRUST_PROXY:"1", ADMIN_TOKEN:"integration-only-admin-token" },
       stdio:["ignore", "pipe", "pipe"]
     });
     let childOutput = "";
@@ -205,9 +205,9 @@ try {
       assert.equal(readyBody.status, "READY");
       assert.equal(readyBody.database.reachable, true);
       assert.equal(readyBody.database.migrations.current, true);
-      const postAuth = (path, body, cookie = "") => fetch(`${base}${path}`, {
+      const postAuth = (path, body, cookie = "", extraHeaders = {}) => fetch(`${base}${path}`, {
         method:"POST",
-        headers:{ "content-type":"application/json", origin:base, ...(cookie ? { cookie } : {}) },
+        headers:{ "content-type":"application/json", origin:base, ...(cookie ? { cookie } : {}), ...extraHeaders },
         body:JSON.stringify(body)
       });
       const registeredHttp = await postAuth("/api/auth/register", { email:"http@example.test", password:"valid-password-http" });
@@ -221,6 +221,46 @@ try {
       assert.deepEqual(registeredHttpBody.profile.meta.ownedCards, {});
       assert.equal(registeredHttpBody.profile.meta.alphaPlaytestAccess.enabled, true);
       assert.equal(registeredHttpBody.profile.meta.starterOnboarding.status, "PENDING");
+      assert.equal(registeredHttpBody.profile.meta.starterOnboarding.avatarChoiceVersion, 1);
+      assert.equal(registeredHttpBody.profile.meta.starterOnboarding.selectedAvatarId, null);
+      const registeredOwnedCosmetics = new Set(registeredHttpBody.profile.meta.cosmetics.owned.map((grant) => grant.cosmeticId));
+      assert.equal(registeredOwnedCosmetics.has("COS-BOARD-001"), true);
+      assert.equal(registeredOwnedCosmetics.has("COS-BACK-001"), true);
+      assert.equal(registeredOwnedCosmetics.has("COS-AVA-007"), false);
+      assert.equal(registeredOwnedCosmetics.has("COS-AVA-008"), false);
+      assert.equal(registeredHttpBody.profile.meta.cosmetics.loadout.avatarFrameId, null);
+      assert.equal(registeredHttpBody.profile.meta.cosmetics.loadout.avatarDecorationId, null);
+      assert.equal(registeredHttpBody.profile.meta.cosmetics.loadout.badgeId, null);
+      assert.equal(registeredHttpBody.profile.meta.cosmetics.loadout.titleId, null);
+      assert.equal(registeredHttpBody.profile.meta.cosmetics.loadout.avatarId, "COS-AVA-007", "pre-selection avatar is only a visual fallback");
+      const avatar007Response = await postAuth("/api/onboarding/avatar", { avatarId:"COS-AVA-007" }, registerCookie.split(";")[0]);
+      assert.equal(avatar007Response.status, 200);
+      const avatar007Body = await avatar007Response.json();
+      assert.equal(avatar007Body.profile.meta.starterOnboarding.selectedAvatarId, "COS-AVA-007");
+      assert.equal(avatar007Body.profile.meta.cosmetics.loadout.avatarId, "COS-AVA-007");
+      const avatar007OwnedCosmetics = new Set(avatar007Body.profile.meta.cosmetics.owned.map((grant) => grant.cosmeticId));
+      assert.equal(avatar007OwnedCosmetics.has("COS-AVA-007"), true);
+      assert.equal(avatar007OwnedCosmetics.has("COS-AVA-008"), false);
+      const repeatedAvatar007 = await postAuth("/api/onboarding/avatar", { avatarId:"COS-AVA-007" }, registerCookie.split(";")[0]);
+      assert.equal(repeatedAvatar007.status, 200);
+      assert.equal((await repeatedAvatar007.json()).profile.meta.rewardGrants.filter((grant) => grant.sourceRef === "starter:v1:avatar:COS-AVA-007").length, 1);
+      const rejectedAvatar008 = await postAuth("/api/onboarding/avatar", { avatarId:"COS-AVA-008" }, registerCookie.split(";")[0]);
+      assert.equal(rejectedAvatar008.status, 400);
+      assert.equal((await rejectedAvatar008.json()).error.code, "STARTER_AVATAR_ALREADY_CHOSEN");
+      const alternateRegistration = await postAuth("/api/auth/register", { email:"avatar-008@example.test", password:"valid-password-avatar" }, "", { "x-forwarded-for":"127.0.0.2" });
+      assert.equal(alternateRegistration.status, 201);
+      const alternateAvatarCookie = String(alternateRegistration.headers.get("set-cookie") ?? "").split(";")[0];
+      const avatar008Response = await postAuth("/api/onboarding/avatar", { avatarId:"COS-AVA-008" }, alternateAvatarCookie);
+      assert.equal(avatar008Response.status, 200);
+      const avatar008Body = await avatar008Response.json();
+      assert.equal(avatar008Body.profile.meta.starterOnboarding.selectedAvatarId, "COS-AVA-008");
+      assert.equal(avatar008Body.profile.meta.cosmetics.loadout.avatarId, "COS-AVA-008");
+      const avatar008OwnedCosmetics = new Set(avatar008Body.profile.meta.cosmetics.owned.map((grant) => grant.cosmeticId));
+      assert.equal(avatar008OwnedCosmetics.has("COS-AVA-008"), true);
+      assert.equal(avatar008OwnedCosmetics.has("COS-AVA-007"), false);
+      const avatar008Reload = await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:alternateAvatarCookie } })).json();
+      assert.equal(avatar008Reload.profile.meta.starterOnboarding.selectedAvatarId, "COS-AVA-008");
+      assert.equal(avatar008Reload.profile.meta.cosmetics.owned.some((grant) => grant.cosmeticId === "COS-AVA-007"), false);
       assert.equal(registeredHttpBody.profile.ranked.status, "PLACEMENT");
       assert.ok(registeredHttpBody.profile.meta.achievements);
       const currentHttp = await (await fetch(`${base}/api/auth/current`, { headers:{ cookie:registerCookie.split(";")[0] } })).json();
@@ -410,16 +450,16 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-assert.equal(allowedOps.system.version, "7.69.58");
+assert.equal(allowedOps.system.version, "7.69.59");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");
       assert.equal(allowedOps.database.reachable, true);
       assert.equal(allowedOps.database.migrations.state, "CURRENT");
       assert.ok(allowedOps.database.pool.max >= 1);
-      assert.equal(allowedOps.accounts.total, 4);
-      assert.equal(allowedOps.accounts.profiles, 4);
-      assert.ok(allowedOps.accounts.activeSessions >= 4);
+      assert.equal(allowedOps.accounts.total, 5);
+      assert.equal(allowedOps.accounts.profiles, 5);
+      assert.ok(allowedOps.accounts.activeSessions >= 5);
       assert.equal(allowedOps.cutover.marker, "SET");
       assert.equal(allowedOps.cutover.readyForCutover, "YES");
       assert.equal(allowedOps.backups.database.status, "UNAVAILABLE");
