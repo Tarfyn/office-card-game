@@ -112,6 +112,12 @@ assert.equal(starterOnboardingRequired({ meta:{ profileVersion:2, ownedCards:{} 
 assert.equal(pendingMeta.alphaPlaytestAccess?.enabled, true);
 assert.equal(Object.keys(pendingMeta.ownedCards).length, 0, "Alpha access must not mint owned cards");
 assert.equal(pendingMeta.starterOnboarding.status, "PENDING");
+assert.equal(pendingMeta.cosmetics.loadout.avatarId, "COS-AVA-007");
+assert.equal(pendingMeta.cosmetics.loadout.avatarFrameId, null);
+assert.deepEqual(pendingMeta.cosmetics.owned.map((grant) => grant.cosmeticId), ["COS-BOARD-001", "COS-AVA-007", "COS-BACK-001"]);
+assert.equal(pendingMeta.rewardGrants.filter((grant) => grant.sourceRef === "starter:cosmetics:v2").length, 1, "starter avatar grant is idempotently sourced");
+assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-AVA-001"), false);
+assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-AVA-002"), false);
 assert.equal(cosmeticIsOwned(pendingMeta.cosmetics, "COS-FRAME-002"), false, "Blue Silver must not be a fresh-account starter cosmetic");
 const legacyBlueSilver = normalizePlayerCosmetics({ owned:[{ cosmeticId:"COS-FRAME-002", acquiredAt:1, source:"starter", sourceRef:"starter:alpha:v1" }] }, 2);
 assert.equal(cosmeticIsOwned(legacyBlueSilver, "COS-FRAME-002"), true, "explicit legacy ownership remains intact");

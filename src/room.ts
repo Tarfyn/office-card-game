@@ -4,7 +4,7 @@ import { createMatch, resign, validateDeck, type MatchQaSetup } from "./engine.j
 import { ALPHA_FORMAT } from "./formats.js";
 import { defaultCosmeticLoadout, normalizeCosmeticLoadout, type CosmeticLoadout } from "./cosmetics.js";
 import { executeHostedMatchIntent, executeMatchIntent } from "./intents.js";
-import { chooseAuthoritativeBotIntent } from "./bot.js";
+import { chooseAuthoritativeBotIntent, chooseTutorialCoachIntent } from "./bot.js";
 import { projectEventsSince, projectStateForViewer } from "./projection.js";
 import {
   clearReconnectDeadline,
@@ -498,7 +498,10 @@ export class RoomService {
 
   createBotRoom(deckSelection: DeckSelection, settingsSelection: RoomSettingsSelection = {}, identity: RoomSeatIdentity = {}, botDeckSelection: DeckSelection = "it-starter", botDisplayName = "Office Coach", qaSetup?: MatchQaSetup): CreateRoomResult {
     const created = this.createRoom(deckSelection, { ...settingsSelection, bot:true, rewardEligible:false }, identity);
-    this.joinRoom(created.roomId, botDeckSelection, { displayName:botDisplayName, isBot:true }, qaSetup);
+    const tutorialSetup = settingsSelection.mode === "TUTORIAL" && !qaSetup
+      ? { fixedSeed: 76957, fixedFirstPlayerId:"P2" as const, forceOpeningDefinitionIds:["N-001", "N-002", "CS-010", "IT-005", "IT-003"], forceDrawDefinitionIds:["IT-014"], forceOpponentOpeningDefinitionIds:["N-001", "N-001"] }
+      : qaSetup;
+    this.joinRoom(created.roomId, botDeckSelection, { displayName:botDisplayName, isBot:true }, tutorialSetup);
     const room = this.getRoom(created.roomId);
     this.runBot(room);
     return { ...created, view:this.projectRoom(room, created.token, 0) };
@@ -512,8 +515,8 @@ export class RoomService {
     room.guest = { playerId: "P2", token, profileId: identity.profileId ?? null, displayName: identity.displayName ?? null, deckId: deck.id, deckName: deck.name, department: deck.department, boardSkinId: DEFAULT_BOARD_SKIN_ID, cosmeticLoadout: normalizeCosmeticLoadout(identity.cosmeticLoadout, "P2"), cards: deck.cards, isBot:Boolean(identity.isBot) };
     room.state = createMatch({
       matchId: `match-${room.id}`,
-      seed: this.seedFactory(),
-      firstPlayerId: this.firstPlayerFactory(),
+      seed: qaSetup?.fixedSeed ?? this.seedFactory(),
+      firstPlayerId: qaSetup?.fixedFirstPlayerId ?? this.firstPlayerFactory(),
       definitions: this.definitions,
       p1Deck: room.host.cards,
       p2Deck: deck.cards,
@@ -966,7 +969,9 @@ export class RoomService {
   private runBot(room: RoomRecord): void {
     if (!this.isBotRoom(room) || !room.state) return;
     for (let step = 0; step < 500 && room.state.status !== "ENDED"; step += 1) {
-      const decision = chooseAuthoritativeBotIntent(room.state, "P2");
+      const decision = room.settings.mode === "TUTORIAL"
+        ? chooseTutorialCoachIntent(room.state)
+        : chooseAuthoritativeBotIntent(room.state, "P2");
       if (!decision) break;
       const previous = room.state;
       const execution = executeHostedMatchIntent(previous, {

@@ -1,6 +1,6 @@
 {
   "name": "office-card-game-headless",
-  "version": "7.69.56",
+  "version": "7.69.57",
   "private": true,
   "type": "module",
   "scripts": {
@@ -29,7 +29,8 @@
     "test:db:docker": "node scripts/db-docker-test.mjs",
     "ops:account-role": "node scripts/account-role.mjs",
     "ops:art-audit:strict": "node scripts/artwork-audit.mjs --write --strict-missing",
-    "ops:security-audit": "npm audit"
+    "ops:security-audit": "npm audit",
+    "ops:card-content-audit": "node scripts/card-content-audit.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

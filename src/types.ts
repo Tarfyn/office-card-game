@@ -215,6 +215,8 @@ export interface CardDefinition {
   version: number;
   name: string;
   rulesText?: string;
+  /** Explicitly marks a card with no gameplay effect as intentionally vanilla. */
+  intentionalVanilla?: boolean;
   flavorText?: string;
   artId?: string;
   implementationStatus?: ImplementationStatus;
@@ -651,6 +653,8 @@ export interface GameState {
   currentTurnActivity: TurnActivity;
   previousTurnActivity: TurnActivity;
   revealPermissions: RevealPermission[];
+  /** Local deterministic tutorial setup; absent for ordinary matches. */
+  qaForcedPlayerDrawDefinitionIds?: string[];
 }
 
 export interface ClientLiveCardStatus {

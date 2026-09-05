@@ -9,6 +9,9 @@ setIntentCommit('ACCEPTED', intent, { intentId, fromVersion:match.stateVersion, 
 // Regression compatibility marker for v4.6 auth label: GUEST_LOCAL
 // Regression compatibility marker for v4.6 profile identity: profile.playerId ?? profile.profileId
 // Regression compatibility marker for v7.40 pack face parity: renderCatalogCardFace(def, { tier, compact:true, isNew, artReady:Boolean(def.artId), owned:ownedCopies(id) })
+// Regression compatibility marker for v2.2 card anatomy: card-rules-mini empty
+// Regression compatibility marker for v7.52 card density: card-rules-mini ${rulesDensityClass(def.rulesText)}
+// Regression compatibility marker for v7.52 modal density: modal-rules-box ${rulesDensityClass(def.rulesText)}
 /* Regression compatibility marker for v7.24 authority refresh guard:
 function acceptView(view) {
   state.view = view;
@@ -79,6 +82,7 @@ function acceptView(view) {
 // Regression compatibility marker for v4.3 source wiring: v4.3 keeps timer profiles off while adding filtered human playtest samples
 // Regression compatibility marker for v4.2 source wiring: analytics/export?format=csv
 import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslations, setDocumentTranslationParams, localizedCard, cardTypeLabel, observeLocalizedApp } from './i18n.js';
+import { tutorialStepForMatch, tutorialActionAllowed } from './tutorial-script.js';
 const app = document.querySelector('#app');
 applyDocumentTranslations();
 function syncLanguageSwitcher() {
@@ -556,7 +560,7 @@ function achievementProgressLabel(item) {
 
 function renderPlayerFileHeader(profile) {
   const loadout = profile?.meta?.cosmetics?.loadout ?? {};
-  const avatarId = loadout.avatarId ?? 'COS-AVA-001';
+  const avatarId = loadout.avatarId ?? 'COS-AVA-007';
   const avatarAsset = cosmeticAvatarAsset(avatarId);
   const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
   const progression = profile?.meta?.progression ?? {};
@@ -754,11 +758,11 @@ function renderCosmeticPreview(item, kind) {
   if (kind === 'BOARD') return def.assetPath ? `<div class="cosmetic-board-preview"><img src="${esc(def.assetPath)}" alt="${esc(cosmeticText(def,'name'))}" /></div>` : '<div class="cosmetic-board-preview fallback">OFFICE</div>';
   if (kind === 'AVATAR') return renderAvatarComposition({ avatarAsset:def.assetPath ?? null, avatarAlt:cosmeticText(def,'name'), fallbackText:state.serverProfile?.displayName?.slice(0,1) ?? 'O', className:'cosmetic-avatar-preview' });
   if (kind === 'AVATAR_FRAME' || kind === 'AVATAR_DECORATION') {
-    const avatarId = state.cosmeticPersonnel?.loadout?.avatarId ?? 'COS-AVA-001';
+    const avatarId = state.cosmeticPersonnel?.loadout?.avatarId ?? 'COS-AVA-007';
     const avatarAsset = COSMETIC_UI_CATALOG.avatars[String(avatarId)]?.asset;
     const equippedFrame = cosmeticFrameAsset(state.cosmeticPersonnel?.loadout?.avatarFrameId);
     return renderAvatarComposition({
-      avatarAsset:avatarAsset ?? '/cosmetics/avatars/overworked-sysadmin.webp',
+      avatarAsset:avatarAsset ?? '/cosmetics/avatars/intern-female.webp',
       frameAsset:kind === 'AVATAR_FRAME' ? def.assetPath : equippedFrame,
       frameMaskAsset:kind === 'AVATAR_FRAME' ? def.portraitMaskAsset : cosmeticFrameMaskAsset(state.cosmeticPersonnel?.loadout?.avatarFrameId),
       decorationAsset:kind === 'AVATAR_DECORATION' ? def.assetPath : null,
@@ -2073,7 +2077,7 @@ function renderCatalogCardFace(def, { tier = null, compact = false, isNew = fals
     <div class="catalog-name-row"><strong class="${longName ? 'long-name' : ''}">${esc(def.name)}</strong>${costParts ? `<span class="card-cost-badge catalog-cost"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></span>` : ''}</div>
     <div class="catalog-art-stage">${finishBadgePlacement === 'artwork' ? finishBadge : ''}${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}</div>
     <div class="catalog-detail-row">${detailBits.length ? detailBits.map((bit)=>`<span>${esc(bit)}</span>`).join('') : `<span>${esc(sandboxRarityLabel(def))}</span>`}${owned != null ? `<b>OWNED ${esc(owned)}</b>` : ''}</div>
-    ${compact ? '' : `<div class="catalog-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>`}
+    ${compact ? '' : `<div class="catalog-rules ${rulesDensityClass(cardRulesPresentation(def))}">${esc(cardRulesPresentation(def))}</div>`}
     ${compact ? '' : `<div class="catalog-tags">${tags.length ? tags.map((tag)=>`<span>${esc(tag)}</span>`).join('') : '<span>OFFICE</span>'}</div>`}
     ${power != null ? `<div class="catalog-power-badge"><span>POWER</span><b>${esc(power)}</b></div>` : ''}
     ${isNew ? '<i class="catalog-new-stamp">NEW</i>' : ''}
@@ -2276,6 +2280,10 @@ function actionAvailability(match) {
 
 function currentActionPrompt(match) {
   const a = actionAvailability(match);
+  if (state.view?.settings?.mode === 'TUTORIAL' && match.status !== 'ENDED') {
+    const step = tutorialStepForMatch(match);
+    if (step) return { title:t(`tutorial.${step.labelKey}`), detail:t(`tutorial.${step.copyKey}`), tone:step.phase?.toLowerCase() ?? 'phase' };
+  }
   if (match.status === 'ENDED') return { title:'Match complete', detail:'Review the result or return to the lobby.', tone:'ended' };
   if (a.handLimit) return { title:'Trim your hand', detail:`Archive ${Math.max(0, (match.players?.[match.viewerId]?.hand?.length ?? 8) - 8)} card(s) before ending the turn.`, tone:'required' };
   if (a.mustChoose) return { title:'Decision required', detail:'Resolve the highlighted choice before play can continue.', tone:'required' };
@@ -3367,7 +3375,7 @@ function hoverCardHtml(cardRef) {
     <div class="card-name-row"><div class="card-name hover-name">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
     ${premium ? `<span class="card-finish-badge">${esc(collectionCopy('executiveEdition'))}</span>` : ''}${renderArtwork(def)}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}
     ${details.length ? `<div class="hover-meta">${esc(details.join(' · '))}</div>` : ''}
-    <div class="hover-rules ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>
+    <div class="hover-rules ${rulesDensityClass(cardRulesPresentation(def))}">${esc(cardRulesPresentation(def))}</div>
     ${def.tags?.length ? `<div class="hover-tags">${def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('')}</div>` : ''}
     ${def.flavorText ? `<div class="hover-flavor">“${esc(def.flavorText)}”</div>` : ''}
     ${power ? renderPowerDisplay(card, def) : ''}
@@ -3556,7 +3564,7 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
     <div class="card-name-row"><div class="card-name ${longName ? 'long-name' : ''}">${esc(def?.name ?? 'Face-down Incident')}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
     <div class="card-art-stage">${def ? renderArtwork(def) : supportBack}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}${handActionLabel ? `<span class="card-play-hint ${handActionLabel === 'SET' ? 'set' : 'play'}">${esc(handActionLabel)}</span>` : ''}${def ? handCardContextBadge(card, def) : ''}${combinedFieldBadges ? `<div class="card-runtime-row field-state-row">${combinedFieldBadges}</div>` : ''}</div>
     <div class="card-detail-row">${detailBits.length ? detailBits.map((bit) => `<span>${esc(bit)}</span>`).join('') : '<span class="detail-spacer"></span>'}</div>
-    ${def?.rulesText ? `<div class="card-rules-mini ${rulesDensityClass(def.rulesText)}" title="${esc(def.rulesText)}">${esc(def.rulesText)}</div>` : '<div class="card-rules-mini empty"></div>'}
+    <div class="card-rules-mini ${rulesDensityClass(cardRulesPresentation(def))}" title="${esc(cardRulesPresentation(def))}">${esc(cardRulesPresentation(def))}</div>
     ${def ? `<div class="card-tags ${def.tags?.length ? '' : 'empty'}">${def.tags?.length ? def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('') : ''}</div>` : ''}
     ${def ? renderPowerDisplay(card, def) : ''}
   </div>`;
@@ -3577,7 +3585,7 @@ function renderModalCardFace(card, def) {
     <div class="card-name-row"><div class="card-name ${longName ? 'long-name' : ''}">${esc(def.name)}</div>${costParts ? `<div class="card-cost-badge"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></div>` : ''}</div>
     <div class="card-art-stage">${renderArtwork(def)}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}${runtimeBadges ? `<div class="card-runtime-row">${runtimeBadges}</div>` : ''}</div>
     <div class="card-detail-row">${detailBits.length ? detailBits.map((bit) => `<span>${esc(bit)}</span>`).join('') : '<span class="detail-spacer"></span>'}</div>
-    <div class="card-rules-mini modal-rules-box ${rulesDensityClass(def.rulesText)}">${esc(def.rulesText || 'No rules text.')}</div>
+    <div class="card-rules-mini modal-rules-box ${rulesDensityClass(cardRulesPresentation(def))}">${esc(cardRulesPresentation(def))}</div>
     <div class="card-tags ${def.tags?.length ? '' : 'empty'}">${def.tags?.length ? def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('') : ''}</div>
     ${renderPowerDisplay(card, def)}
   </div>`;
@@ -5039,7 +5047,7 @@ function renderCollectionPreview(def, deck) {
     <h3>${esc(def.name)}</h3>
     <div class="collection-preview-meta">${esc([cardCostLabel(def), def.rank, def.power != null ? `Power ${def.power}` : ''].filter(Boolean).join(' · '))}</div>
     <div class="collection-card-context"><span>ID <b>${esc(def.id)}</b></span><span>DEPT <b>${esc(collectionDepartmentLabel(def.department))}</b></span>${def.team ? `<span>TEAM <b>${esc(def.team)}</b></span>` : ''}${def.rank ? `<span>RANK <b>${esc(def.rank)}</b></span>` : ''}</div>
-    <p>${esc(def.rulesText || 'No rules text.')}</p>
+    <p>${esc(cardRulesPresentation(def))}</p>
     ${def.tags?.length ? `<div class="collection-preview-tags interactive">${def.tags.map((tag) => `<button data-preview-tag="${esc(tag)}" title="Show all cards tagged ${esc(tag)}">#${esc(tag)}</button>`).join('')}</div>` : ''}
     ${def.flavorText ? `<em>“${esc(def.flavorText)}”</em>` : ''}
     ${(() => { const related = relatedCollectionCards(def); return related.length ? `<section class="related-card-panel"><div class="related-card-head"><span>RELATED CARDS</span><small>Shared engine tags and department context</small></div><div class="related-card-list">${related.map(({candidate,sharedTags}) => `<button data-related-card="${esc(candidate.id)}"><span><b>${esc(candidate.name)}</b><small>${esc(candidate.cardType)} · ${esc(departmentCode(candidate.department))} · ${esc(sandboxRarityTier(candidate))}</small></span><em>${sharedTags.length ? sharedTags.map((tag)=>`#${esc(tag)}`).join(' ') : 'Same department'}</em></button>`).join('')}</div></section>` : ''; })()}
@@ -5734,7 +5742,7 @@ function renderAlphaSessionStrip() { const id=alphaTestSessionId(); return `<sec
 function bindAlphaSessionControls() { document.querySelector('#newAlphaTestSession')?.addEventListener('click',newAlphaTestSession); }
 function renderLobbyProfileAvatar() {
   const loadout = state.metaProfile?.cosmetics?.loadout ?? {};
-  const avatarId = loadout.avatarId ?? 'COS-AVA-001';
+  const avatarId = loadout.avatarId ?? 'COS-AVA-007';
   const avatarAsset = cosmeticAvatarAsset(avatarId);
   const frameAsset = cosmeticFrameAsset(loadout.avatarFrameId);
   return `<div class="profile-avatar-chip" data-avatar-id="${esc(avatarId)}">${renderAvatarComposition({ avatarAsset, frameAsset, frameMaskAsset:cosmeticFrameMaskAsset(loadout.avatarFrameId), fallbackText:playerInitials(state.serverProfile?.displayName) })}</div>`;
@@ -7108,7 +7116,9 @@ const COSMETIC_UI_CATALOG = Object.freeze({
     'COS-AVA-003': Object.freeze({ asset:'/cosmetics/avatars/executive-director.webp' }),
     'COS-AVA-004': Object.freeze({ asset:'/cosmetics/avatars/overloaded-junior.webp' }),
     'COS-AVA-005': Object.freeze({ asset:'/cosmetics/avatars/confident-analyst.webp' }),
-    'COS-AVA-006': Object.freeze({ asset:'/cosmetics/avatars/customer-care-veteran.webp' })
+    'COS-AVA-006': Object.freeze({ asset:'/cosmetics/avatars/customer-care-veteran.webp' }),
+    'COS-AVA-007': Object.freeze({ asset:'/cosmetics/avatars/intern-female.webp' }),
+    'COS-AVA-008': Object.freeze({ asset:'/cosmetics/avatars/intern-male.webp' })
   }),
   cardBacks: Object.freeze({
     'COS-BACK-001': Object.freeze({ asset:'/cosmetics/card-backs/default-corporate.webp' }),
@@ -7137,7 +7147,7 @@ const COSMETIC_UI_CATALOG = Object.freeze({
 function roomCosmeticLoadout(playerId) {
   const fallback = {
     boardSkinId:'COS-BOARD-001',
-    avatarId:playerId === 'P1' ? 'COS-AVA-001' : 'COS-AVA-002',
+    avatarId:'COS-AVA-007',
     avatarFrameId:null,
     avatarDecorationId:null,
     cardBackId:'COS-BACK-001',
@@ -7605,13 +7615,30 @@ function renderArenaSidePanel(match, guidanceTip) {
 
 function renderTutorialGuide(match) {
   if (state.view?.settings?.mode !== 'TUTORIAL' || !match || match.status === 'ENDED') return '';
-  const mine = match.players?.[match.viewerId];
-  let key = 'stepOpening';
-  if (match.phase === 'MAIN' && !(mine?.employeeField ?? []).some(Boolean)) key = 'stepEmployee';
-  else if (match.phase === 'BATTLE' && !match.pendingAttack) key = 'stepBattle';
-  else if (match.phase === 'BATTLE') key = 'stepRep';
-  else if (match.phase === 'END') key = 'stepEnd';
-  return `<aside class="tutorial-guide" aria-live="polite"><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><p>${esc(t('tutorial.' + key))}</p></aside>`;
+  const step = tutorialStepForMatch(match);
+  return `<aside class="tutorial-guide tutorial-focus-${esc(step.focus)}" aria-live="polite" data-tutorial-step="${esc(step.id)}"><span>${esc(t('tutorial.modeLabel'))} · ${esc(t('tutorial.' + step.labelKey))}</span><strong>${esc(t('tutorial.title'))}</strong><p>${esc(t('tutorial.' + step.copyKey))}</p></aside>`;
+}
+
+function cardRulesPresentation(def) {
+  if (def?.rulesText) return def.rulesText;
+  if (def?.intentionalVanilla === true && !def?.abilities?.length) return t('cards.noEffect');
+  return t('cards.rulesUnavailable');
+}
+
+function applyTutorialFocus(match) {
+  if (state.view?.settings?.mode !== 'TUTORIAL' || !match) return;
+  document.querySelectorAll('[data-tutorial-focus]').forEach((node) => node.removeAttribute('data-tutorial-focus'));
+  const step = tutorialStepForMatch(match);
+  const me = match.players?.[match.viewerId] ?? {};
+  const legal = match.legalActions ?? {};
+  const ids = step.focus === 'hand'
+    ? step.id === 'play-employee' ? (legal.playableEmployees ?? []).map((item) => item.cardId) : [...(legal.playableSystems ?? []), ...(legal.playableActions ?? []), ...(legal.settableIncidents ?? [])].map((item) => item.cardId)
+    : [];
+  const target = ids.map((id) => document.querySelector(`[data-card-ref="${CSS.escape(id)}"]`)).find(Boolean)
+    ?? (step.focus === 'phase' ? document.querySelector('.phase-track') : null)
+    ?? (step.focus === 'opponent' ? document.querySelector('.player-board.opponent-board') : null)
+    ?? (step.focus === 'response' ? document.querySelector('#boardInteractionPanel') : null);
+  target?.setAttribute('data-tutorial-focus', 'true');
 }
 
 function renderGame() {
@@ -7688,6 +7715,7 @@ function renderGame() {
   bindHoverPreviewHandlers();
   bindBoardActionFocusHandlers();
   bindMatchEndOverlay();
+  applyTutorialFocus(match);
   scheduleAttackConnectorDraw();
   if (previousBattlefieldTop != null && !document.body.classList.contains('match-viewport-locked')) requestAnimationFrame(() => {
     const nextBattlefieldTop = app.querySelector('.battlefield-surface')?.getBoundingClientRect().top;
@@ -7978,6 +8006,13 @@ async function sendIntent(intent) {
   state.pendingActionConfirmation = null;
   let match = state.view?.match;
   if (!match || !state.session) return;
+  if (state.view?.settings?.mode === 'TUTORIAL' && !tutorialActionAllowed(match, intent)) {
+    const step = tutorialStepForMatch(match);
+    state.lastError = null;
+    showFeedback('info', t('tutorial.tryStepTitle'), t('tutorial.invalidAction', { instruction:t(`tutorial.${step.copyKey}`) }), { duration:2200 });
+    render();
+    return;
+  }
   if (state.intentBusy) { showFeedback('info','Move already submitting','Wait for the server state to return before sending another move.', { duration:1600 }); return; }
   if (!viewerHasControl()) {
     const readOnlyMessage = 'This tab is read-only because the same match is active elsewhere. Use “Take control here” before making a move.';

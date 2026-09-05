@@ -74,6 +74,12 @@ export function assertLegalDeck(entries: DeckEntry[], definitions: Record<string
 /** Local Alpha QA only; the server must gate this before passing it to createMatch. */
 export interface MatchQaSetup {
   forceOpeningHandVariantId?: string;
+  /** Deterministic tutorial setup; only the server's TUTORIAL route may pass this. */
+  fixedSeed?: number;
+  fixedFirstPlayerId?: PlayerId;
+  forceOpeningDefinitionIds?: string[];
+  forceDrawDefinitionIds?: string[];
+  forceOpponentOpeningDefinitionIds?: string[];
 }
 
 function opponentOf(playerId: PlayerId): PlayerId {
@@ -181,6 +187,29 @@ function forceVariantToTop(deck: string[], cards: Record<string, CardInstance>, 
   deck.push(instanceId);
 }
 
+function forceDefinitionsToTop(deck: string[], cards: Record<string, CardInstance>, definitionIds: string[]): void {
+  const selected: string[] = [];
+  for (const definitionId of definitionIds) {
+    const index = deck.findIndex((instanceId) => cards[instanceId]?.definitionId === definitionId && !selected.includes(instanceId));
+    if (index < 0) throw new RulesError(`QA setup card not found in the selected deck: ${definitionId}.`);
+    selected.push(deck.splice(index, 1)[0]);
+  }
+  // drawCards consumes the top of the stack with pop(); preserve the requested draw order.
+  deck.push(...selected.reverse());
+}
+
+function ensureQaDefinitions(entries: DeckEntry[], definitionIds: string[], definitions: Record<string, CardDefinition>): DeckEntry[] {
+  const required = new Map<string, number>();
+  for (const definitionId of definitionIds) required.set(definitionId, (required.get(definitionId) ?? 0) + 1);
+  const present = new Map<string, number>();
+  for (const entry of entries) present.set(entry.definitionId, (present.get(entry.definitionId) ?? 0) + entry.copies);
+  const additions = [...required.entries()].flatMap(([definitionId, count]) => {
+    if (!definitions[definitionId]) throw new RulesError(`QA setup card definition not found: ${definitionId}.`);
+    return Array.from({ length: Math.max(0, count - (present.get(definitionId) ?? 0)) }, () => ({ definitionId, copies: 1 }));
+  });
+  return additions.length ? [...entries, ...additions] : entries;
+}
+
 export function createMatch(args: {
   matchId: string;
   seed: number;
@@ -200,11 +229,23 @@ export function createMatch(args: {
   const p2 = makePlayer("P2");
   const rng = mulberry32(args.seed);
 
-  p1.deck = shuffle(expandDeck("P1", args.p1Deck, args.definitions, cards), rng);
-  p2.deck = shuffle(expandDeck("P2", args.p2Deck, args.definitions, cards), rng);
+  const p1QaDefinitions = [...(args.qaSetup?.forceOpeningDefinitionIds ?? []), ...(args.qaSetup?.forceDrawDefinitionIds ?? [])];
+  const p2QaDefinitions = args.qaSetup?.forceOpponentOpeningDefinitionIds ?? [];
+  const p1Entries = ensureQaDefinitions(args.p1Deck, p1QaDefinitions, args.definitions);
+  const p2Entries = ensureQaDefinitions(args.p2Deck, p2QaDefinitions, args.definitions);
+  p1.deck = shuffle(expandDeck("P1", p1Entries, args.definitions, cards), rng);
+  p2.deck = shuffle(expandDeck("P2", p2Entries, args.definitions, cards), rng);
   if (args.qaSetup?.forceOpeningHandVariantId) {
     forceVariantToTop(p1.deck, cards, args.qaSetup.forceOpeningHandVariantId);
   }
+  const forcedTutorialCards = [
+    ...(args.qaSetup?.forceOpeningDefinitionIds ?? []),
+    ...(args.qaSetup?.forceDrawDefinitionIds ?? [])
+  ];
+  if (forcedTutorialCards.length) {
+    forceDefinitionsToTop(p1.deck, cards, forcedTutorialCards);
+  }
+  if (p2QaDefinitions.length) forceDefinitionsToTop(p2.deck, cards, p2QaDefinitions);
 
   const state: GameState = {
     matchId: args.matchId,
@@ -247,10 +288,11 @@ export function createMatch(args: {
     resolvingTriggerEvent: null,
     currentTurnActivity: { activePlayerId: null, incidentsActivatedBy: {}, employeesDestroyedByOpponent: {} },
     previousTurnActivity: { activePlayerId: null, incidentsActivatedBy: {}, employeesDestroyedByOpponent: {} },
-    revealPermissions: []
+    revealPermissions: [],
+    qaForcedPlayerDrawDefinitionIds: [...(args.qaSetup?.forceDrawDefinitionIds ?? [])]
   };
 
-  emit(state, "MATCH_CREATED", { data: { firstPlayerId: args.firstPlayerId, seed: args.seed } });
+  emit(state, "MATCH_CREATED", { data: { firstPlayerId: state.firstPlayerId, seed: args.seed } });
   drawCards(state, "P1", 5, false);
   drawCards(state, "P2", 5, false);
   return state;
@@ -277,6 +319,9 @@ export function mulligan(state: GameState, playerId: PlayerId, returnIds: string
     player.deck.push(id);
   }
   player.deck = shuffle(player.deck, rng);
+  if (playerId === "P1" && state.qaForcedPlayerDrawDefinitionIds?.length) {
+    forceDefinitionsToTop(state.players.P1.deck, state.cards, state.qaForcedPlayerDrawDefinitionIds);
+  }
   player.mulliganDone = true;
   emit(state, "MULLIGAN_COMPLETED", { playerId, data: { returned: unique.length } });
 
@@ -396,6 +441,7 @@ export function advancePhase(state: GameState, playerId: PlayerId): void {
       emit(state, "DRAW_SKIPPED", { playerId, data: { reason: "OPENS_THE_OFFICE" } });
     } else {
       drawCards(state, playerId, 1, true);
+      if (playerId === "P1") state.qaForcedPlayerDrawDefinitionIds = [];
     }
   }
 }

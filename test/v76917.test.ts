@@ -14,9 +14,9 @@ const cosmetics=root("src/cosmetics.ts");
 const polish=css.slice(css.lastIndexOf("/* v7.69.17 — cosmetic loadout foundation + root visual fixes */"));
 
 test("v7.69.17 version markers are current",()=>{
-assert.equal(pkg.version,"7.69.56");
+assert.equal(pkg.version,"7.69.57");
   assert.match(pkg.scripts.test,/dist\/test\/v76917\.test\.js/);
-  assert.match(root("server/server.mjs"),/version: "7\.69\.56"/);
+  assert.match(root("server/server.mjs"),/version: "7\.69\.57"/);
 });
 
 test("cosmetic loadout uses stable IDs and independent slots",()=>{
@@ -24,7 +24,7 @@ test("cosmetic loadout uses stable IDs and independent slots",()=>{
   assert.match(cosmetics,/COS-BOARD-001/);
   assert.match(cosmetics,/COS-AVA-001/);
   assert.match(cosmetics,/COS-AVA-002/);
-  assert.match(cosmetics,/playerId === "P1" \? COSMETIC_IDS\.overworkedSysadminAvatar : COSMETIC_IDS\.hrOracleAvatar/);
+  assert.match(cosmetics,/avatarId: COSMETIC_IDS\.internFemaleAvatar/);
 });
 
 test("room seats persist and project cosmetic loadouts with legacy board migration",()=>{

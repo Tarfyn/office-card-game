@@ -1,4 +1,5 @@
 import { applyRewardGrant, collectionPlayableCapacity, createPlayerMetaProfile, type PlayerMetaProfile, type RewardGrant } from "./economy.js";
+import { COSMETIC_IDS } from "./cosmetics.js";
 import type { CardDefinition, CardType, DeckEntry, Department, DeckFormat } from "./types.js";
 
 export type StarterDepartment = Exclude<Department, "NEUTRAL">;
@@ -226,7 +227,13 @@ export function buildFirstDayDeck(profile: PlayerMetaProfile, cards: CardDefinit
 
 export function createPendingAccountMeta(startingOfficeCredits = 0, now = Date.now()): PlayerMetaProfile {
   const meta = createPlayerMetaProfile([], startingOfficeCredits, now);
-  meta.alphaPlaytestAccess = { enabled:true, source:"alpha_playtest", grantedAt:now };
-  meta.starterOnboarding = { version:1, status:"PENDING", selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 };
-  return meta;
+  const withStarterCosmetic = applyRewardGrant(meta, {
+    source: "starter",
+    sourceRef: "starter:cosmetics:v2",
+    cards: [], officeCredits: 0, scrap: 0,
+    cosmetics: [COSMETIC_IDS.internFemaleAvatar], packs: [], grantedAt: now
+  }, now).profile;
+  withStarterCosmetic.alphaPlaytestAccess = { enabled:true, source:"alpha_playtest", grantedAt:now };
+  withStarterCosmetic.starterOnboarding = { version:1, status:"PENDING", selectedDepartment:null, completedAt:null, firstDayDeckId:null, boosterCount:0, boosterPresentationCount:0 };
+  return withStarterCosmetic;
 }

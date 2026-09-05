@@ -168,6 +168,18 @@ test("Achievement Overview and Achievements rows identify localized milestones",
   assert.match(appSource, /const incompleteAchievements = achievementItems\.filter/);
 });
 
+test("intentional vanilla cards use the localized no-effect presentation", () => {
+  const appSource = readFileSync("public/app.js", "utf8");
+  const serverSource = readFileSync("server/server.mjs", "utf8");
+  const enSource = readFileSync("public/locales/en.js", "utf8");
+  const deSource = readFileSync("public/locales/de.js", "utf8");
+  assert.match(serverSource, /intentionalVanilla: card\.intentionalVanilla === true/);
+  assert.match(appSource, /def\?\.intentionalVanilla === true && !def\?\.abilities\?\.length/);
+  assert.match(appSource, /t\('cards\.noEffect'\)/);
+  assert.match(enSource, /noEffect: "No effect\."/);
+  assert.match(deSource, /noEffect: "Kein Effekt\."/);
+});
+
 test("Ranked season identifiers use localized display labels and mobile cards can wrap", () => {
   const appSource = readFileSync("public/app.js", "utf8");
   const stylesSource = readFileSync("public/styles.css", "utf8");
@@ -178,4 +190,4 @@ test("Ranked season identifiers use localized display labels and mobile cards ca
   assert.match(stylesSource, /\.player-file-name h1.*overflow-wrap:anywhere/);
 });
 
-console.log(`${passed}/9 player meta hub tests passed.`);
+console.log(`${passed}/10 player meta hub tests passed.`);

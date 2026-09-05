@@ -57,6 +57,8 @@ export const COSMETIC_IDS = {
   overloadedJuniorAvatar: "COS-AVA-004",
   confidentAnalystAvatar: "COS-AVA-005",
   customerCareVeteranAvatar: "COS-AVA-006",
+  internFemaleAvatar: "COS-AVA-007",
+  internMaleAvatar: "COS-AVA-008",
   defaultCorporateCardBack: "COS-BACK-001",
   externalAlphaCardBack: "COS-BACK-002",
   rankedSeason01CardBack: "COS-BACK-003",
@@ -87,6 +89,8 @@ export const COSMETIC_CATALOG: Record<string, CosmeticDefinition> = {
   [COSMETIC_IDS.overloadedJuniorAvatar]: { id:COSMETIC_IDS.overloadedJuniorAvatar, kind:"AVATAR", slot:"avatarId", name:"Overloaded Junior", description:"Running on caffeine, luck and unresolved tickets.", nameKey:"cosmetics.overloadedJuniorName", descriptionKey:"cosmetics.overloadedJuniorDescription", assetPath:"/cosmetics/avatars/overloaded-junior.webp" },
   [COSMETIC_IDS.confidentAnalystAvatar]: { id:COSMETIC_IDS.confidentAnalystAvatar, kind:"AVATAR", slot:"avatarId", name:"Confident Analyst", description:"Optimistic, prepared and suspiciously motivated.", nameKey:"cosmetics.confidentAnalystName", descriptionKey:"cosmetics.confidentAnalystDescription", assetPath:"/cosmetics/avatars/confident-analyst.webp" },
   [COSMETIC_IDS.customerCareVeteranAvatar]: { id:COSMETIC_IDS.customerCareVeteranAvatar, kind:"AVATAR", slot:"avatarId", name:"Customer Care Veteran", description:"Calm voice, tired eyes, infinite patience.", nameKey:"cosmetics.customerCareVeteranName", descriptionKey:"cosmetics.customerCareVeteranDescription", assetPath:"/cosmetics/avatars/customer-care-veteran.webp" },
+  [COSMETIC_IDS.internFemaleAvatar]: { id:COSMETIC_IDS.internFemaleAvatar, kind:"AVATAR", slot:"avatarId", name:"Intern", description:"Ready for a first day on the job.", nameKey:"cosmetics.internName", descriptionKey:"cosmetics.internDescription", assetPath:"/cosmetics/avatars/intern-female.webp", sortOrder:10 },
+  [COSMETIC_IDS.internMaleAvatar]: { id:COSMETIC_IDS.internMaleAvatar, kind:"AVATAR", slot:"avatarId", name:"Intern", description:"Ready for a first day on the job.", nameKey:"cosmetics.internName", descriptionKey:"cosmetics.internDescription", assetPath:"/cosmetics/avatars/intern-male.webp", sortOrder:20 },
   [COSMETIC_IDS.defaultCorporateCardBack]: { id:COSMETIC_IDS.defaultCorporateCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Corporate Standard", description:"A dependable company-issued card back.", nameKey:"cosmetics.corporateStandardName", descriptionKey:"cosmetics.corporateStandardDescription", assetPath:"/cosmetics/card-backs/default-corporate.webp", sortOrder:0 },
   [COSMETIC_IDS.externalAlphaCardBack]: { id:COSMETIC_IDS.externalAlphaCardBack, kind:"CARD_BACK", slot:"cardBackId", name:"External Alpha", description:"Issued to External Alpha participants.", nameKey:"cosmetics.externalAlphaName", descriptionKey:"cosmetics.externalAlphaDescription", assetPath:"/cosmetics/card-backs/alpha-back.webp", sortOrder:10 },
   [COSMETIC_IDS.rankedSeason01CardBack]: { id:COSMETIC_IDS.rankedSeason01CardBack, kind:"CARD_BACK", slot:"cardBackId", name:"Ranked Season 1", description:"A competitive card back reserved for Ranked rewards.", nameKey:"cosmetics.rankedSeason01BackName", descriptionKey:"cosmetics.rankedSeason01BackDescription", assetPath:"/cosmetics/card-backs/ranked-season-1.webp", sortOrder:20 },
@@ -171,7 +175,7 @@ const LEGACY_BOARD_TO_ID: Record<string, string> = {
 export function defaultCosmeticLoadout(playerId: PlayerId): CosmeticLoadout {
   return {
     boardSkinId: COSMETIC_IDS.classicOfficeBoard,
-    avatarId: playerId === "P1" ? COSMETIC_IDS.overworkedSysadminAvatar : COSMETIC_IDS.hrOracleAvatar,
+    avatarId: COSMETIC_IDS.internFemaleAvatar,
     avatarFrameId: null,
     avatarDecorationId: null,
     cardBackId: COSMETIC_IDS.defaultCorporateCardBack,
@@ -183,10 +187,9 @@ export function defaultCosmeticLoadout(playerId: PlayerId): CosmeticLoadout {
 export function defaultCosmeticOwnership(now = Date.now()): CosmeticOwnershipGrant[] {
   return [
     COSMETIC_IDS.classicOfficeBoard,
-    COSMETIC_IDS.overworkedSysadminAvatar,
-    COSMETIC_IDS.hrOracleAvatar,
+    COSMETIC_IDS.internFemaleAvatar,
     COSMETIC_IDS.defaultCorporateCardBack
-  ].map((cosmeticId) => ({ cosmeticId, acquiredAt:now, source:"starter", sourceRef:null }));
+  ].map((cosmeticId) => ({ cosmeticId, acquiredAt:now, source:"starter", sourceRef:`starter:cosmetic:v2:${cosmeticId}` }));
 }
 
 export function normalizePlayerCosmetics(value: Partial<PlayerCosmeticState> | null | undefined, now = Date.now()): PlayerCosmeticState {

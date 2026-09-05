@@ -12,24 +12,33 @@ const de = root("public/locales/de.js");
 const rankedRanks = JSON.parse(root("data/ranked/ranks.json"));
 
 const avatarIds = ["COS-AVA-003", "COS-AVA-004", "COS-AVA-005", "COS-AVA-006"];
+const internIds = ["COS-AVA-007", "COS-AVA-008"];
 const frameIds = ["COS-FRAME-002", "COS-FRAME-003", "COS-FRAME-004", "COS-FRAME-005", "COS-FRAME-006"];
 
 test("new avatars and frames have stable catalog definitions and target assets", () => {
-  for (const id of [...avatarIds, ...frameIds]) {
+  for (const id of [...avatarIds, ...internIds, ...frameIds]) {
     assert.ok(COSMETIC_CATALOG[id]);
     assert.match(COSMETIC_CATALOG[id].assetPath ?? "", /^\/cosmetics\/(avatars|avatar-frames)\//);
   }
   assert.deepEqual(avatarIds.map((id) => COSMETIC_CATALOG[id].kind), ["AVATAR", "AVATAR", "AVATAR", "AVATAR"]);
   assert.deepEqual(frameIds.map((id) => COSMETIC_CATALOG[id].slot), ["avatarFrameId", "avatarFrameId", "avatarFrameId", "avatarFrameId", "avatarFrameId"]);
+  assert.ok(readFileSync(fileURLToPath(new URL("../../public/cosmetics/avatars/intern-female.webp", import.meta.url))).byteLength > 10000);
+  assert.ok(readFileSync(fileURLToPath(new URL("../../public/cosmetics/avatars/intern-male.webp", import.meta.url))).byteLength > 10000);
+  assert.equal(COSMETIC_CATALOG["COS-AVA-007"].name, "Intern");
+  assert.equal(COSMETIC_CATALOG["COS-AVA-008"].name, "Intern");
   assert.ok(readFileSync(fileURLToPath(new URL("../../public/cosmetics/avatar-frames/silver-ranked-s01.webp", import.meta.url))).byteLength > 100);
 });
 
-test("standard cosmetics are starter-owned while new avatars remain shop inventory", () => {
+test("the Intern is the sole starter Avatar while secondary avatars remain inventory", () => {
   const owned = new Set(defaultCosmeticOwnership().map((grant) => grant.cosmeticId));
-  assert.ok(owned.has("COS-AVA-001"));
-  assert.ok(owned.has("COS-AVA-002"));
+  assert.deepEqual([...owned], ["COS-BOARD-001", "COS-AVA-007", "COS-BACK-001"]);
+  assert.ok(owned.has("COS-AVA-007"));
+  assert.equal(owned.has("COS-AVA-008"), false);
+  assert.equal(owned.has("COS-AVA-001"), false);
+  assert.equal(owned.has("COS-AVA-002"), false);
   assert.equal(owned.has("COS-FRAME-002"), false);
   for (const id of avatarIds) assert.equal(owned.has(id), false);
+  for (const id of internIds) assert.equal(owned.has(id), id === "COS-AVA-007");
   for (const id of frameIds.slice(1)) assert.equal(owned.has(id), false);
   const shop = new Set<string>(COSMETIC_SHOP_CATALOG.map((item) => item.cosmeticId));
   for (const id of avatarIds) assert.ok(shop.has(id));
@@ -39,8 +48,10 @@ test("standard cosmetics are starter-owned while new avatars remain shop invento
 
 test("ranked frames remain reward-only until an explicit ranked grant", () => {
   const fresh = normalizePlayerCosmetics(undefined, 1);
-  assert.equal(cosmeticIsOwned(fresh, "COS-AVA-001"), true);
-  assert.equal(cosmeticIsOwned(fresh, "COS-AVA-002"), true);
+  assert.equal(cosmeticIsOwned(fresh, "COS-AVA-007"), true);
+  assert.equal(cosmeticIsOwned(fresh, "COS-AVA-008"), false);
+  assert.equal(cosmeticIsOwned(fresh, "COS-AVA-001"), false);
+  assert.equal(cosmeticIsOwned(fresh, "COS-AVA-002"), false);
   for (const id of avatarIds) assert.equal(cosmeticIsOwned(fresh, id), false);
   for (const id of frameIds.slice(1)) assert.equal(cosmeticIsOwned(fresh, id), false);
   const migrated = normalizePlayerCosmetics({ owned:[
@@ -94,6 +105,8 @@ test("new cosmetic names and descriptions are localized in English and German", 
   assert.match(de, /customerCareVeteranName: "Customer-Care-Veteranin"/);
   assert.match(de, /diamondRankedS01Description: "Ranked-Rahmen für hohe Platzierungen\."/);
   assert.match(de, /silverRankedS01Description: "Ranked-Belohnungsrahmen für Silber\."/);
+  assert.match(en, /internName: "Intern"/);
+  assert.match(de, /internName: "Intern"/);
 });
 
 test("Silver is the Silver-tier reward and remains out of the Shop", () => {

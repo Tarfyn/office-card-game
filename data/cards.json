@@ -1078,6 +1078,7 @@
       "CALL"
     ],
     "rulesText": "",
+    "intentionalVanilla": true,
     "flavorText": "Which queue does this belong in?",
     "implementationStatus": "FULL",
     "artId": "alpha/triage-agent.webp"
@@ -4101,6 +4102,7 @@
       "OUTPUT"
     ],
     "rulesText": "",
+    "intentionalVanilla": true,
     "flavorText": "Which line am I on today?",
     "implementationStatus": "FULL",
     "artId": "alpha/production-worker.webp"
@@ -5053,6 +5055,7 @@
     },
     "power": 1,
     "rulesText": "",
+    "intentionalVanilla": true,
     "flavorText": "Happy to help. What does this button do?",
     "implementationStatus": "FULL",
     "artId": "alpha/intern.webp"

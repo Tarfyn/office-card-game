@@ -7,6 +7,11 @@
   --text-on-dark-muted:#b9c0b8;
   --text-on-light:#24231f;
   --text-on-light-muted:#5f5a52;
+  --text-primary:#24231f;
+  --text-secondary:#5f5a52;
+  --text-muted:#746b60;
+  --text-danger:#8f2e27;
+  --text-success:#236a43;
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; }
@@ -18,7 +23,7 @@ button.danger { background: #fff1f1; }
 button.ghost { border-color: transparent; background: transparent; }
 button.small { padding: 5px 8px; font-size: 12px; }
 .hidden { display: none !important; }
-.muted { color: #6c6a66; font-weight: 400; }
+.muted { color: var(--text-secondary); font-weight: 400; }
 .topbar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #d7d2c8; background: rgba(255,255,255,.72); position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px); }
 .app { max-width: 1380px; margin: 0 auto; padding: 20px; }
 .lobby { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; max-width: 900px; margin: 8vh auto 0; }
@@ -12785,6 +12790,12 @@ body.cosmetic-mode {
 .tutorial-guide span { display:block; color:#d7ae5a; font-size:.65rem; letter-spacing:.12em; }
 .tutorial-guide strong { display:block; margin-top:3px; font-size:1rem; }
 .tutorial-guide p { margin:5px 0 0; color:#e8dcc5; font-size:.82rem; }
+.tutorial-guide[data-tutorial-step] { max-width: min(420px, calc(100% - 24px)); }
+.tutorial-guide[data-tutorial-step] p { line-height:1.45; overflow-wrap:anywhere; }
+.game-shell [data-tutorial-focus="true"] { outline:3px solid #e3b85c; outline-offset:4px; box-shadow:0 0 0 5px rgba(227,184,92,.16),0 10px 22px rgba(0,0,0,.28); }
+.game-shell .phase-track[data-tutorial-focus="true"],
+.game-shell .player-board.opponent-board[data-tutorial-focus="true"],
+.game-shell #boardInteractionPanel[data-tutorial-focus="true"] { outline-offset:2px; }
 /* Tutorial guidance is screen-space help. It must not consume the desktop arena grid row. */
 @media (min-width:761px) {
   .tutorial-guide {
@@ -12803,6 +12814,10 @@ body.cosmetic-mode {
 @media (max-width:620px) {
   .bot-match-controls { grid-template-columns:1fr; align-items:stretch; }
   .bot-match-controls button { width:100%; }
+  .tutorial-guide { width:calc(100% - 16px); margin-top:8px; padding:10px 12px; }
+  .tutorial-guide span { font-size:.62rem; }
+  .tutorial-guide strong { font-size:.95rem; }
+  .tutorial-guide p { font-size:.8rem; }
 }
 
 /* Board-target choices stay in a compact screen-space dock; the battlefield remains unobstructed and in-flow size is unchanged. */
