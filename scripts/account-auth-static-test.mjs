@@ -66,7 +66,7 @@ assert.throws(() => parseOfficeCardGameDatabaseUrl("postgresql://office_card_gam
 assert.doesNotThrow(() => parseOfficeCardGameDatabaseUrl("postgresql://tester:secret@127.0.0.1:5432/office_card_game_test_accounts", { test:true }));
 
 const fileOverview = buildOperationsOverview({
-version:"7.69.55", environment:"Local", uptimeSeconds:12, nodeVersion:process.version,
+version:"7.69.56", environment:"Local", uptimeSeconds:12, nodeVersion:process.version,
   backend:"FILE_JSON_LOCAL", databaseRequired:false, persistence:{ database:{ configured:false, reachable:null }, migrations:{ current:null }, diagnostics:[] },
   legacyStorePresent:true, cutoverMarkerPresent:false, backups:{ database:{ status:"UNAVAILABLE" }, legacy:{ status:"UNAVAILABLE" }, retentionDays:30, timerStatus:"UNAVAILABLE" }
 });
@@ -78,7 +78,7 @@ assert.equal(fileOverview.cutover.state, "FILE_JSON_AUTHORITATIVE");
 assert.equal(fileOverview.backups.database.status, "UNAVAILABLE");
 
 const postgresOverview = buildOperationsOverview({
-version:"7.69.55", releaseIdentifier:"v7.69.55-deadbeef", environment:"Production", uptimeSeconds:3600, nodeVersion:process.version,
+version:"7.69.56", releaseIdentifier:"v7.69.56-deadbeef", environment:"Production", uptimeSeconds:3600, nodeVersion:process.version,
   backend:"POSTGRES", databaseRequired:true, persistence:{
     database:{ configured:true, reachable:true, version:"18.6", schemaReady:true, pool:{ active:1, idle:2, waiting:0, max:10 } },
     migrations:{ current:true, applied:1, required:1, pending:[], changed:[], unknown:[] }, readiness:{ ok:true },
@@ -95,21 +95,21 @@ assert.equal(postgresOverview.cutover.readyForCutover, "YES");
 assert.equal(postgresOverview.cutover.state, "POSTGRES_ACTIVE");
 assert.equal(postgresOverview.persistence.legacyImportState, "NOT_REQUIRED_ALPHA_RESET");
 const failedMigrationOverview = buildOperationsOverview({
-version:"7.69.55", environment:"Production", backend:"POSTGRES", databaseRequired:true,
+version:"7.69.56", environment:"Production", backend:"POSTGRES", databaseRequired:true,
   persistence:{ database:{ configured:true, reachable:true }, migrations:{ current:false, changed:["0001_accounts_and_profiles.sql"] }, readiness:{ ok:false } },
   backups:{ database:{ status:"HEALTHY" }, legacy:{ status:"HEALTHY" }, retentionDays:30, timerStatus:"UNAVAILABLE" }
 });
 assert.equal(failedMigrationOverview.database.migrations.state, "FAILED");
 assert.equal(failedMigrationOverview.overall.backup, "HEALTHY");
 const unavailableDbOverview = buildOperationsOverview({
-version:"7.69.55", environment:"Production", backend:"POSTGRES", databaseRequired:true,
+version:"7.69.56", environment:"Production", backend:"POSTGRES", databaseRequired:true,
   persistence:{ database:{ configured:true, reachable:false }, migrations:{ current:false }, readiness:{ ok:false } },
   backups:{ database:{ status:"WARNING" }, legacy:{ status:"HEALTHY" }, retentionDays:30, timerStatus:"UNAVAILABLE" }
 });
 assert.equal(unavailableDbOverview.database.status, "DEGRADED");
 assert.equal(unavailableDbOverview.database.migrations.state, "UNKNOWN");
 const mismatchOverview = buildOperationsOverview({
-version:"7.69.55", environment:"Production", backend:"POSTGRES", databaseRequired:false,
+version:"7.69.56", environment:"Production", backend:"POSTGRES", databaseRequired:false,
   persistence:{ database:{ configured:true, reachable:true }, migrations:{ current:true }, readiness:{ ok:true } },
   backups:{ database:{ status:"HEALTHY" }, legacy:{ status:"HEALTHY" }, retentionDays:30, timerStatus:"UNAVAILABLE" }
 });

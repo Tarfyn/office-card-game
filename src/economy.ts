@@ -53,6 +53,13 @@ export interface AchievementProgressState {
 
 export interface PlayerMetaProfile {
   profileVersion: number;
+  /** Explicit marker for a partial browser Guest snapshot; never set for Accounts. */
+  legacyGuestState?: {
+    source: "BROWSER_META";
+    version: 1;
+    partial: true;
+    importedAt: number;
+  } | null;
   balances: Record<CurrencyId, number>;
   ownedCards: Record<string, number>;
   /** Executive Edition collectible quantities, keyed by deterministic variant id. */
@@ -104,6 +111,7 @@ export interface CraftingQuote {
 export function createAlphaMetaProfile(): PlayerMetaProfile {
   return {
     profileVersion: 1,
+    legacyGuestState: null,
     balances: {
       OFFICE_CREDITS: 0,
       SHREDDER_SCRAPS: 0
@@ -157,6 +165,10 @@ export function normalizePlayerMetaProfile(value: Partial<PlayerMetaProfile> | n
   const base = createAlphaMetaProfile();
   const next = { ...base, ...structuredClone(value ?? {}) } as PlayerMetaProfile;
   next.profileVersion = Math.max(1, Math.floor(Number(next.profileVersion) || 1));
+  const legacyGuestState = next.legacyGuestState;
+  next.legacyGuestState = legacyGuestState?.source === "BROWSER_META" && Number(legacyGuestState.version) === 1 && legacyGuestState.partial === true
+    ? { source:"BROWSER_META", version:1, partial:true, importedAt:Number(legacyGuestState.importedAt) || now }
+    : null;
   next.collectionMode = next.collectionMode === "OWNED_COPIES" ? "OWNED_COPIES" : "SANDBOX_ALL_AVAILABLE";
   const balances = next.balances ?? {};
   next.balances = { OFFICE_CREDITS:Number(balances.OFFICE_CREDITS ?? 0), SHREDDER_SCRAPS:Number(balances.SHREDDER_SCRAPS ?? 0) };
