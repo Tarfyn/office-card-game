@@ -79,7 +79,13 @@ export interface MatchQaSetup {
   fixedFirstPlayerId?: PlayerId;
   forceOpeningDefinitionIds?: string[];
   forceDrawDefinitionIds?: string[];
+  /** Deterministic pre-board cards for a tutorial lesson; these are ordinary, attack-ready cards. */
+  forcePlayerOpeningFieldDefinitionIds?: string[];
   forceOpponentOpeningDefinitionIds?: string[];
+  /** Deterministic pre-board Coach cards for the same tutorial lesson. */
+  forceOpponentOpeningFieldDefinitionIds?: string[];
+  /** Tutorial-only capacity tuning for the compact one-turn lesson. */
+  initialCapacity?: number;
 }
 
 function opponentOf(playerId: PlayerId): PlayerId {
@@ -229,8 +235,17 @@ export function createMatch(args: {
   const p2 = makePlayer("P2");
   const rng = mulberry32(args.seed);
 
-  const p1QaDefinitions = [...(args.qaSetup?.forceOpeningDefinitionIds ?? []), ...(args.qaSetup?.forceDrawDefinitionIds ?? [])];
-  const p2QaDefinitions = args.qaSetup?.forceOpponentOpeningDefinitionIds ?? [];
+  const p1OpeningFieldDefinitions = args.qaSetup?.forcePlayerOpeningFieldDefinitionIds ?? [];
+  const p1QaDefinitions = [
+    ...p1OpeningFieldDefinitions,
+    ...(args.qaSetup?.forceOpeningDefinitionIds ?? []),
+    ...(args.qaSetup?.forceDrawDefinitionIds ?? [])
+  ];
+  const p2OpeningFieldDefinitions = args.qaSetup?.forceOpponentOpeningFieldDefinitionIds ?? [];
+  const p2QaDefinitions = [
+    ...p2OpeningFieldDefinitions,
+    ...(args.qaSetup?.forceOpponentOpeningDefinitionIds ?? [])
+  ];
   const p1Entries = ensureQaDefinitions(args.p1Deck, p1QaDefinitions, args.definitions);
   const p2Entries = ensureQaDefinitions(args.p2Deck, p2QaDefinitions, args.definitions);
   p1.deck = shuffle(expandDeck("P1", p1Entries, args.definitions, cards), rng);
@@ -239,6 +254,7 @@ export function createMatch(args: {
     forceVariantToTop(p1.deck, cards, args.qaSetup.forceOpeningHandVariantId);
   }
   const forcedTutorialCards = [
+    ...p1OpeningFieldDefinitions,
     ...(args.qaSetup?.forceOpeningDefinitionIds ?? []),
     ...(args.qaSetup?.forceDrawDefinitionIds ?? [])
   ];
@@ -289,12 +305,35 @@ export function createMatch(args: {
     currentTurnActivity: { activePlayerId: null, incidentsActivatedBy: {}, employeesDestroyedByOpponent: {} },
     previousTurnActivity: { activePlayerId: null, incidentsActivatedBy: {}, employeesDestroyedByOpponent: {} },
     revealPermissions: [],
-    qaForcedPlayerDrawDefinitionIds: [...(args.qaSetup?.forceDrawDefinitionIds ?? [])]
+    qaForcedPlayerDrawDefinitionIds: [...(args.qaSetup?.forceDrawDefinitionIds ?? [])],
+    qaInitialCapacity: args.qaSetup?.initialCapacity ? { playerId:"P1", amount:args.qaSetup.initialCapacity } : undefined
   };
 
   emit(state, "MATCH_CREATED", { data: { firstPlayerId: state.firstPlayerId, seed: args.seed } });
-  drawCards(state, "P1", 5, false);
-  drawCards(state, "P2", 5, false);
+  drawCards(state, "P1", 5 + p1OpeningFieldDefinitions.length, false);
+  drawCards(state, "P2", 5 + p2OpeningFieldDefinitions.length, false);
+  for (const [slot, definitionId] of p1OpeningFieldDefinitions.entries()) {
+    const instanceId = state.players.P1.hand.find((id) => state.cards[id].definitionId === definitionId);
+    if (!instanceId) throw new RulesError(`QA setup opening field card not found in the player hand: ${definitionId}.`);
+    moveCard(state, instanceId, "EMPLOYEE_FIELD", slot);
+    const card = state.cards[instanceId];
+    card.faceUp = true;
+    card.onboarding = false;
+    card.attacksUsed = 0;
+    card.maxAttacks = 1;
+    card.enteredFieldTurnNumber = null;
+  }
+  for (const [slot, definitionId] of p2OpeningFieldDefinitions.entries()) {
+    const instanceId = state.players.P2.hand.find((id) => state.cards[id].definitionId === definitionId);
+    if (!instanceId) throw new RulesError(`QA setup Coach opening field card not found in the player hand: ${definitionId}.`);
+    moveCard(state, instanceId, "EMPLOYEE_FIELD", slot);
+    const card = state.cards[instanceId];
+    card.faceUp = true;
+    card.onboarding = false;
+    card.attacksUsed = 0;
+    card.maxAttacks = 1;
+    card.enteredFieldTurnNumber = null;
+  }
   return state;
 }
 
@@ -351,6 +390,11 @@ function startTurn(state: GameState, playerId: PlayerId): void {
   }
   player.maxCapacity = Math.min(1 + player.turnsStarted, CAPACITY_CAP);
   player.availableCapacity = player.maxCapacity;
+  if (state.qaInitialCapacity?.playerId === playerId) {
+    player.maxCapacity = Math.max(player.maxCapacity, state.qaInitialCapacity.amount);
+    player.availableCapacity = player.maxCapacity;
+    state.qaInitialCapacity = undefined;
+  }
   player.turnCounters = emptyTurnCounters();
   player.promotionReductions = player.promotionReductions.filter((modifier) => modifier.expiresAtTurnNumber >= state.turnNumber);
 
@@ -2350,6 +2394,20 @@ function endGame(state: GameState, winnerId: PlayerId, reason: string): void {
   state.winnerId = winnerId;
   state.reason = reason;
   emit(state, "GAME_ENDED", { playerId: winnerId, data: { reason } });
+}
+
+/** Tutorial-only completion keeps the lesson reward-ineligible and distinct from a PvP win. */
+export function completeTutorial(state: GameState, playerId: PlayerId): void {
+  if (state.status !== "ACTIVE") throw new RulesError("The match is not active.");
+  if (state.activePlayerId !== playerId || state.phase !== "END") throw new RulesError("Complete the Tutorial from the End phase.");
+  if (state.players[playerId].hand.length > HAND_LIMIT) throw new RulesError("Resolve the hand limit before completing the Tutorial.");
+  const ownEvents = state.eventLog.filter((event) => event.playerId === playerId);
+  const playedEmployee = ownEvents.some((event) => event.type === "CARD_PLAYED" && event.cardInstanceId && state.cards[event.cardInstanceId]?.definitionId && state.definitions[state.cards[event.cardInstanceId].definitionId]?.cardType === "EMPLOYEE");
+  const playedSupport = ownEvents.some((event) => event.type === "CARD_PLAYED" && event.cardInstanceId && state.cards[event.cardInstanceId]?.definitionId && state.definitions[state.cards[event.cardInstanceId].definitionId]?.cardType !== "EMPLOYEE");
+  const attackedEmployee = ownEvents.some((event) => event.type === "ATTACK_DECLARED" && event.data?.targetId != null);
+  const attackedDirect = ownEvents.some((event) => event.type === "ATTACK_DECLARED" && event.data?.targetId == null);
+  if (!playedEmployee || !playedSupport || !attackedEmployee || !attackedDirect) throw new RulesError("Complete the highlighted Tutorial actions first.");
+  endGame(state, playerId, "TUTORIAL_COMPLETE");
 }
 
 

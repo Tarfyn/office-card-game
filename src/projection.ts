@@ -230,6 +230,12 @@ export function projectStateForViewer(state: GameState, viewerId: PlayerId): Cli
         options: state.pendingChoice.playerId === viewerId ? state.pendingChoice.options.map((x) => x.id) : []
       }
     : null;
+  const tutorialProgress = {
+    playedEmployee: state.eventLog.some((event) => event.type === "CARD_PLAYED" && event.playerId === viewerId && event.data?.cardType === "EMPLOYEE"),
+    playedSupport: state.eventLog.some((event) => event.playerId === viewerId && ((event.type === "CARD_PLAYED" && ["ACTION", "SYSTEM"].includes(String(event.data?.cardType ?? ""))) || event.type === "INCIDENT_SET")),
+    employeeAttack: state.eventLog.some((event) => event.type === "ATTACK_DECLARED" && event.playerId === viewerId && event.data?.targetId != null),
+    directAttack: state.eventLog.some((event) => event.type === "ATTACK_DECLARED" && event.playerId === viewerId && event.data?.targetId == null)
+  };
   return {
     matchId: state.matchId,
     status: state.status,
@@ -272,6 +278,7 @@ export function projectStateForViewer(state: GameState, viewerId: PlayerId): Cli
     pendingResolutions: projectPendingResolutions(state, viewerId),
     scheduledEffects: projectScheduledEffects(state, viewerId),
     pendingAttack: projectPendingAttack(state, viewerId),
+    tutorialProgress,
     lastEventSeq: state.eventSeq,
     stateVersion: state.stateVersion,
     legalActions: projectLegalActions(state, viewerId, getLegalActions(state, viewerId))

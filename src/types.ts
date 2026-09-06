@@ -655,6 +655,8 @@ export interface GameState {
   revealPermissions: RevealPermission[];
   /** Local deterministic tutorial setup; absent for ordinary matches. */
   qaForcedPlayerDrawDefinitionIds?: string[];
+  /** Tutorial-only opening capacity override for the compact one-turn lesson. */
+  qaInitialCapacity?: { playerId: PlayerId; amount: number };
 }
 
 export interface ClientLiveCardStatus {
@@ -768,6 +770,12 @@ export interface ClientGameState {
   pendingResolutions: ClientPendingResolutionView[];
   scheduledEffects: ClientScheduledEffectView[];
   pendingAttack: ClientPendingAttackView | null;
+  tutorialProgress?: {
+    playedEmployee: boolean;
+    playedSupport: boolean;
+    employeeAttack: boolean;
+    directAttack: boolean;
+  };
   lastEventSeq: number;
   stateVersion: number;
   legalActions: ClientLegalActions;
@@ -860,6 +868,7 @@ export type MatchIntent =
   | { type: "RESOLVE_DECK_SELECTION"; selectionId: string; selectedIds: string[]; orderedUnselectedIds?: string[] }
   | { type: "RESOLVE_TRIGGER_TARGET_SELECTION"; selectionId: string; targets: Record<string, string[]> }
   | { type: "RESOLVE_HAND_SELECTION"; selectionId: string; selectedIds: string[] }
+  | { type: "COMPLETE_TUTORIAL" }
   | { type: "RESIGN" };
 
 export interface MatchIntentCommand {

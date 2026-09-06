@@ -16,6 +16,7 @@ import {
   resolveDeckSelection,
   resolveTriggerTargetSelection,
   resolveHandSelection,
+  completeTutorial,
   setIncident
 } from "./engine.js";
 import { projectEventsSince, projectStateForViewer } from "./projection.js";
@@ -51,7 +52,9 @@ function resolveTargetRefs(state: GameState, playerId: PlayerId, targets: Record
   return result;
 }
 
-function executeIntentOnDraft(state: GameState, playerId: PlayerId, intent: MatchIntent): void {
+interface ExecuteIntentOptions { allowTutorialCompletion?: boolean; }
+
+function executeIntentOnDraft(state: GameState, playerId: PlayerId, intent: MatchIntent, options: ExecuteIntentOptions = {}): void {
   switch (intent.type) {
     case "MULLIGAN":
       mulligan(state, playerId, intent.returnIds);
@@ -102,6 +105,10 @@ function executeIntentOnDraft(state: GameState, playerId: PlayerId, intent: Matc
       return;
     case "RESOLVE_HAND_SELECTION":
       resolveHandSelection(state, playerId, intent.selectionId, intent.selectedIds);
+      return;
+    case "COMPLETE_TUTORIAL":
+      if (!options.allowTutorialCompletion) throw new RulesError("Tutorial completion is only available in Tutorial mode.");
+      completeTutorial(state, playerId);
       return;
     case "RESIGN":
       resign(state, playerId);
@@ -173,7 +180,7 @@ export function autoAdvanceSafePhases(state: GameState): number {
   return advanced;
 }
 
-export function executeMatchIntent(state: GameState, command: MatchIntentCommand): MatchCommandExecution {
+export function executeMatchIntent(state: GameState, command: MatchIntentCommand, options: ExecuteIntentOptions = {}): MatchCommandExecution {
   if (command.matchId !== state.matchId) return rejected(state, command, "MATCH_MISMATCH", "Intent belongs to a different match.");
   if (command.expectedStateVersion !== state.stateVersion) {
     return rejected(state, command, "STALE_STATE", `Expected stateVersion ${command.expectedStateVersion}, current version is ${state.stateVersion}.`);
@@ -182,7 +189,7 @@ export function executeMatchIntent(state: GameState, command: MatchIntentCommand
   const beforeEventSeq = state.eventSeq;
   const draft = structuredClone(state);
   try {
-    executeIntentOnDraft(draft, command.playerId, command.intent);
+    executeIntentOnDraft(draft, command.playerId, command.intent, options);
     draft.stateVersion = state.stateVersion + 1;
     return {
       state: draft,
@@ -208,6 +215,8 @@ export function executeMatchIntent(state: GameState, command: MatchIntentCommand
  */
 export interface HostedMatchIntentOptions {
   autoAdvancePhases?: boolean;
+  autoAdvanceTutorialPhases?: boolean;
+  allowTutorialCompletion?: boolean;
 }
 
 export function executeHostedMatchIntent(
@@ -216,7 +225,7 @@ export function executeHostedMatchIntent(
   options: HostedMatchIntentOptions = {}
 ): MatchCommandExecution {
   const beforeEventSeq = state.eventSeq;
-  const execution = executeMatchIntent(state, command);
+  const execution = executeMatchIntent(state, command, { allowTutorialCompletion: options.allowTutorialCompletion });
   if (!execution.response.accepted) return execution;
   let hostedProgress = autoPassUnavailablePriority(execution.state);
   if (options.autoAdvancePhases !== false) {
@@ -226,6 +235,15 @@ export function executeHostedMatchIntent(
       const passCount = autoPassUnavailablePriority(execution.state);
       hostedProgress += passCount;
       if (phaseCount === 0 && passCount === 0) break;
+    }
+  }
+  if (options.autoAdvanceTutorialPhases && execution.state.status === "ACTIVE") {
+    for (let cycle = 0; cycle < 8; cycle += 1) {
+      if (execution.state.phase !== "START" && execution.state.phase !== "DRAW") break;
+      if (hasUnresolvedInteraction(execution.state)) break;
+      advancePhase(execution.state, execution.state.activePlayerId);
+      hostedProgress += 1;
+      autoPassUnavailablePriority(execution.state);
     }
   }
   if (hostedProgress === 0) return execution;

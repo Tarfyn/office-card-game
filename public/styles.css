@@ -12788,27 +12788,62 @@ body.cosmetic-mode {
 .bot-match-controls > div span { color:#52779e; font-size:8px; font-weight:950; letter-spacing:.12em; }
 .bot-match-controls > div small { color:#74706a; font-size:10px; }
 .bot-match-controls button { min-height:38px; white-space:nowrap; }
-.tutorial-guide { position: relative; z-index: 8; width: min(420px, calc(100% - 32px)); margin: 10px auto 0; padding: 12px 16px; border: 1px solid rgba(199,151,67,.65); border-radius: 6px; background: rgba(24,29,26,.94); color: #f5ead1; box-shadow: 0 10px 24px rgba(0,0,0,.18); }
+.tutorial-guide { position: relative; z-index: 8; width: min(420px, calc(100% - 32px)); margin: 8px auto 0; padding: 8px 12px; border: 1px solid rgba(199,151,67,.65); border-radius: 6px; background: rgba(24,29,26,.94); color: #f5ead1; box-shadow: 0 10px 24px rgba(0,0,0,.18); }
 .tutorial-guide span { display:block; color:#d7ae5a; font-size:.65rem; letter-spacing:.12em; }
-.tutorial-guide strong { display:block; margin-top:3px; font-size:1rem; }
-.tutorial-guide p { margin:5px 0 0; color:#e8dcc5; font-size:.82rem; }
+.tutorial-guide p { margin:3px 0 0; color:#f1e6d2; font-size:.82rem; line-height:1.3; }
 .tutorial-guide[data-tutorial-step] { max-width: min(420px, calc(100% - 24px)); }
 .tutorial-guide[data-tutorial-step] p { line-height:1.45; overflow-wrap:anywhere; }
 .game-shell [data-tutorial-focus="true"] { outline:3px solid #e3b85c; outline-offset:4px; box-shadow:0 0 0 5px rgba(227,184,92,.16),0 10px 22px rgba(0,0,0,.28); }
 .game-shell .phase-track[data-tutorial-focus="true"],
 .game-shell .player-board.opponent-board[data-tutorial-focus="true"],
 .game-shell #boardInteractionPanel[data-tutorial-focus="true"] { outline-offset:2px; }
-/* Tutorial guidance is screen-space help. It must not consume the desktop arena grid row. */
+/* Tutorial guidance lives inside the board column so the desktop utility row owns its own lane. */
 @media (min-width:761px) {
-  .tutorial-guide {
+  .arena-board-column > .tutorial-guide {
     position:absolute;
     z-index:8;
-    top:58px;
-    right:16px;
-    width:min(360px,30vw);
+    top:48px;
+    left:clamp(8px,2%,24px);
+    right:auto;
+    width:min(68%,760px);
+    max-width:calc(100% - clamp(320px,24vw,420px));
     margin:0;
     pointer-events:none;
   }
+}
+
+/* v7.69.60 final Tutorial/browser stability pass — keep the live hand actionable above the HUD. */
+body.match-mode .own-hand {
+  pointer-events:auto;
+  z-index:24;
+}
+body.match-mode .own-hand .hand-fan-card {
+  position:relative;
+  z-index:var(--hand-z,1);
+}
+
+/* The phase seam owns one geometry contract at every responsive size. */
+body.match-mode .board-phase-divider .phase-track {
+  box-sizing:border-box;
+  height:100%;
+  min-height:0;
+  padding:0;
+  align-items:stretch;
+}
+body.match-mode .board-phase-divider .phase-track span {
+  box-sizing:border-box;
+  height:auto;
+  min-height:0;
+  align-self:stretch;
+}
+body.match-mode .board-phase-divider .phase-track span.active,
+body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.active {
+  box-shadow:inset 0 0 0 1px currentColor, inset 0 0 16px color-mix(in srgb,currentColor 16%,transparent);
+}
+body.match-mode .board-phase-divider .phase-track span.active::after,
+body.match-mode .board-phase-divider.turn-owner-opponent .phase-track span.active::after {
+  display:none;
+  content:none;
 }
 .bot-result-notice { display:flex; flex-direction:column; gap:4px; margin-top:12px; padding:10px 14px; border-left:3px solid #c69743; background:rgba(199,151,67,.09); }
 .bot-result-notice span { color:#c69743; font-size:.67rem; letter-spacing:.12em; }
@@ -12816,10 +12851,41 @@ body.cosmetic-mode {
 @media (max-width:620px) {
   .bot-match-controls { grid-template-columns:1fr; align-items:stretch; }
   .bot-match-controls button { width:100%; }
-  .tutorial-guide { width:calc(100% - 16px); margin-top:8px; padding:10px 12px; }
+  .tutorial-guide { position:absolute; top:58px; left:8px; right:8px; width:auto; max-width:none; margin:0; padding:6px 9px; pointer-events:none; }
   .tutorial-guide span { font-size:.62rem; }
-  .tutorial-guide strong { font-size:.95rem; }
-  .tutorial-guide p { font-size:.8rem; }
+  .tutorial-guide p { max-width:42ch; font-size:.76rem; }
+}
+
+/* Tutorial v2 keeps the board visible while mandatory interaction surfaces stay authoritative. */
+body.match-mode .tutorial-guide { color:#f5ead1; }
+body.match-mode .tutorial-guide span { color:#f0c866; }
+body.match-mode .tutorial-guide p { color:#f1e6d2; }
+.tutorial-complete-button { min-width:170px; }
+
+/* Target, choice and response surfaces use explicit on-dark semantic roles. */
+body.match-mode .board-interaction-panel .interaction-panel,
+body.match-mode .board-interaction-panel .interaction-panel .dialog-primary-text { color:#f3f7ff; }
+body.match-mode .board-interaction-panel .dialog-secondary-text,
+body.match-mode .board-interaction-panel .interaction-panel .muted { color:#c8d5e4; }
+body.match-mode .board-interaction-panel .interaction-role-legend .role-source,
+body.match-mode .board-interaction-panel .interaction-role-legend .role-target,
+body.match-mode .board-interaction-panel .interaction-role-legend .role-selected { color:#e6f2ff; }
+body.match-mode .board-interaction-panel .selected-targets span.target-chip { color:#edfff2; background:rgba(83,151,110,.34); border:1px solid rgba(140,225,164,.35); }
+body.match-mode .board-interaction-panel .interaction-options button { color:#f2f6ff; background:rgba(44,72,106,.92); border-color:rgba(142,213,255,.48); }
+body.match-mode .board-interaction-panel .interaction-options button.dialog-confirm,
+body.match-mode .board-interaction-panel .interaction-options button.primary { color:#102319; background:#8ce9a7; border-color:#b6f5c7; }
+body.match-mode .board-interaction-panel .interaction-options button.dialog-cancel,
+body.match-mode .board-interaction-panel .interaction-options button.ghost { color:#e6edf7; background:rgba(255,255,255,.08); border-color:rgba(220,231,246,.36); }
+body.match-mode .board-interaction-panel .interaction-options button:disabled { color:#b7c2ce; background:rgba(77,93,112,.58); border-color:rgba(190,205,222,.24); opacity:1; }
+body.match-mode .decision-center.response-active { color:#f3f7ff; }
+body.match-mode .decision-center.response-active .response-title strong,
+body.match-mode .decision-center.response-active .response-title span,
+body.match-mode .decision-center.response-active .response-context,
+body.match-mode .decision-center.response-active .response-context small { color:#edf4ff; }
+@media (max-width:760px) {
+  body.match-mode .decision-center.response-active { max-height:30vh; overflow:auto; margin:4px 6px 8px; padding:7px; }
+  body.match-mode .decision-center.response-active .response-title strong { font-size:12px; }
+  body.match-mode .decision-center.response-active .response-options button { min-height:40px; }
 }
 
 /* Board-target choices stay in a compact screen-space dock; the battlefield remains unobstructed and in-flow size is unchanged. */

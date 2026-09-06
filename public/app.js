@@ -2263,7 +2263,8 @@ function phaseDisplayTitle(phase) {
 
 function phaseControlIsManual(match) {
   const tutorial = state.view?.settings?.mode === 'TUTORIAL';
-  return tutorial || match.phase === 'MAIN' || match.phase === 'BATTLE';
+  if (tutorial) return !['START','DRAW'].includes(match.phase);
+  return match.phase === 'MAIN' || match.phase === 'BATTLE';
 }
 
 function phaseAdvanceLabel(phase) {
@@ -2307,6 +2308,7 @@ function activeAdvanceConfirmation(match) {
 }
 
 function requestPhaseAdvance(match) {
+  if (state.view?.settings?.mode === 'TUTORIAL') return sendIntent({ type:'ADVANCE_PHASE' });
   const safety = phaseAdvanceSafety(match);
   if (!safety) return sendIntent({ type:'ADVANCE_PHASE' });
   state.pendingActionConfirmation = { kind:'ADVANCE_PHASE', stateVersion:match.stateVersion, ...safety };
@@ -2352,7 +2354,7 @@ function actionAvailability(match) {
 function currentActionPrompt(match) {
   const a = actionAvailability(match);
   if (state.view?.settings?.mode === 'TUTORIAL' && match.status !== 'ENDED') {
-    const step = tutorialStepForMatch(match);
+    const step = tutorialStepForMatch(match, state.eventLog);
     if (step) return { title:t(`tutorial.${step.labelKey}`), detail:t(`tutorial.${step.copyKey}`), tone:step.phase?.toLowerCase() ?? 'phase' };
   }
   if (match.status === 'ENDED') return { title:'Match complete', detail:'Review the result or return to the lobby.', tone:'ended' };
@@ -2690,7 +2692,7 @@ function handSelectionRole(match, instanceId) {
 function renderInteractionRoleLegend({ targetLabel = 'TARGET', selected = null, min = 0, max = 0 } = {}) {
   const selectedCopy = selected == null ? '' : (max ? `SELECTED ${selected}/${max}` : 'SELECTED');
   const ready = selected != null && selected >= min && selected <= max;
-  return `<div class="interaction-role-legend" aria-label="Interaction roles"><span class="role-source">SOURCE</span><i>→</i><span class="role-target">${esc(targetLabel)}</span>${selected == null ? '' : `<i>→</i><span class="role-selected ${ready ? 'ready' : ''}">${esc(selectedCopy)}</span>`}</div>`;
+  return `<div class="interaction-role-legend" aria-label="Interaction roles"><span class="role-source source-chip">SOURCE</span><i>→</i><span class="role-target target-chip">${esc(targetLabel)}</span>${selected == null ? '' : `<i>→</i><span class="role-selected target-chip ${ready ? 'ready' : ''}">${esc(selectedCopy)}</span>`}</div>`;
 }
 
 function beginAttack(attackerId) {
@@ -2724,14 +2726,14 @@ function renderInteraction(match) {
   if (!interaction) return '';
   if (interaction.type === 'EMPLOYEE') return ''; // Board-native placement: highlighted slots carry the choice.
   if (interaction.type === 'PROMOTION') {
-    return `<div class="interaction-panel promotion-guidance interaction-role-panel"><strong>${esc(t('matchInteraction.promotionTitle'))}</strong>${renderInteractionRoleLegend({ targetLabel:'MATERIALS' })}<div class="muted small-copy">${esc(t('matchInteraction.promotionHint',{ slot:interaction.slot + 1 }))}</div><div class="interaction-options">${interaction.options.map((o,i) => `<button class="small promotion-option" data-interaction="promotion-option" data-index="${i}">${o.promotionMaterialIds.length ? esc(o.promotionMaterialIds.map(cardLabel).join(' + ')) : esc(t('matchInteraction.noPromotionMaterials'))}</button>`).join('')}</div>${interaction.cancelable === false ? '' : `<button class="small ghost" data-interaction="cancel">${esc(t('common.cancel'))}</button>`}</div>`;
+    return `<div class="interaction-panel promotion-guidance interaction-role-panel"><strong class="dialog-primary-text">${esc(t('matchInteraction.promotionTitle'))}</strong>${renderInteractionRoleLegend({ targetLabel:'MATERIALS' })}<div class="dialog-secondary-text muted small-copy">${esc(t('matchInteraction.promotionHint',{ slot:interaction.slot + 1 }))}</div><div class="interaction-options">${interaction.options.map((o,i) => `<button class="small promotion-option" data-interaction="promotion-option" data-index="${i}">${o.promotionMaterialIds.length ? esc(o.promotionMaterialIds.map(cardLabel).join(' + ')) : esc(t('matchInteraction.noPromotionMaterials'))}</button>`).join('')}</div>${interaction.cancelable === false ? '' : `<button class="small ghost dialog-cancel" data-interaction="cancel">${esc(t('common.cancel'))}</button>`}</div>`;
   }
   if (interaction.type === 'SUPPORT') return ''; // Board-native placement: highlighted slots carry the choice.
   if (interaction.type === 'ATTACK') return ''; // Board-native target state: attacker/targets/REP carry the interaction.
   if (interaction.type === 'TARGETS') {
     const choice = interaction.targetChoices[interaction.index];
     const selected = interaction.selections[choice.selectorId] ?? [];
-    return `<div class="interaction-panel interaction-role-panel ${interaction.cancelable === false ? 'mandatory-interaction' : ''}"><strong>${esc(interaction.label)}</strong>${renderInteractionRoleLegend({ selected:selected.length, min:choice.min, max:choice.max })}<div class="muted small-copy">${esc(t('matchInteraction.targetStep',{ current:interaction.index + 1, total:interaction.targetChoices.length, selector:choice.selectorId, min:choice.min, max:choice.max }))}</div><div class="selected-targets">${selected.length ? selected.map((id) => `<span>${esc(cardLabel(id))}</span>`).join('') : `<span class="muted">${esc(t('matchInteraction.noTarget'))}</span>`}</div><div class="interaction-options"><button class="small primary" data-interaction="confirm-target" ${selected.length < choice.min || selected.length > choice.max ? 'disabled' : ''}>${esc(interaction.index < interaction.targetChoices.length - 1 ? t('matchInteraction.nextTarget') : t('matchInteraction.confirm'))}</button>${choice.min === 0 ? `<button class="small" data-interaction="skip-target">${esc(t('matchInteraction.skip'))}</button>` : ''}${interaction.cancelable === false ? '' : `<button class="small ghost" data-interaction="cancel">${esc(t('common.cancel'))}</button>`}</div></div>`;
+    return `<div class="interaction-panel interaction-role-panel ${interaction.cancelable === false ? 'mandatory-interaction' : ''}"><strong class="dialog-primary-text">${esc(interaction.label)}</strong>${renderInteractionRoleLegend({ selected:selected.length, min:choice.min, max:choice.max })}<div class="dialog-secondary-text muted small-copy">${esc(t('matchInteraction.targetStep',{ current:interaction.index + 1, total:interaction.targetChoices.length, selector:choice.selectorId, min:choice.min, max:choice.max }))}</div><div class="selected-targets">${selected.length ? selected.map((id) => `<span class="target-chip selected-chip">${esc(cardLabel(id))}</span>`).join('') : `<span class="dialog-secondary-text muted">${esc(t('matchInteraction.noTarget'))}</span>`}</div><div class="interaction-options"><button class="small primary dialog-confirm" data-interaction="confirm-target" ${selected.length < choice.min || selected.length > choice.max ? 'disabled' : ''}>${esc(interaction.index < interaction.targetChoices.length - 1 ? t('matchInteraction.nextTarget') : t('matchInteraction.confirm'))}</button>${choice.min === 0 ? `<button class="small" data-interaction="skip-target">${esc(t('matchInteraction.skip'))}</button>` : ''}${interaction.cancelable === false ? '' : `<button class="small ghost dialog-cancel" data-interaction="cancel">${esc(t('common.cancel'))}</button>`}</div></div>`;
   }
   return '';
 }
@@ -2743,9 +2745,9 @@ function renderBoardInteractionPanel(match) {
   const pendingHand = match?.pendingHandSelection?.playerId === viewerId;
   const pendingDeck = match?.pendingDeckSelection?.playerId === viewerId;
   if (interaction) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction">${interaction}</aside>`;
-  if (pendingTarget) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong>${esc(t('matchInteraction.pendingTargetTitle'))}</strong><div class="muted small-copy">${esc(t('matchInteraction.pendingTargetHint'))}</div>${actionButton(t('matchInteraction.chooseTargets'),'trigger-targets')}</div></aside>`;
-  if (pendingHand) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong>${esc(t('matchInteraction.pendingHandTitle',{ min:match.pendingHandSelection.min, max:match.pendingHandSelection.max }))}</strong><div class="muted small-copy">${esc(t('matchInteraction.pendingHandHint'))}</div>${actionButton(t('matchInteraction.confirmSelected',{ count:state.selectedHand.size }),'hand-select')}</div></aside>`;
-  if (pendingDeck) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong>${esc(t('matchInteraction.pendingDeckTitle'))}</strong><div class="muted small-copy">${esc(t('matchInteraction.pendingDeckHint'))}</div><div class="interaction-options">${match.pendingDeckSelection.candidateIds.map((id) => actionButton(cardLabel(id),'deck-select',`data-card="${esc(id)}"`)).join('')}${match.pendingDeckSelection.min === 0 ? actionButton(t('matchInteraction.chooseNone'),'deck-select','data-skip="1"') : ''}</div></div></aside>`;
+  if (pendingTarget) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong class="dialog-primary-text">${esc(t('matchInteraction.pendingTargetTitle'))}</strong><div class="dialog-secondary-text muted small-copy">${esc(t('matchInteraction.pendingTargetHint'))}</div>${actionButton(t('matchInteraction.chooseTargets'),'trigger-targets')}</div></aside>`;
+  if (pendingHand) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong class="dialog-primary-text">${esc(t('matchInteraction.pendingHandTitle',{ min:match.pendingHandSelection.min, max:match.pendingHandSelection.max }))}</strong><div class="dialog-secondary-text muted small-copy">${esc(t('matchInteraction.pendingHandHint'))}</div>${actionButton(t('matchInteraction.confirmSelected',{ count:state.selectedHand.size }),'hand-select')}</div></aside>`;
+  if (pendingDeck) return `<aside id="boardInteractionPanel" class="board-interaction-panel" aria-live="polite" aria-label="Board interaction"><div class="interaction-panel mandatory-interaction interaction-role-panel"><strong class="dialog-primary-text">${esc(t('matchInteraction.pendingDeckTitle'))}</strong><div class="dialog-secondary-text muted small-copy">${esc(t('matchInteraction.pendingDeckHint'))}</div><div class="interaction-options">${match.pendingDeckSelection.candidateIds.map((id) => actionButton(cardLabel(id),'deck-select',`data-card="${esc(id)}"`)).join('')}${match.pendingDeckSelection.min === 0 ? actionButton(t('matchInteraction.chooseNone'),'deck-select','data-skip="1"') : ''}</div></div></aside>`;
   return '';
 }
 
@@ -6809,7 +6811,7 @@ function renderLobby() {
       <aside class="executive-desk-left" aria-label="${esc(lobbyCopy('Lobby navigation and utilities','Lobby-Navigation und Werkzeuge'))}">
         <div class="desk-nav-rail">
           <div class="desk-nav-heading"><span>${lobbyCopy('OFFICE TERMINAL','OFFICE-TERMINAL')}</span><strong>${lobbyCopy('Main Lobby','Hauptlobby')}</strong></div>
-           <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Quick Match','Quick Match')}</strong><small>${lobbyCopy('Selected deck is staged on the desk.','Das gewählte Deck liegt auf dem Schreibtisch bereit.')}</small></div>
+           <div class="desk-nav-current" aria-current="page"><span>${lobbyCopy('PLAY','SPIELEN')}</span><strong>${lobbyCopy('Match Queue','Match-Suche')}</strong><small>${lobbyCopy('Choose a mode below to play.','Wähle unten einen Modus zum Spielen.')}</small></div>
            <button id="startTraining" class="desk-file-button bot-nav-button" type="button" ${trainingStatus.valid ? '' : 'disabled'}><span>${esc(t('training.modeLabel'))}</span><strong>${esc(t('training.title'))}</strong><small>${esc(t('training.description'))}</small></button>
            <button id="startTutorial" class="desk-file-button bot-nav-button" type="button" ${trainingStatus.valid ? '' : 'disabled'}><span>${esc(t('tutorial.modeLabel'))}</span><strong>${esc(t('tutorial.title'))}</strong><small>${esc(t('tutorial.description'))}</small></button>
            <button id="openCollection" class="desk-collection-drawer" type="button"><span>${lobbyCopy('COLLECTION','SAMMLUNG')}</span><strong>${lobbyCopy('Deckbuilder','Deckbuilder')}</strong><small>${lobbyCopy('Cards, decks & crafting','Karten, Decks & Crafting')}</small></button>
@@ -7437,7 +7439,10 @@ function renderActions(match, { includeResign = true } = {}) {
   const legal = match.legalActions;
   const groups = [];
   if (legal.activatableAbilities.length) groups.push(`<div class="group"><div class="group-title">Activated abilities</div>${legal.activatableAbilities.map((o,i) => actionButton(`${cardLabel(o.sourceId)} · ${o.abilityId}`,'ability',`data-index="${i}"`)).join('')}</div>`);
-  if (legal.canAdvancePhase && phaseControlIsManual(match)) groups.push(`<div class="group"><div class="group-title">Turn</div>${actionButton(phaseAdvanceLabel(match.phase),'advance')}</div>`);
+  const tutorialStep = state.view?.settings?.mode === 'TUTORIAL' ? tutorialStepForMatch(match, state.eventLog) : null;
+  const tutorialEndAdvance = tutorialStep?.id === 'end-phase' && match.phase !== 'END';
+  if (legal.canAdvancePhase && (phaseControlIsManual(match) || tutorialEndAdvance) && (!tutorialStep || tutorialStep.allowed.includes('ADVANCE_PHASE'))) groups.push(`<div class="group"><div class="group-title">Turn</div>${actionButton(phaseAdvanceLabel(match.phase),'advance')}</div>`);
+  if (tutorialStep?.id === 'end-phase' && match.phase === 'END') groups.push(`<div class="group"><div class="group-title">Tutorial</div>${actionButton(t('tutorial.complete'),'complete-tutorial')}</div>`);
   if (includeResign) groups.push(`<div class="group"><div class="group-title">Match</div>${actionButton('Resign','resign')}</div>`);
   return groups.join('');
 }
@@ -7476,8 +7481,11 @@ function renderCommandDock(match) {
   const abilityCount = legal.activatableAbilities.length;
   const prompt = currentActionPrompt(match);
   const confirmation = activeAdvanceConfirmation(match);
-  const phaseControlVisible = phaseControlIsManual(match);
-  const showDock = Boolean((phaseControlVisible && legal.canAdvancePhase) || abilityCount || legal.responseOptions.length || legal.canPassPriority || prompt.tone === 'required' || confirmation);
+  const tutorialStep = state.view?.settings?.mode === 'TUTORIAL' ? tutorialStepForMatch(match, state.eventLog) : null;
+  const tutorialCompleteReady = tutorialStep?.id === 'end-phase' && match.phase === 'END';
+  const tutorialEndAdvance = tutorialStep?.id === 'end-phase' && match.phase !== 'END';
+  const phaseControlVisible = (phaseControlIsManual(match) || tutorialEndAdvance) && (!tutorialStep || tutorialStep.allowed.includes('ADVANCE_PHASE'));
+  const showDock = Boolean(((phaseControlVisible && legal.canAdvancePhase) || tutorialEndAdvance) || tutorialCompleteReady || abilityCount || legal.responseOptions.length || legal.canPassPriority || prompt.tone === 'required' || confirmation);
   if (!showDock || match.status === 'ENDED') return '';
   const busy = state.intentBusy;
   if (confirmation && !busy) {
@@ -7499,7 +7507,7 @@ function renderCommandDock(match) {
     <div class="command-buttons">
       ${busy ? `<span class="intent-busy-pill"><i aria-hidden="true"></i>SYNCING</span>` : abilityCount ? `<span class="ability-hint">${abilityCount} activated ${abilityCount === 1 ? 'ability' : 'abilities'} ready</span>` : ''}
       ${legal.canPassPriority ? `<button class="pass-response dock-pass" data-action="pass" ${busy ? 'disabled' : ''}>Pass priority</button>` : ''}
-      ${phaseControlVisible && legal.canAdvancePhase ? `${advanceSafety && !busy ? `<span class="phase-risk-pill" title="${esc(advanceSafety.detail)}">${esc(advanceSafety.count)} REMAIN</span>` : ''}<button class="primary phase-button ${advanceSafety ? 'guarded' : ''}" data-action="advance" ${busy ? 'disabled' : ''}>${esc(phaseAdvanceLabel(match.phase))}</button>` : ''}
+      ${tutorialCompleteReady ? `<button class="primary phase-button tutorial-complete-button" data-action="complete-tutorial" ${busy ? 'disabled' : ''}>${esc(t('tutorial.complete'))} →</button>` : (tutorialEndAdvance || (phaseControlVisible && legal.canAdvancePhase)) ? `${advanceSafety && !busy ? `<span class="phase-risk-pill" title="${esc(advanceSafety.detail)}">${esc(advanceSafety.count)} REMAIN</span>` : ''}<button class="primary phase-button ${advanceSafety ? 'guarded' : ''}" data-action="advance" ${busy ? 'disabled' : ''}>${esc(phaseAdvanceLabel(match.phase))}</button>` : ''}
     </div>
   </div>`;
 }
@@ -7808,8 +7816,8 @@ function renderArenaSidePanel(match, guidanceTip) {
 
 function renderTutorialGuide(match) {
   if (state.view?.settings?.mode !== 'TUTORIAL' || !match || match.status === 'ENDED') return '';
-  const step = tutorialStepForMatch(match);
-  return `<aside class="tutorial-guide tutorial-focus-${esc(step.focus)}" aria-live="polite" data-tutorial-step="${esc(step.id)}"><span>${esc(t('tutorial.modeLabel'))} · ${esc(t('tutorial.' + step.labelKey))}</span><strong>${esc(t('tutorial.title'))}</strong><p>${esc(t('tutorial.' + step.copyKey))}</p></aside>`;
+  const step = tutorialStepForMatch(match, state.eventLog);
+  return `<aside class="tutorial-guide tutorial-focus-${esc(step.focus)}" aria-live="polite" data-tutorial-step="${esc(step.id)}"><span>${esc(t('tutorial.modeLabel'))} · ${esc(t('tutorial.' + step.labelKey))}</span><p>${esc(t('tutorial.' + step.copyKey))}</p></aside>`;
 }
 
 function cardRulesPresentation(def) {
@@ -7821,11 +7829,11 @@ function cardRulesPresentation(def) {
 function applyTutorialFocus(match) {
   if (state.view?.settings?.mode !== 'TUTORIAL' || !match) return;
   document.querySelectorAll('[data-tutorial-focus]').forEach((node) => node.removeAttribute('data-tutorial-focus'));
-  const step = tutorialStepForMatch(match);
+  const step = tutorialStepForMatch(match, state.eventLog);
   const me = match.players?.[match.viewerId] ?? {};
   const legal = match.legalActions ?? {};
   const ids = step.focus === 'hand'
-    ? step.id === 'play-employee' ? (legal.playableEmployees ?? []).map((item) => item.cardId) : [...(legal.playableSystems ?? []), ...(legal.playableActions ?? []), ...(legal.settableIncidents ?? [])].map((item) => item.cardId)
+    ? ['play-employee','play-second-employee'].includes(step.id) ? (legal.playableEmployees ?? []).map((item) => item.cardId) : [...(legal.playableSystems ?? []), ...(legal.playableActions ?? []), ...(legal.settableIncidents ?? [])].map((item) => item.cardId)
     : [];
   const target = ids.map((id) => document.querySelector(`[data-card-ref="${CSS.escape(id)}"]`)).find(Boolean)
     ?? (step.focus === 'phase' ? document.querySelector('.phase-track') : null)
@@ -7863,9 +7871,9 @@ function renderGame() {
       </div>
        ${renderMobileBoardNav(match)}
        ${renderMobileMatchMenu(match)}
-       ${renderTutorialGuide(match)}
       <div class="arena-layout">
         <div class="arena-board-column">
+          ${renderTutorialGuide(match)}
           <div class="battlefield-surface" aria-label="Office battlefield">
             <div class="battlefield-world">
               <div class="arena-surface-layer" aria-hidden="true"></div>
@@ -8199,8 +8207,8 @@ async function sendIntent(intent) {
   state.pendingActionConfirmation = null;
   let match = state.view?.match;
   if (!match || !state.session) return;
-  if (state.view?.settings?.mode === 'TUTORIAL' && !tutorialActionAllowed(match, intent)) {
-    const step = tutorialStepForMatch(match);
+  if (state.view?.settings?.mode === 'TUTORIAL' && !tutorialActionAllowed(match, intent, state.eventLog)) {
+    const step = tutorialStepForMatch(match, state.eventLog);
     state.lastError = null;
     showFeedback('info', t('tutorial.tryStepTitle'), t('tutorial.invalidAction', { instruction:t(`tutorial.${step.copyKey}`) }), { duration:2200 });
     render();
@@ -8538,6 +8546,7 @@ function bindGameHandlers(match) {
       if (kind === 'mulligan-clear') { state.selectedHand.clear(); render(); return; }
       if (kind === 'archive-selected') return sendIntent({ type:'ARCHIVE_EXCESS_HAND', cardIds:[...state.selectedHand] });
       if (kind === 'advance') return requestPhaseAdvance(match);
+      if (kind === 'complete-tutorial') return sendIntent({ type:'COMPLETE_TUTORIAL' });
       if (kind === 'cancel-advance') { state.pendingActionConfirmation = null; render(); return; }
       if (kind === 'confirm-advance') {
         const pending = activeAdvanceConfirmation(match);

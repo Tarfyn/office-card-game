@@ -499,7 +499,7 @@ export class RoomService {
   createBotRoom(deckSelection: DeckSelection, settingsSelection: RoomSettingsSelection = {}, identity: RoomSeatIdentity = {}, botDeckSelection: DeckSelection = "it-starter", botDisplayName = "Office Coach", qaSetup?: MatchQaSetup): CreateRoomResult {
     const created = this.createRoom(deckSelection, { ...settingsSelection, bot:true, rewardEligible:false }, identity);
     const tutorialSetup = settingsSelection.mode === "TUTORIAL" && !qaSetup
-      ? { fixedSeed: 76957, fixedFirstPlayerId:"P2" as const, forceOpeningDefinitionIds:["N-001", "N-002", "CS-010", "IT-005", "IT-003"], forceDrawDefinitionIds:["IT-014"], forceOpponentOpeningDefinitionIds:["N-001", "N-001"] }
+      ? { fixedSeed: 76960, fixedFirstPlayerId:"P2" as const, forcePlayerOpeningFieldDefinitionIds:["N-001", "CS-021"], forceOpeningDefinitionIds:["N-002", "N-009", "N-005", "N-010", "N-013"], forceOpponentOpeningFieldDefinitionIds:["N-001"], initialCapacity:3 }
       : qaSetup;
     this.joinRoom(created.roomId, botDeckSelection, { displayName:botDisplayName, isBot:true }, tutorialSetup);
     const room = this.getRoom(created.roomId);
@@ -795,7 +795,7 @@ export class RoomService {
       playerId: seat.playerId,
       expectedStateVersion: request.expectedStateVersion,
       intent: request.intent
-    }, { autoAdvancePhases: room.settings.mode !== "TUTORIAL" });
+    }, { autoAdvancePhases: room.settings.mode !== "TUTORIAL", autoAdvanceTutorialPhases: room.settings.mode === "TUTORIAL", allowTutorialCompletion: room.settings.mode === "TUTORIAL" });
     room.state = execution.state;
     const now = this.nowFactory();
     recordIntentResult(room.telemetry, now, seat.playerId, request.intent.type, execution.response.accepted, room.state.stateVersion);
@@ -980,7 +980,7 @@ export class RoomService {
         playerId:"P2",
         expectedStateVersion:previous.stateVersion,
         intent:decision.intent
-      }, { autoAdvancePhases: room.settings.mode !== "TUTORIAL" });
+      }, { autoAdvancePhases: room.settings.mode !== "TUTORIAL", autoAdvanceTutorialPhases: room.settings.mode === "TUTORIAL", allowTutorialCompletion: room.settings.mode === "TUTORIAL" });
       if (!execution.response.accepted) break;
       room.state = execution.state;
       const now = this.nowFactory();
