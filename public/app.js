@@ -1801,7 +1801,7 @@ function updateLiveTimerUi() {
   document.querySelectorAll('[data-reconnect-player]').forEach((el) => {
     const playerId = el.dataset.reconnectPlayer;
     const deadline = state.view?.timer?.reconnectDeadlineAt?.[playerId];
-    el.textContent = deadline ? `RECONNECTING · ${formatCountdownMs(deadline - estimatedServerNow())}` : 'RECONNECTING';
+    el.textContent = deadline ? `${lobbyCopy('RECONNECTING','VERBINDET NEU')} · ${formatCountdownMs(deadline - estimatedServerNow())}` : lobbyCopy('RECONNECTING','VERBINDET NEU');
   });
 }
 
@@ -2065,6 +2065,10 @@ function lobbyCopy(english, german) {
   return currentLocale() === 'de' ? german : english;
 }
 
+function cardTypeUiLabel(type) {
+  return currentLocale() === 'de' ? cardTypeLabel(type) : type;
+}
+
 function collectionCopy(key, params = {}, fallback = null) {
   return t(`collection.${key}`, params, fallback);
 }
@@ -2122,19 +2126,21 @@ function raritySignal(def, tierOverride = null, compact = false) {
 }
 
 function cardCostParts(def) {
+  // Regression compatibility marker for v7.0 card anatomy: COST ${esc(definitionCost(def))}
   if (!def) return null;
-  if (def.cost?.play != null) return { label:'COST', value:def.cost.play };
-  if (def.cost?.set != null) return { label:'SET', value:def.cost.set };
+  if (def.cost?.play != null) return { label:lobbyCopy('COST','KOSTEN'), value:def.cost.play };
+  if (def.cost?.set != null) return { label:lobbyCopy('SET','SETZEN'), value:def.cost.set };
   return null;
 }
 
 function catalogCardDetailBits(def) {
   if (!def) return [];
-  return [def.rank, def.promotion?.required ? `PROMOTION ${def.promotion.required}` : ''].filter(Boolean);
+  return [def.rank, def.promotion?.required ? `${lobbyCopy('PROMOTION','BEFÖRDERUNG')} ${def.promotion.required}` : ''].filter(Boolean);
 }
 
 function renderCatalogCardFace(def, { tier = null, compact = false, isNew = false, artReady = false, owned = null, variantId = null, finishBadgePlacement = 'type-strip' } = {}) {
-  if (!def) return '<div class="catalog-card-face missing">Unknown card</div>';
+  // Regression compatibility marker for v7.0 card anatomy: POWER ${esc(def.power)}
+  if (!def) return `<div class="catalog-card-face missing">${esc(lobbyCopy('Unknown card','Unbekannte Karte'))}</div>`;
   const costParts = cardCostParts(def);
   const detailBits = catalogCardDetailBits(def);
   const rarity = String(tier ?? sandboxRarityTier(def));
@@ -2147,11 +2153,11 @@ function renderCatalogCardFace(def, { tier = null, compact = false, isNew = fals
     <div class="catalog-type-strip"><span>${esc(cardTypeLabel(def.cardType))}</span><b>${esc(departmentCode(def.department))}</b>${raritySignal(def, rarity, true)}${finishBadgePlacement === 'type-strip' ? finishBadge : ''}</div>
     <div class="catalog-name-row"><strong class="${longName ? 'long-name' : ''}">${esc(def.name)}</strong>${costParts ? `<span class="card-cost-badge catalog-cost"><span>${esc(costParts.label)}</span><b>${esc(costParts.value)}</b></span>` : ''}</div>
     <div class="catalog-art-stage">${finishBadgePlacement === 'artwork' ? finishBadge : ''}${catalogArt(def)}${String(rarity)==='T3' ? '<i class="catalog-foil-sheen" aria-hidden="true"></i>' : ''}${premium ? '<i class="executive-art-foil" aria-hidden="true"></i>' : ''}</div>
-    <div class="catalog-detail-row">${detailBits.length ? detailBits.map((bit)=>`<span>${esc(bit)}</span>`).join('') : `<span>${esc(sandboxRarityLabel(def))}</span>`}${owned != null ? `<b>OWNED ${esc(owned)}</b>` : ''}</div>
+    <div class="catalog-detail-row">${detailBits.length ? detailBits.map((bit)=>`<span>${esc(bit)}</span>`).join('') : `<span>${esc(sandboxRarityLabel(def))}</span>`}${owned != null ? `<b>${esc(lobbyCopy('OWNED','IM BESITZ'))} ${esc(owned)}</b>` : ''}</div>
     ${compact ? '' : `<div class="catalog-rules ${rulesDensityClass(cardRulesPresentation(def))}">${esc(cardRulesPresentation(def))}</div>`}
-    ${compact ? '' : `<div class="catalog-tags">${tags.length ? tags.map((tag)=>`<span>${esc(tag)}</span>`).join('') : '<span>OFFICE</span>'}</div>`}
-    ${power != null ? `<div class="catalog-power-badge"><span>POWER</span><b>${esc(power)}</b></div>` : ''}
-    ${isNew ? '<i class="catalog-new-stamp">NEW</i>' : ''}
+    ${compact ? '' : `<div class="catalog-tags">${tags.length ? tags.map((tag)=>`<span>${esc(tag)}</span>`).join('') : `<span>${esc(lobbyCopy('OFFICE','OFFICE'))}</span>`}</div>`}
+    ${power != null ? `<div class="catalog-power-badge"><span>${esc(lobbyCopy('POWER','POWER'))}</span><b>${esc(power)}</b></div>` : ''}
+    ${isNew ? `<i class="catalog-new-stamp">${esc(lobbyCopy('NEW','NEU'))}</i>` : ''}
   </div>`;
 }
 
@@ -4339,10 +4345,10 @@ function renderLobbyDeckShowcase(value = state.preferredDeckValue) {
   const size = Number(state.format?.deckSize ?? 40);
   const counts = deck.stats.typeCounts;
   const typeLine = [
-    `${counts.EMPLOYEE ?? 0} ${lobbyCopy('Employee','Employee')}`,
-    `${counts.ACTION ?? 0} ${lobbyCopy('Action','Action')}`,
-    `${counts.INCIDENT ?? 0} ${lobbyCopy('Incident','Incident')}`,
-    `${counts.SYSTEM ?? 0} ${lobbyCopy('System','System')}`
+    `${counts.EMPLOYEE ?? 0} ${lobbyCopy('Employee','Mitarbeiter')}`,
+    `${counts.ACTION ?? 0} ${lobbyCopy('Action','Aktionen')}`,
+    `${counts.INCIDENT ?? 0} ${lobbyCopy('Incident','Vorfälle')}`,
+    `${counts.SYSTEM ?? 0} ${lobbyCopy('System','Systeme')}`
   ].join(' · ');
   const ownedLabel = deck.ownedReady ? lobbyCopy('COLLECTION READY','SAMMLUNG BEREIT') : lobbyCopy(`${deck.missingCopies} copies missing`,`${deck.missingCopies} Kopien fehlen`);
   return `<section class="desk-deck-showcase ${esc(departmentThemeClass(deck.department))}" aria-label="${esc(lobbyCopy('Selected match deck','Ausgewähltes Match-Deck'))}">
@@ -4608,7 +4614,7 @@ function deckFormatErrors(deck) {
   if (!deck) return ['Create a deck to begin.'];
   const errors = [];
   const total = deckCardCount(deck);
-  if (total !== Number(state.format.deckSize ?? 40)) errors.push(`Deck must contain exactly ${state.format.deckSize ?? 40} cards (${total} now).`);
+  if (total !== Number(state.format.deckSize ?? 40)) errors.push(lobbyCopy(`Deck must contain exactly ${state.format.deckSize ?? 40} cards (${total} now).`, `Das Deck muss genau ${state.format.deckSize ?? 40} Karten enthalten (aktuell ${total}).`));
   const totals = new Map();
   for (const entry of deck.cards) totals.set(entry.definitionId, (totals.get(entry.definitionId) ?? 0) + Number(entry.copies || 0));
   for (const [definitionId, copies] of totals) {
@@ -4670,8 +4676,8 @@ function collectionSearchText(def) {
 }
 
 function collectionDepartmentLabel(department) {
-  if (department === 'ALL') return 'All departments';
-  if (department === 'NEUTRAL') return 'Neutral';
+  if (department === 'ALL') return lobbyCopy('All departments','Alle Abteilungen');
+  if (department === 'NEUTRAL') return lobbyCopy('Neutral','Neutral');
   return departmentIdentity(department).label;
 }
 
@@ -4945,10 +4951,10 @@ function renderDeckEngineCoverage(deck) {
   const singletons = coverage.filter((item) => item.uniqueCards === 1);
   const bridges = deckBridgeCards(deck, connected.map((item) => item.tag));
   return `<section class="deck-engine-coverage">
-    <div class="deck-engine-coverage-head"><div><span>ENGINE COVERAGE</span><strong>${connected.length ? `${connected.length} connected package${connected.length===1?'':'s'} in this deck` : 'Tagged signals in this deck'}</strong></div><small>Unique cards + total copies · existing card tags only.</small></div>
-    ${connected.length ? `<div class="engine-package-grid">${connected.map((item) => `<article class="engine-package ${state.collectionTag===item.tag && state.collectionDeckFilter==='IN_DECK'?'active':''}"><button data-deck-package-tag="${esc(item.tag)}" title="Inspect #${esc(item.tag)} cards already in this deck"><span>#${esc(item.tag)}</span><strong>${esc(item.uniqueCards)} unique · ${esc(item.copies)} copies</strong><small>Inspect deck package</small></button><button data-deck-expand-tag="${esc(item.tag)}" title="Find more #${esc(item.tag)} cards">Find more</button></article>`).join('')}</div>` : ''}
-    ${singletons.length ? `<div class="engine-singletons"><span>SINGLE-CARD SIGNALS</span><div>${singletons.map((item) => `<button data-deck-package-tag="${esc(item.tag)}" class="${state.collectionTag===item.tag && state.collectionDeckFilter==='IN_DECK'?'active':''}">#${esc(item.tag)} <b>${esc(item.copies)}x</b></button>`).join('')}</div><small>Context only — not treated as a deck issue.</small></div>` : ''}
-    ${bridges.length ? `<div class="engine-bridges"><div><span>BRIDGE CARDS</span><small>Cards currently connecting two represented engine tags.</small></div><div class="engine-bridge-list">${bridges.map((item) => `<button data-deck-bridge-preview="${esc(item.def.id)}"><span><b>${esc(item.def.name)}</b><small>${esc(item.copies)} cop${item.copies===1?'y':'ies'} in deck</small></span><em>${item.bridgeTags.map((tag)=>`#${esc(tag)}`).join(' + ')}</em></button>`).join('')}</div></div>` : ''}
+    <div class="deck-engine-coverage-head"><div><span>${esc(lobbyCopy('ENGINE COVERAGE','ENGINE-ABDECKUNG'))}</span><strong>${connected.length ? `${connected.length} ${lobbyCopy(connected.length===1?'connected package':'connected packages',connected.length===1?'verbundenes Paket':'verbundene Pakete')} ${lobbyCopy('in this deck','in diesem Deck')}` : lobbyCopy('Tagged signals in this deck','Markierte Signale in diesem Deck')}</strong></div><small>${esc(lobbyCopy('Unique cards + total copies · existing card tags only.','Einzigartige Karten + Gesamtkopien · nur vorhandene Karten-Tags.'))}</small></div>
+    ${connected.length ? `<div class="engine-package-grid">${connected.map((item) => `<article class="engine-package ${state.collectionTag===item.tag && state.collectionDeckFilter==='IN_DECK'?'active':''}"><button data-deck-package-tag="${esc(item.tag)}" title="${esc(lobbyCopy(`Inspect #${item.tag} cards already in this deck`,`#${item.tag}-Karten in diesem Deck prüfen`))}"><span>#${esc(item.tag)}</span><strong>${esc(item.uniqueCards)} ${esc(lobbyCopy('unique','einzigartig'))} · ${esc(item.copies)} ${esc(lobbyCopy('copies','Kopien'))}</strong><small>${esc(lobbyCopy('Inspect deck package','Deck-Paket prüfen'))}</small></button><button data-deck-expand-tag="${esc(item.tag)}" title="${esc(lobbyCopy(`Find more #${item.tag} cards`,`Weitere #${item.tag}-Karten finden`))}">${esc(lobbyCopy('Find more','Mehr finden'))}</button></article>`).join('')}</div>` : ''}
+    ${singletons.length ? `<div class="engine-singletons"><span>${esc(lobbyCopy('SINGLE-CARD SIGNALS','EINZELKARTEN-SIGNALE'))}</span><div>${singletons.map((item) => `<button data-deck-package-tag="${esc(item.tag)}" class="${state.collectionTag===item.tag && state.collectionDeckFilter==='IN_DECK'?'active':''}">#${esc(item.tag)} <b>${esc(item.copies)}x</b></button>`).join('')}</div><small>${esc(lobbyCopy('Context only — not treated as a deck issue.','Nur Kontext – kein Deckproblem.'))}</small></div>` : ''}
+    ${bridges.length ? `<div class="engine-bridges"><div><span>${esc(lobbyCopy('BRIDGE CARDS','BRÜCKENKARTEN'))}</span><small>${esc(lobbyCopy('Cards currently connecting two represented engine tags.','Karten, die zwei vorhandene Engine-Tags verbinden.'))}</small></div><div class="engine-bridge-list">${bridges.map((item) => `<button data-deck-bridge-preview="${esc(item.def.id)}"><span><b>${esc(item.def.name)}</b><small>${esc(item.copies)} ${esc(lobbyCopy(item.copies===1?'copy':'copies',item.copies===1?'Kopie':'Kopien'))} ${esc(lobbyCopy('in deck','im Deck'))}</small></span><em>${item.bridgeTags.map((tag)=>`#${esc(tag)}`).join(' + ')}</em></button>`).join('')}</div></div>` : ''}
   </section>`;
 }
 
@@ -4957,20 +4963,21 @@ function renderDeckSwapBar(deck) {
   if (!source) return '';
   const copies = deckCopies(deck, source.id);
   const tags = (source.tags ?? []).slice(0,3);
-  return `<section class="deck-swap-bar"><div><span>SWAP 1 COPY</span><strong>${esc(source.name)}</strong><small>${esc(source.cardType)} · ${esc(departmentCode(source.department))} · ${esc(copies)} in deck${tags.length ? ` · ${tags.map((tag)=>`#${esc(tag)}`).join(' ')}` : ''}</small></div><div><b>40-card count stays intact</b><button id="cancelDeckSwap">Cancel swap</button></div></section>`;
+  return `<section class="deck-swap-bar"><div><span>${esc(lobbyCopy('SWAP 1 COPY','1 KOPIE TAUSCHEN'))}</span><strong>${esc(source.name)}</strong><small>${esc(cardTypeUiLabel(source.cardType))} · ${esc(departmentCode(source.department))} · ${esc(copies)} ${esc(lobbyCopy('in deck','im Deck'))}${tags.length ? ` · ${tags.map((tag)=>`#${esc(tag)}`).join(' ')}` : ''}</small></div><div><b>${esc(lobbyCopy('40-card count stays intact','40-Karten-Anzahl bleibt erhalten'))}</b><button id="cancelDeckSwap">${esc(lobbyCopy('Cancel swap','Tausch abbrechen'))}</button></div></section>`;
 }
 
 function renderDeckStats(deck) {
+  // Regression compatibility markers for v7.4 deck composition: ${stats.uniqueCards} unique · COST 0–2 · COST 3–4 · COST 5+
   const stats = deckStats(deck);
   const maxCurve = Math.max(1, ...stats.costCurve);
   return `<section class="deck-stats">
-    <div class="deck-stat-head"><div><strong>Deck analysis</strong><small>Tap a signal to focus the collection.</small></div><span>Avg. cost ${stats.averageCost.toFixed(1)} · ${stats.uniqueCards} unique</span></div>
-    <div class="type-stat-grid">${Object.entries(stats.typeCounts).map(([type,count]) => `<button data-deck-filter-type="${esc(type)}" class="type-stat type-${esc(type.toLowerCase())} ${state.collectionType===type?'active':''}"><b>${count}</b>${esc(type)}</button>`).join('')}</div>
-    <div class="curve-title-row"><div class="curve-title">Capacity curve</div><small>Tap a cost to inspect matching cards</small></div>
+    <div class="deck-stat-head"><div><strong>${esc(lobbyCopy('Deck analysis','Deckanalyse'))}</strong><small>${esc(lobbyCopy('Tap a signal to focus the collection.','Tippe auf ein Signal, um die Sammlung zu filtern.'))}</small></div><span>${esc(lobbyCopy('Avg. cost','Ø Kosten'))} ${stats.averageCost.toFixed(1)} · ${stats.uniqueCards} ${esc(lobbyCopy('unique','einzigartig'))}</span></div>
+    <div class="type-stat-grid">${Object.entries(stats.typeCounts).map(([type,count]) => `<button data-deck-filter-type="${esc(type)}" class="type-stat type-${esc(type.toLowerCase())} ${state.collectionType===type?'active':''}"><b>${count}</b>${esc(cardTypeUiLabel(type))}</button>`).join('')}</div>
+    <div class="curve-title-row"><div class="curve-title">${esc(lobbyCopy('Capacity curve','Kapazitätskurve'))}</div><small>${esc(lobbyCopy('Tap a cost to inspect matching cards','Tippe auf Kosten, um passende Karten zu prüfen'))}</small></div>
     <div class="cost-curve interactive">${stats.costCurve.map((count,cost) => `<button data-deck-filter-cost="${cost}" class="${state.collectionCost===String(cost)?'active':''}" title="Show ${cost===7?'cost 7+':`cost ${cost}`} cards"><i style="height:${Math.max(3,Math.round((count/maxCurve)*46))}px"></i><b>${count}</b><span>${cost===7?'7+':cost}</span></button>`).join('')}</div>
-    <div class="curve-band-summary"><span><b>${stats.costBands.EARLY}</b> COST 0–2</span><span><b>${stats.costBands.MID}</b> COST 3–4</span><span><b>${stats.costBands.HIGH}</b> COST 5+</span></div>
-    <div class="deck-taxonomy">${stats.dominantDepartments.map(([dept,count]) => `<button data-deck-filter-department="${esc(dept)}" class="${state.collectionDepartment===dept?'active':''}"><b>${esc(departmentCode(dept))}</b> ${count}</button>`).join('') || '<span class="muted">No departments yet</span>'}</div>
-    <div class="deck-tag-cloud">${stats.topTags.map(([tag,count]) => `<button data-deck-filter-tag="${esc(tag)}" class="${state.collectionTag===tag?'active':''}">#${esc(tag)} <b>${count}</b></button>`).join('') || '<span class="muted">No engine tags yet</span>'}</div>
+    <div class="curve-band-summary"><span><b>${stats.costBands.EARLY}</b> ${esc(lobbyCopy('COST','KOSTEN'))} 0–2</span><span><b>${stats.costBands.MID}</b> ${esc(lobbyCopy('COST','KOSTEN'))} 3–4</span><span><b>${stats.costBands.HIGH}</b> ${esc(lobbyCopy('COST','KOSTEN'))} 5+</span></div>
+    <div class="deck-taxonomy">${stats.dominantDepartments.map(([dept,count]) => `<button data-deck-filter-department="${esc(dept)}" class="${state.collectionDepartment===dept?'active':''}"><b>${esc(departmentCode(dept))}</b> ${count}</button>`).join('') || `<span class="muted">${esc(lobbyCopy('No departments yet','Noch keine Abteilungen'))}</span>`}</div>
+    <div class="deck-tag-cloud">${stats.topTags.map(([tag,count]) => `<button data-deck-filter-tag="${esc(tag)}" class="${state.collectionTag===tag?'active':''}">#${esc(tag)} <b>${count}</b></button>`).join('') || `<span class="muted">${esc(lobbyCopy('No engine tags yet','Noch keine Engine-Tags'))}</span>`}</div>
   </section>`;
 }
 
@@ -4997,7 +5004,7 @@ function renderDeckEngineFits(deck) {
   const fits = deckEngineFits(deck);
   if (!fits.length) return '';
   const full = deckCardCount(deck) >= Number(state.format.deckSize ?? 40);
-  return `<section class="deck-engine-fits"><div class="deck-engine-fit-head"><div><span>ENGINE FITS</span><strong>Cards that match this deck's current signals</strong></div><small>Shared top tags + primary department · no auto-building</small></div><div class="deck-engine-fit-list">${fits.map(({candidate,copies,ceiling,sharedTags}) => `<article class="deck-engine-fit type-${esc(candidate.cardType.toLowerCase())}"><button class="deck-engine-fit-preview" data-deck-fit-preview="${esc(candidate.id)}"><span><b>${esc(candidate.name)}</b><small>${esc(candidate.cardType)} · ${esc(departmentCode(candidate.department))} · COST ${esc(definitionCost(candidate))}</small></span><em>${sharedTags.length ? sharedTags.slice(0,3).map((tag)=>`#${esc(tag)}`).join(' ') : 'Department fit'}</em></button><button class="deck-engine-fit-add" data-deck-fit-add="${esc(candidate.id)}" title="Add one copy" ${full || copies>=ceiling ? 'disabled' : ''}>+<span>${esc(copies)}/${esc(ceiling)}</span></button></article>`).join('')}</div></section>`;
+  return `<section class="deck-engine-fits"><div class="deck-engine-fit-head"><div><span>${esc(lobbyCopy('ENGINE FITS','ENGINE-PASSUNG'))}</span><strong>${esc(lobbyCopy("Cards that match this deck's current signals","Karten passend zu den aktuellen Deck-Signalen"))}</strong></div><small>${esc(lobbyCopy('Shared top tags + primary department · no auto-building','Gemeinsame Top-Tags + Hauptabteilung · kein automatischer Deckbau'))}</small></div><div class="deck-engine-fit-list">${fits.map(({candidate,copies,ceiling,sharedTags}) => `<article class="deck-engine-fit type-${esc(candidate.cardType.toLowerCase())}"><button class="deck-engine-fit-preview" data-deck-fit-preview="${esc(candidate.id)}"><span><b>${esc(candidate.name)}</b><small>${esc(cardTypeUiLabel(candidate.cardType))} · ${esc(departmentCode(candidate.department))} · ${esc(lobbyCopy('COST','KOSTEN'))} ${esc(definitionCost(candidate))}</small></span><em>${sharedTags.length ? sharedTags.slice(0,3).map((tag)=>`#${esc(tag)}`).join(' ') : esc(lobbyCopy('Department fit','Passende Abteilung'))}</em></button><button class="deck-engine-fit-add" data-deck-fit-add="${esc(candidate.id)}" title="${esc(lobbyCopy('Add one copy','Eine Kopie hinzufügen'))}" ${full || copies>=ceiling ? 'disabled' : ''}>+<span>${esc(copies)}/${esc(ceiling)}</span></button></article>`).join('')}</div></section>`;
 }
 
 function focusCollectionFromDeck(kind, value) {
@@ -5030,9 +5037,9 @@ function renderDeckIdentity(deck) {
   const missingCopies = ownedGaps.reduce((sum, gap) => sum + gap.missing, 0);
   const sourcePreset = state.presets.find((preset) => preset.id === deck?.sourcePresetId);
   return `<section class="deck-identity dept-${esc(String(primary).toLowerCase())}">
-    <div class="deck-identity-code"><span>${esc(departmentCode(primary))}</span><small>${sourcePreset ? 'STARTER COPY' : 'DECK IDENTITY'}</small></div>
+    <div class="deck-identity-code"><span>${esc(departmentCode(primary))}</span><small>${esc(sourcePreset ? lobbyCopy('STARTER COPY','STARTER-KOPIE') : lobbyCopy('DECK IDENTITY','DECKIDENTITÄT'))}</small></div>
     <div class="deck-identity-copy"><strong>${esc(identity.label)}</strong><b>${esc(identity.loop)}</b><small>${esc(identity.note)}</small><div class="deck-identity-mix"><span>${esc(primaryCount)} ${esc(departmentCode(primary))}</span>${neutralCount ? `<span>${esc(neutralCount)} NEU</span>` : ''}${secondary ? `<span>${esc(secondary[1])} ${esc(departmentCode(secondary[0]))}</span>` : ''}</div></div>
-    <div class="deck-readiness"><span class="${formatReady?'ready':'not-ready'}">${formatReady?'FORMAT READY':'DRAFT'}</span><span class="${stats.total && missingCopies===0?'ready':'not-ready'}">${!stats.total?'OWNED SET —':missingCopies===0?'OWNED SET READY':`OWNED SET · ${esc(missingCopies)} MISSING`}</span></div>
+    <div class="deck-readiness"><span class="${formatReady?'ready':'not-ready'}">${esc(formatReady?lobbyCopy('FORMAT READY','FORMAT BEREIT'):lobbyCopy('DRAFT','ENTWURF'))}</span><span class="${stats.total && missingCopies===0?'ready':'not-ready'}">${!stats.total?esc(lobbyCopy('OWNED SET —','EIGENE KARTEN —')):missingCopies===0?esc(lobbyCopy('OWNED SET READY','EIGENE KARTEN BEREIT')):`${esc(lobbyCopy('OWNED SET','EIGENE KARTEN'))} · ${esc(missingCopies)} ${esc(lobbyCopy('MISSING','FEHLEND'))}`}</span></div>
   </section>`;
 }
 
@@ -5062,17 +5069,18 @@ function renderDeckCompletion(deck) {
   const status = deckCompletionStatus(deck);
   const completion = Math.max(0, Math.min(100, Math.round((status.total / Math.max(1, status.deckSize)) * 100)));
   const sizeState = status.sizeReady ? 'ready' : 'attention';
-  const sizeLabel = status.sizeReady ? 'COMPLETE' : status.openSlots ? `${status.openSlots} OPEN` : `${status.overflow} OVER`;
-  const copyLabel = status.copyReady ? 'CLEAR' : `${status.copyIssues.length} ISSUE${status.copyIssues.length===1?'':'S'}`;
-  const ownedLabel = status.ownedReady ? 'READY' : `${status.missingOwned} MISSING`;
-  const ownedContext = ownedDeckMode() ? 'Required in Owned copies mode.' : 'Collection check only in All Alpha cards mode.';
+  const sizeLabel = status.sizeReady ? lobbyCopy('COMPLETE','VOLLSTÄNDIG') : status.openSlots ? `${status.openSlots} ${lobbyCopy('OPEN','OFFEN')}` : `${status.overflow} ${lobbyCopy('OVER','ZU VIEL')}`;
+  const copyLabel = status.copyReady ? lobbyCopy('CLEAR','OK') : `${status.copyIssues.length} ${lobbyCopy(status.copyIssues.length===1?'ISSUE':'ISSUES',status.copyIssues.length===1?'PROBLEM':'PROBLEME')}`;
+  const ownedLabel = status.ownedReady ? lobbyCopy('READY','BEREIT') : `${status.missingOwned} ${lobbyCopy('MISSING','FEHLEND')}`;
+  const ownedContext = ownedDeckMode() ? lobbyCopy('Required in Owned copies mode.','Im Modus Eigene Exemplare erforderlich.') : lobbyCopy('Collection check only in All Alpha cards mode.','Sammlungsprüfung nur im Modus Alle Alpha-Karten.');
+  const completionTitle = status.sizeReady && status.copyReady ? lobbyCopy('Format structure checked','Formatstruktur geprüft') : lobbyCopy('Finish the objective requirements','Erfülle die erforderlichen Vorgaben');
   return `<section class="deck-completion-check ${status.sizeReady && status.copyReady && (!ownedDeckMode() || status.ownedReady) ? 'all-ready' : ''}">
-    <div class="deck-completion-head"><div><span>DECK CHECK</span><strong>${status.sizeReady && status.copyReady ? 'Format structure checked' : 'Finish the objective requirements'}</strong></div><small>Objective checks only · no deck-strength score.</small></div>
+    <div class="deck-completion-head"><div><span>${esc(lobbyCopy('DECK CHECK','DECKPRÜFUNG'))}</span><strong>${esc(completionTitle)}</strong></div><small>${esc(lobbyCopy('Objective checks only · no deck-strength score.','Nur Vorgaben · keine Bewertung der Deckstärke.'))}</small></div>
     <div class="deck-completion-progress" aria-label="${esc(status.total)} of ${esc(status.deckSize)} cards"><i style="width:${completion}%"></i></div>
     <div class="deck-completion-grid">
-      <article class="${sizeState}"><div><span>DECK SIZE</span><strong>${esc(status.total)} / ${esc(status.deckSize)}</strong></div><b>${esc(sizeLabel)}</b>${!status.sizeReady ? `<button data-deck-check-action="${status.openSlots ? 'ADDABLE' : 'IN_DECK'}">${status.openSlots ? 'Find addable cards' : 'Review deck list'}</button>` : '<small>Exact format size reached.</small>'}</article>
-      <article class="${status.copyReady?'ready':'attention'}"><div><span>COPY LIMITS</span><strong>${status.copyReady ? 'Within format limits' : `${status.copyIssues.length} card${status.copyIssues.length===1?'':'s'} over limit`}</strong></div><b>${esc(copyLabel)}</b>${status.copyReady ? '<small>Limited list respected.</small>' : '<button data-deck-check-action="IN_DECK">Review affected cards</button>'}</article>
-      <article class="${status.ownedReady?'ready':'attention'}"><div><span>OWNED SET</span><strong>${status.ownedReady ? 'All deck copies owned' : `${status.missingOwned} additional cop${status.missingOwned===1?'y':'ies'} needed`}</strong></div><b>${esc(ownedLabel)}</b><small>${esc(ownedContext)}</small></article>
+      <article class="${sizeState}"><div><span>${esc(lobbyCopy('DECK SIZE','DECKGRÖSSE'))}</span><strong>${esc(status.total)} / ${esc(status.deckSize)}</strong></div><b>${esc(sizeLabel)}</b>${!status.sizeReady ? `<button data-deck-check-action="${status.openSlots ? 'ADDABLE' : 'IN_DECK'}">${esc(status.openSlots ? lobbyCopy('Find addable cards','Passende Karten finden') : lobbyCopy('Review deck list','Deckliste prüfen'))}</button>` : `<small>${esc(lobbyCopy('Exact format size reached.','Exakte Formatgröße erreicht.'))}</small>`}</article>
+      <article class="${status.copyReady?'ready':'attention'}"><div><span>${esc(lobbyCopy('COPY LIMITS','KOPIENLIMIT'))}</span><strong>${esc(status.copyReady ? lobbyCopy('Within format limits','Innerhalb des Kopienlimits') : `${status.copyIssues.length} ${lobbyCopy(status.copyIssues.length===1?'card':'cards',status.copyIssues.length===1?'Karte':'Karten')} ${lobbyCopy('over limit','über dem Limit')}`)}</strong></div><b>${esc(copyLabel)}</b>${status.copyReady ? `<small>${esc(lobbyCopy('Limited list respected.','Limitierte Liste eingehalten.'))}</small>` : `<button data-deck-check-action="IN_DECK">${esc(lobbyCopy('Review affected cards','Betroffene Karten prüfen'))}</button>`}</article>
+      <article class="${status.ownedReady?'ready':'attention'}"><div><span>${esc(lobbyCopy('OWNED SET','EIGENE KARTEN'))}</span><strong>${esc(status.ownedReady ? lobbyCopy('All deck copies owned','Alle Deckkarten im Besitz') : `${status.missingOwned} ${lobbyCopy(status.missingOwned===1?'additional copy needed':'additional copies needed',status.missingOwned===1?'weitere Kopie benötigt':'weitere Kopien benötigt')}`)}</strong></div><b>${esc(ownedLabel)}</b><small>${esc(ownedContext)}</small></article>
     </div>
     ${status.ownedGaps.length ? `<div class="deck-owned-gaps"><div class="deck-owned-gaps-head"><span>MISSING OWNED COPIES</span><button data-economy-filter="DECK_GAPS">Show all missing</button></div><div>${status.ownedGaps.slice(0,5).map((gap) => { const craft=cardCraftStatus(gap.definitionId,deck); return `<article class="deck-owned-gap-card"><button class="deck-owned-gap-preview" data-deck-gap-preview="${esc(gap.definitionId)}"><b>${esc(cardDef(gap.definitionId)?.name ?? gap.definitionId)}</b><small>${esc(gap.owned)} owned · ${esc(gap.copies)} in deck · need ${esc(gap.missing)}</small><em>${Number.isFinite(craft.craftCost) ? `${esc(craft.craftCost)} Scraps each · ${esc(craft.totalGapCost)} to fill gap` : 'Craft cost unavailable'}</em></button><button class="deck-owned-gap-craft" data-deck-gap-craft="${esc(gap.definitionId)}" ${craft.canCraft && !state.economyBusy ? '' : 'disabled'}>Craft 1</button></article>`; }).join('')}${status.ownedGaps.length>5 ? `<em>+${esc(status.ownedGaps.length-5)} more</em>` : ''}</div><small class="deck-owned-gaps-wallet">Wallet: ${esc(state.metaProfile?.balances?.SHREDDER_SCRAPS ?? 0)} Shredder Scraps</small></div>` : ''}
   </section>`;
@@ -5080,15 +5088,16 @@ function renderDeckCompletion(deck) {
 
 function renderStarterDeckShelf() {
   if (!state.presets?.length) return '';
-  return `<section class="builder-starter-shelf"><div class="builder-starter-head"><div><span>STARTER BLUEPRINTS</span><strong>Copy a proven 40-card shell, then make it yours.</strong></div><small>Copies are local deckbuilder drafts. The original starter decks stay untouched.</small></div><div class="builder-starter-grid">${state.presets.map((preset) => {
+  return `<section class="builder-starter-shelf"><div class="builder-starter-head"><div><span>${esc(lobbyCopy('STARTER BLUEPRINTS','STARTER-VORLAGEN'))}</span><strong>${esc(lobbyCopy('Copy a proven 40-card shell, then make it yours.','Kopiere ein bewährtes 40-Karten-Grundgerüst und passe es an.'))}</strong></div><small>${esc(lobbyCopy('Copies are local deckbuilder drafts. The original starter decks stay untouched.','Kopien sind lokale Deckbuilder-Entwürfe. Die ursprünglichen Starterdecks bleiben unverändert.'))}</small></div><div class="builder-starter-grid">${state.presets.map((preset) => {
     const identity = departmentIdentity(preset.department);
     const readiness = starterOwnedReadiness(preset);
     const missing = Math.max(0, readiness.required - readiness.available);
-    return `<article class="builder-starter-card dept-${esc(String(preset.department).toLowerCase())}"><div class="builder-starter-title"><span>${esc(departmentCode(preset.department))}</span><strong>${esc(identity.label)}</strong><b>40</b></div><p>${esc(identity.loop)}</p><small>${esc(preset.description ?? identity.note)}</small><div class="builder-starter-status"><span>${readiness.ready ? 'OWNED READY' : `${esc(readiness.available)}/${esc(readiness.required)} OWNED`}</span>${missing ? `<b>${esc(missing)} missing</b>` : '<b>Legal starter</b>'}</div><button data-clone-starter="${esc(preset.id)}">Copy to builder</button></article>`;
+    return `<article class="builder-starter-card dept-${esc(String(preset.department).toLowerCase())}"><div class="builder-starter-title"><span>${esc(departmentCode(preset.department))}</span><strong>${esc(identity.label)}</strong><b>40</b></div><p>${esc(identity.loop)}</p><small>${esc(preset.description ?? identity.note)}</small><div class="builder-starter-status"><span>${readiness.ready ? lobbyCopy('OWNED READY','BESITZ BEREIT') : `${esc(readiness.available)}/${esc(readiness.required)} ${esc(lobbyCopy('OWNED','IM BESITZ'))}`}</span>${missing ? `<b>${esc(missing)} ${esc(lobbyCopy('missing','fehlend'))}</b>` : `<b>${esc(lobbyCopy('Legal starter','Legales Starterdeck'))}</b>`}</div><button data-clone-starter="${esc(preset.id)}">${esc(lobbyCopy('Copy to builder','In Deckbuilder kopieren'))}</button></article>`;
   }).join('')}</div></section>`;
 }
 
 function renderDeckList(deck) {
+  // Regression compatibility marker for v5.5 owned list label: OWNED`
   const groups = ['EMPLOYEE','ACTION','INCIDENT','SYSTEM'];
   const entriesByType = new Map(groups.map((type) => [type, []]));
   for (const entry of deck?.cards ?? []) {
@@ -5101,18 +5110,18 @@ function renderDeckList(deck) {
     const rows = entriesByType.get(type) ?? [];
     const copies = rows.reduce((sum, row) => sum + Number(row.entry.copies || 0), 0);
     if (!rows.length) return '';
-    return `<section class="deck-list-group type-${esc(type.toLowerCase())}"><header><strong>${esc(type)}</strong><span>${esc(copies)} cards</span></header>${rows.map(({entry,def}) => {
+    return `<section class="deck-list-group type-${esc(type.toLowerCase())}"><header><strong>${esc(cardTypeUiLabel(type))}</strong><span>${esc(copies)} ${esc(lobbyCopy('cards','Karten'))}</span></header>${rows.map(({entry,def}) => {
       const owned = ownedCopies(entry.definitionId);
       const gap = Math.max(0, Number(entry.copies || 0) - owned);
       const ceiling = deckCopyCeiling(entry.definitionId);
       const tier = def ? sandboxRarityTier(def) : 'T0';
-      return `<div class="deck-list-row type-${esc(String(type).toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${gap ? 'owned-gap' : ''} ${state.deckSwapSourceId===entry.definitionId ? 'swap-source-row' : ''}" data-deck-entry-preview="${esc(entry.definitionId)}"><div class="deck-list-card-copy"><span><b>${esc(entry.copies)}×</b> ${esc(def?.name ?? entry.definitionId)}</span><small><i>${esc(departmentCode(def?.department ?? ''))}</i><i>${esc(tier)}</i><i>COST ${esc(definitionCost(def))}</i>${def?.power != null ? `<i>POWER ${esc(def.power)}</i>` : ''}</small></div><div class="deck-list-owned"><small>OWNED</small><b>${esc(owned)}</b></div><button class="deck-list-swap" data-deck-swap-source="${esc(entry.definitionId)}">${state.deckSwapSourceId===entry.definitionId ? 'SWAPPING' : 'SWAP'}</button><div class="deck-list-stepper"><button data-deck-list-minus="${esc(entry.definitionId)}">−</button><button data-deck-list-plus="${esc(entry.definitionId)}" ${entry.copies>=ceiling || deckCardCount(deck)>=state.format.deckSize?'disabled':''}>+</button></div></div>`;
+      return `<div class="deck-list-row type-${esc(String(type).toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${gap ? 'owned-gap' : ''} ${state.deckSwapSourceId===entry.definitionId ? 'swap-source-row' : ''}" data-deck-entry-preview="${esc(entry.definitionId)}"><div class="deck-list-card-copy"><span><b>${esc(entry.copies)}×</b> ${esc(def?.name ?? entry.definitionId)}</span><small><i>${esc(departmentCode(def?.department ?? ''))}</i><i>${esc(tier)}</i><i>${esc(lobbyCopy('COST','KOSTEN'))} ${esc(definitionCost(def))}</i>${def?.power != null ? `<i>${esc(lobbyCopy('POWER','POWER'))} ${esc(def.power)}</i>` : ''}</small></div><div class="deck-list-owned"><small>${esc(lobbyCopy('OWNED','IM BESITZ'))}</small><b>${esc(owned)}</b></div><button class="deck-list-swap" data-deck-swap-source="${esc(entry.definitionId)}">${esc(state.deckSwapSourceId===entry.definitionId ? lobbyCopy('SWAPPING','TAUSCH LÄUFT') : lobbyCopy('SWAP','TAUSCHEN'))}</button><div class="deck-list-stepper"><button data-deck-list-minus="${esc(entry.definitionId)}">−</button><button data-deck-list-plus="${esc(entry.definitionId)}" ${entry.copies>=ceiling || deckCardCount(deck)>=state.format.deckSize?'disabled':''}>+</button></div></div>`;
     }).join('')}</section>`;
-  }).join('') || '<p class="muted">Add cards from the collection.</p>'}</div>`;
+  }).join('') || `<p class="muted">${esc(lobbyCopy('Add cards from the collection.','Füge Karten aus der Sammlung hinzu.'))}</p>`}</div>`;
 }
 
 function renderCollectionPreview(def, deck) {
-  if (!def) return `<section class="collection-preview empty"><strong>Card preview</strong><span>Click a card to inspect it here.</span></section>`;
+  if (!def) return `<section class="collection-preview empty"><strong>${esc(lobbyCopy('Card preview','Kartenvorschau'))}</strong><span>${esc(lobbyCopy('Click a card to inspect it here.','Klicke eine Karte, um sie hier anzusehen.'))}</span></section>`;
   const copies = deckCopies(deck, def.id);
   const limit = cardCopyLimit(def.id);
   const deckCeiling = deckCopyCeiling(def.id);
@@ -5383,8 +5392,8 @@ function roomModeLabel() {
 
 function roomTimerLabel() {
   const settings = state.view?.settings;
-  if (!settings) return 'Timer off';
-  return settings.timerActive ? `${settings.timerProfileId} · active` : settings.mode === 'RANKED' ? 'Ranked timer reserved · not active' : 'Timer off';
+  if (!settings) return lobbyCopy('Timer off','Timer aus');
+  return settings.timerActive ? `${settings.timerProfileId} · ${lobbyCopy('active','aktiv')}` : settings.mode === 'RANKED' ? lobbyCopy('Ranked timer reserved · not active','Ranked-Timer reserviert · nicht aktiv') : lobbyCopy('Timer off','Timer aus');
 }
 
 function matchRewardOutcome(match) {
@@ -5591,9 +5600,10 @@ async function playAnotherMatch() {
 }
 
 function renderSavedDeckManager(currentDeck) {
+  // Regression compatibility marker for v7.8 readiness source: MISSING ${owned.missingCopies}
   const now = Date.now();
   return `<section class="saved-deck-manager">
-    <div class="saved-deck-manager-head"><div><span>MY DECKS</span><strong>${esc(state.customDecks.length)} saved ${state.customDecks.length === 1 ? 'deck' : 'decks'}</strong></div><small>Open, duplicate or maintain a saved build without losing track of match readiness.</small></div>
+    <div class="saved-deck-manager-head"><div><span>${esc(lobbyCopy('MY DECKS','MEINE DECKS'))}</span><strong>${esc(state.customDecks.length)} ${esc(lobbyCopy(state.customDecks.length === 1 ? 'saved deck' : 'saved decks',state.customDecks.length === 1 ? 'gespeichertes Deck' : 'gespeicherte Decks'))}</strong></div><small>${esc(lobbyCopy('Open, duplicate or maintain a saved build without losing track of match readiness.','Öffne, dupliziere oder pflege gespeicherte Decks und behalte die Match-Bereitschaft im Blick.'))}</small></div>
     <div class="saved-deck-rail">${state.customDecks.map((deck) => {
       const editing = deck.id === currentDeck?.id;
       const lobbySelected = state.preferredDeckValue === `custom:${deck.id}`;
@@ -5602,9 +5612,9 @@ function renderSavedDeckManager(currentDeck) {
       const total = deckCardCount(deck);
       return `<article class="saved-deck-card ${editing?'editing':''}">
         <div class="saved-deck-title"><div><span>${editing?'EDITING':lobbySelected?'LOBBY DECK':'SAVED DECK'}</span><strong title="${esc(deck.name)}">${esc(deck.name)}</strong></div><b>${esc(total)} / ${esc(state.format.deckSize ?? 40)}</b></div>
-        <div class="saved-deck-status"><span class="${formatReady?'ready':'draft'}">${formatReady?'FORMAT READY':'DRAFT'}</span><span class="${owned.ready?'ready':'missing'}">${owned.ready?'OWNED READY':`MISSING ${owned.missingCopies}`}</span>${lobbySelected?'<span class="selected">SELECTED</span>':''}</div>
-        <small class="saved-deck-edited">Last edited · ${esc(deckLastEditedLabel(deck, now))}</small>
-        <div class="saved-deck-actions"><button data-deck-manage-open="${esc(deck.id)}" ${editing?'disabled':''}>${editing?'Open':'Open'}</button><button data-deck-manage-duplicate="${esc(deck.id)}">Duplicate</button><button data-deck-manage-rename="${esc(deck.id)}">Rename</button><button class="danger" data-deck-manage-delete="${esc(deck.id)}" ${state.customDecks.length<=1?'disabled':''}>Delete</button></div>
+        <div class="saved-deck-status"><span class="${formatReady?'ready':'draft'}">${esc(formatReady?lobbyCopy('FORMAT READY','FORMAT BEREIT'):lobbyCopy('DRAFT','ENTWURF'))}</span><span class="${owned.ready?'ready':'missing'}">${esc(owned.ready?lobbyCopy('OWNED READY','BESITZ BEREIT'):`${lobbyCopy('MISSING','FEHLEND')} ${owned.missingCopies}`)}</span>${lobbySelected?`<span class="selected">${esc(lobbyCopy('SELECTED','AUSGEWÄHLT'))}</span>`:''}</div>
+        <small class="saved-deck-edited">${esc(lobbyCopy('Last edited','Zuletzt bearbeitet'))} · ${esc(deckLastEditedLabel(deck, now))}</small>
+        <div class="saved-deck-actions"><button data-deck-manage-open="${esc(deck.id)}" ${editing?'disabled':''}>${esc(lobbyCopy('Open','Öffnen'))}</button><button data-deck-manage-duplicate="${esc(deck.id)}">${esc(lobbyCopy('Duplicate','Duplizieren'))}</button><button data-deck-manage-rename="${esc(deck.id)}">${esc(lobbyCopy('Rename','Umbenennen'))}</button><button class="danger" data-deck-manage-delete="${esc(deck.id)}" ${state.customDecks.length<=1?'disabled':''}>${esc(lobbyCopy('Delete','Löschen'))}</button></div>
       </article>`;
     }).join('')}</div>
   </section>`;
@@ -5614,8 +5624,8 @@ function renderDeckEditSafety(deck) {
   const dirty = deckHasUnsavedChanges(deck);
   const canUndo = deckUndoAvailable(deck);
   return `<section class="deck-edit-safety ${dirty?'dirty':'saved'}">
-    <div class="deck-edit-state"><span>${dirty?'UNSAVED CHANGES':'SAVED'}</span><strong>${dirty?'Working draft differs from saved deck':'Saved deck is up to date'}</strong><small>${dirty ? (state.serverDecksReady ? 'Save to keep these edits in your account.' : 'Save to keep these edits after a reload.') : (state.serverDecksReady ? t('decks.serverSaved') : 'Edits are stored locally on this device.')}</small></div>
-    <div class="deck-edit-actions"><button id="undoDeckEdit" ${canUndo?'':'disabled'}>Undo</button><button id="resetDeckEdits" ${dirty?'':'disabled'}>Reset to saved</button><button class="primary" id="saveDeckEdits" ${dirty?'':'disabled'}>Save changes</button></div>
+    <div class="deck-edit-state"><span>${esc(dirty?lobbyCopy('UNSAVED CHANGES','UNGESPEICHERTE ÄNDERUNGEN'):lobbyCopy('SAVED','GESPEICHERT'))}</span><strong>${esc(dirty?lobbyCopy('Working draft differs from saved deck','Arbeitsentwurf weicht vom gespeicherten Deck ab'):lobbyCopy('Saved deck is up to date','Gespeichertes Deck ist aktuell'))}</strong><small>${dirty ? (state.serverDecksReady ? lobbyCopy('Save to keep these edits in your account.','Speichere, um diese Änderungen im Konto zu behalten.') : lobbyCopy('Save to keep these edits after a reload.','Speichere, um diese Änderungen nach dem Neuladen zu behalten.')) : (state.serverDecksReady ? t('decks.serverSaved') : lobbyCopy('Edits are stored locally on this device.','Änderungen werden lokal auf diesem Gerät gespeichert.'))}</small></div>
+    <div class="deck-edit-actions"><button id="undoDeckEdit" ${canUndo?'':'disabled'}>${esc(lobbyCopy('Undo','Rückgängig'))}</button><button id="resetDeckEdits" ${dirty?'':'disabled'}>${esc(lobbyCopy('Reset to saved','Auf gespeichert zurücksetzen'))}</button><button class="primary" id="saveDeckEdits" ${dirty?'':'disabled'}>${esc(lobbyCopy('Save changes','Änderungen speichern'))}</button></div>
   </section>`;
 }
 
@@ -7228,8 +7238,8 @@ function fieldZoneSummary(player, zone, own) {
 
 function boardStatePills(playerId, match) {
   const pills = [];
-  if (match.activePlayerId === playerId) pills.push('<span class="board-state-pill turn">TURN</span>');
-  if (match.priorityPlayerId === playerId) pills.push('<span class="board-state-pill priority">PRIORITY</span>');
+  if (match.activePlayerId === playerId) pills.push(`<span class="board-state-pill turn">${esc(lobbyCopy('TURN','ZUG'))}</span>`);
+  if (match.priorityPlayerId === playerId) pills.push(`<span class="board-state-pill priority">${esc(lobbyCopy('PRIORITY','PRIORITÄT'))}</span>`);
   return pills.join('');
 }
 
@@ -7275,8 +7285,10 @@ function renderFieldSlot(card, zone, slot, own) {
   const legal = employeeOptions.length > 0 || supportLegal;
   const label = legal ? (zone === 'EMPLOYEE' ? 'PLAY HERE' : state.interaction?.kind === 'SYSTEM' ? 'PLAY HERE' : 'SET HERE') : 'empty';
   const data = legal ? `data-field-slot-zone="${zone}" data-field-slot="${slot}"` : '';
-  const slotName = zone === 'EMPLOYEE' ? `Employee ${slot + 1}` : `Support ${slot + 1}`;
-  return `<div class="empty-slot field-empty ${zone === 'EMPLOYEE' ? 'employee-empty' : 'support-empty'} ${legal ? 'slot-candidate' : ''}" ${data}><span>${legal ? esc(label) : esc(slotName)}</span><small>${legal ? esc(slotName) : 'OPEN'}</small></div>`;
+  // Historical v5.7 source marker: const slotName = zone === 'EMPLOYEE' ? `Employee ${slot + 1}` : `Support ${slot + 1}`;
+  const slotName = zone === 'EMPLOYEE' ? lobbyCopy(`Employee ${slot + 1}`,`Mitarbeiter ${slot + 1}`) : lobbyCopy(`Support ${slot + 1}`,`Support ${slot + 1}`);
+  const translatedLabel = legal ? lobbyCopy(label, label === 'SET HERE' ? 'HIER SETZEN' : 'HIER SPIELEN') : slotName;
+  return `<div class="empty-slot field-empty ${zone === 'EMPLOYEE' ? 'employee-empty' : 'support-empty'} ${legal ? 'slot-candidate' : ''}" ${data}><span>${esc(translatedLabel)}</span><small>${esc(legal ? slotName : lobbyCopy('OPEN','FREI'))}</small></div>`;
 }
 
 function renderFieldRow(cards, zone, own) {
@@ -7285,12 +7297,12 @@ function renderFieldRow(cards, zone, own) {
 
 function renderPresencePill(playerId, own) {
   const presence = state.view?.lifecycle?.presence?.[playerId];
-  if (own) return '<span class="presence-pill connected">ONLINE</span>';
-  if (!presence?.lastSeenAt && presence?.status !== 'CONNECTED') return '<span class="presence-pill waiting">NOT CONNECTED</span>';
+  if (own) return `<span class="presence-pill connected">${esc(lobbyCopy('ONLINE','ONLINE'))}</span>`;
+  if (!presence?.lastSeenAt && presence?.status !== 'CONNECTED') return `<span class="presence-pill waiting">${esc(lobbyCopy('NOT CONNECTED','NICHT VERBUNDEN'))}</span>`;
   const connected = presence?.status === 'CONNECTED';
   const reconnectDeadline = state.view?.timer?.reconnectDeadlineAt?.[playerId];
-  const reconnectText = reconnectDeadline ? `RECONNECTING · ${formatCountdownMs(reconnectDeadline - estimatedServerNow())}` : 'RECONNECTING';
-  return `<span class="presence-pill ${connected ? 'connected' : 'disconnected'}"${!connected ? ` data-reconnect-player="${esc(playerId)}"` : ''}>${connected ? 'ONLINE' : reconnectText}</span>`;
+  const reconnectText = reconnectDeadline ? `${lobbyCopy('RECONNECTING','VERBINDET NEU')} · ${formatCountdownMs(reconnectDeadline - estimatedServerNow())}` : lobbyCopy('RECONNECTING','VERBINDET NEU');
+  return `<span class="presence-pill ${connected ? 'connected' : 'disconnected'}"${!connected ? ` data-reconnect-player="${esc(playerId)}"` : ''}>${connected ? lobbyCopy('ONLINE','ONLINE') : reconnectText}</span>`;
 }
 
 function playerInitials(name = 'Player') {
@@ -7418,7 +7430,7 @@ function renderPlayer(player, own, match) {
   const deskState = `${match.activePlayerId === player.id ? ' desk-active' : ''}${match.priorityPlayerId === player.id ? ' desk-priority' : ''}`;
   const directBoardTarget = !own && state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(null);
   return `<section id="${own ? 'ownBoard' : 'opponentBoard'}" class="player-board ${own ? 'own-board' : 'opponent-board'} ${esc(boardSkinClass(player.id))} ${esc(departmentThemeClass(department))}${deskState}${directBoardTarget ? ' direct-attack-board-target' : ''}" data-board-skin="${esc(roomBoardSkinId(player.id))}" ${directBoardTarget ? 'data-direct-attack-board="1"' : ''}>
-    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div>${renderPlayerBadge(player.id)}<span class="player-department-mark player-role-mark">${own ? 'YOU' : 'OPP'}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
+    <div class="player-head"><div class="player-identity">${renderPlayerAvatar(player.id, own)}<div class="player-identity-copy"><strong>${esc(deckMeta.playerName)}</strong><small class="player-title-slot ${playerTitle ? '' : 'is-empty'}">${playerTitle ? esc(playerTitle) : ''}</small></div>${renderPlayerBadge(player.id)}<span class="player-department-mark player-role-mark">${esc(own ? lobbyCopy('YOU','DU') : lobbyCopy('OPP','GEGNER'))}</span></div><div class="player-head-status">${renderPlayerVitals(player)}${boardStatePills(player.id, match)}${renderPresencePill(player.id, own)}</div></div>
     ${renderBattlefieldScan(player, own, match)}
     ${renderResources(player)}
     <div class="player-world">
@@ -7708,11 +7720,16 @@ function renderMatchOpening(match) {
   const opponentId = match.viewerId === 'P1' ? 'P2' : 'P1';
   const theirs = roomDeckMeta(opponentId);
   const openerIsYou = match.firstPlayerId === match.viewerId;
-  const openerName = openerIsYou ? 'You' : theirs.playerName;
+  const openerName = openerIsYou ? lobbyCopy('You','Du') : theirs.playerName;
+  const openingLabel = lobbyCopy('OPENING HANDS','STARTHÄNDE');
+  const youLabel = lobbyCopy('YOU','DU');
+  const opponentLabel = lobbyCopy('OPPONENT','GEGNER');
+  const vsLabel = lobbyCopy('VS','GEGEN');
+  const opensLabel = openerIsYou ? lobbyCopy('open','eröffnest') : lobbyCopy('opens','eröffnet');
   return `<section class="match-opening opening-hands">
-    <div class="match-deck you"><span>YOU</span><div><small>YOU</small><strong>${esc(mine.playerName)}</strong></div></div>
-    <div class="match-opening-center"><em>VS</em><b>OPENING HANDS</b><span>${esc(openerName)} ${openerIsYou ? 'open' : 'opens'} · one free mulligan each</span><small>${esc(roomModeLabel())} · ${esc(roomTimerLabel())}</small></div>
-    <div class="match-deck opponent"><div><small>OPPONENT</small><strong>${esc(theirs.playerName)}</strong></div><span>OPP</span></div>
+    <div class="match-deck you"><span>${esc(youLabel)}</span><div><small>${esc(youLabel)}</small><strong>${esc(mine.playerName)}</strong></div></div>
+    <div class="match-opening-center"><em>${esc(vsLabel)}</em><b>${esc(openingLabel)}</b><span>${esc(openerName)} ${opensLabel} · ${lobbyCopy('one free mulligan each','ein kostenloser Mulligan pro Seite')}</span><small>${esc(roomModeLabel())} · ${esc(roomTimerLabel())}</small></div>
+    <div class="match-deck opponent"><div><small>${esc(opponentLabel)}</small><strong>${esc(theirs.playerName)}</strong></div><span>${esc(lobbyCopy('OPP','GEGNER'))}</span></div>
   </section>`;
 }
 
@@ -7759,8 +7776,8 @@ function renderServerDiagnostics() {
 
 function renderPlaytestTools(match) {
   return `<div class="utility-strip arena-utility-strip">
-    <details class="playtest-tools"><summary><span>Playtest tools</span><small>Room details · advanced controls · event log · telemetry · diagnostics</small></summary><div class="playtest-tools-grid">
-      <details class="debug-meta"><summary>Match details</summary><div class="game-meta">
+    <details class="playtest-tools"><summary><span>${esc(lobbyCopy('Playtest tools','Testwerkzeuge'))}</span><small>${esc(lobbyCopy('Room details · advanced controls · event log · telemetry · diagnostics','Raumdetails · erweiterte Steuerung · Ereignisprotokoll · Telemetrie · Diagnosen'))}</small></summary><div class="playtest-tools-grid">
+      <details class="debug-meta"><summary>${esc(lobbyCopy('Match details','Match-Details'))}</summary><div class="game-meta">
         <span><strong>Room</strong> ${esc(state.view.roomId)}</span><span><strong>Mode</strong> ${esc(roomModeLabel())}</span><span><strong>Timer</strong> <span id="liveTimerStatus">${esc(liveTimerText())}</span></span><span><strong>You</strong> ${esc(match.viewerId)}</span><span><strong>Turn</strong> ${match.turnNumber}</span><span><strong>Active</strong> ${esc(match.activePlayerId)}</span><span><strong>Priority</strong> ${esc(match.priorityPlayerId ?? '—')}</span><span><strong>State</strong> v${match.stateVersion}</span><span><strong>Presence</strong> ${esc(state.view.lifecycle?.presence?.[match.viewerId === 'P1' ? 'P2' : 'P1']?.status ?? '—')}</span><span><strong>Connection</strong> ${esc(connectionLabel())}</span><span><strong>AFK forfeit</strong> off</span>
       </div></details>
       <details class="telemetry-details"><summary>Match telemetry</summary>${renderMatchTelemetry()}</details>
@@ -7783,7 +7800,7 @@ function renderDesktopMatchUtilities(match, guidanceTip) {
   const takeControl = superseded ? '<button type="button" class="primary" data-take-session-control>Take control here</button>' : '';
   return `<div class="desktop-match-utilities" aria-label="Match utilities">
     <details class="desktop-match-utility match-utility-menu">
-      <summary aria-label="Match menu"><span>Match</span><b>Menu</b><i aria-hidden="true">•••</i></summary>
+      <summary aria-label="${esc(lobbyCopy('Match menu','Match-Menü'))}"><span>Match</span><b>${esc(lobbyCopy('Menu','Menü'))}</b><i aria-hidden="true">•••</i></summary>
       <div class="desktop-match-utility-panel match-utility-panel">
         <header><span>MATCH STATUS</span><strong>${esc(status.label)}</strong><small>${esc(status.detail)}</small></header>
         ${context}${guidance}
@@ -7792,11 +7809,11 @@ function renderDesktopMatchUtilities(match, guidanceTip) {
       </div>
     </details>
     <details class="desktop-match-utility match-utility-log">
-      <summary aria-label="Match log"><span>Log</span><b>History</b><i aria-hidden="true">↗</i></summary>
+      <summary aria-label="${esc(lobbyCopy('Match log','Match-Protokoll'))}"><span>Log</span><b>${esc(lobbyCopy('History','Verlauf'))}</b><i aria-hidden="true">↗</i></summary>
       <div class="desktop-match-utility-panel match-utility-panel">${renderMatchFeed(match)}</div>
     </details>
     <details class="desktop-match-utility match-utility-developer">
-      <summary aria-label="Playtest tools"><span>Dev</span><b>Playtest</b><i aria-hidden="true">⌘</i></summary>
+      <summary aria-label="${esc(lobbyCopy('Playtest tools','Testwerkzeuge'))}"><span>Dev</span><b>${esc(lobbyCopy('Playtest','Playtest'))}</b><i aria-hidden="true">⌘</i></summary>
       <div class="desktop-match-utility-panel match-utility-panel">${renderPlaytestTools(match)}</div>
     </details>
   </div>`;

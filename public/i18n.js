@@ -80,6 +80,10 @@ function translateLegacyLiteral(value) {
   if (match) return `Zug ${match[1]} · wartet auf ${match[2]}`;
   match = String(value).match(/^Turn (\d+) · (START|DRAW|MAIN|BATTLE|END)$/);
   if (match) return `Zug ${match[1]} · ${phaseName(match[2])}`;
+  match = String(value).match(/^Deck must contain exactly (\d+) cards \((\d+) now\)\.$/);
+  if (match) return `Deck muss genau ${match[1]} Karten enthalten (aktuell ${match[2]}).`;
+  match = String(value).match(/^Last edited · (.+)$/);
+  if (match) return `Zuletzt bearbeitet · ${match[1]}`;
   match = String(value).match(/^EMPLOYEE (\d+)$/);
   if (match) return `MITARBEITER ${match[1]}`;
   match = String(value).match(/^SUPPORT (\d+)$/);
@@ -108,6 +112,21 @@ function translateLegacyLiteral(value) {
   if (match) return `Verbindung: ${match[1]}`;
   match = String(value).match(/^Chain (\d+)$/i);
   if (match) return `Kette ${match[1]}`;
+  match = String(value).match(/^(.+?)\s+COST (\d+)$/);
+  if (match) return `${match[1]} KOSTEN ${match[2]}`;
+  match = String(value).match(/^(.+?)\s+SET (\d+)$/);
+  if (match) return `${match[1]} SETZEN ${match[2]}`;
+  match = String(value).match(/^(.+?)\s+(?:EXECUTIVE |LEAD )?PROMOTION (\d+)(?:\s+OWNED\s+(\d+))?$/);
+  if (match) return `${match[1]} BEFÖRDERUNG ${match[2]}${match[3] == null ? '' : ` IM BESITZ ${match[3]}`}`;
+  match = String(value).match(/^(\d+) (Employee|Employees|Action|Actions|Incident|Incidents|System|Systems)$/);
+  if (match) {
+    const labels = { Employee:'Mitarbeiter', Employees:'Mitarbeiter', Action:'Aktionen', Actions:'Aktionen', Incident:'Vorfälle', Incidents:'Vorfälle', System:'Systeme', Systems:'Systeme' };
+    return `${match[1]} ${labels[match[2]]}`;
+  }
+  match = String(value).match(/^STAFF\s+OWNED\s+(\d+)$/);
+  if (match) return `MITARBEITER IM BESITZ ${match[1]}`;
+  match = String(value).match(/^(.+?)\s+OWNED\s+(\d+)$/);
+  if (match) return `${match[1]} IM BESITZ ${match[2]}`;
   return value;
 }
 

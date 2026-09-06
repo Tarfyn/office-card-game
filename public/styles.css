@@ -4884,7 +4884,6 @@ body {
   .deck-completion-progress i { transition:none; }
 }
 
-
 /* v7.4 capacity curve + deck composition polish */
 .curve-title-row { display:flex; align-items:end; justify-content:space-between; gap:8px; margin-top:9px; }
 .curve-title-row .curve-title { margin-top:0; }
@@ -13411,4 +13410,56 @@ body.match-mode .desktop-match-utility[open] > summary { box-shadow: 0 8px 22px 
 
 @media (prefers-reduced-motion: reduce) {
   :where(button, select, input, textarea, summary) { transition: none !important; }
+}
+
+/* v7.69.62 legacy-debt cleanup — final cascade for older collection/deckbuilder
+   surfaces; reuses the existing token layer without changing information layout. */
+:root {
+  --ui-text-on-dark: #f1eadc;
+  --ui-text-on-dark-muted: #c4c9c2;
+  --ui-text-on-light: #24231f;
+  --ui-text-on-light-muted: #5f5a52;
+  --ui-surface-disabled: #e4ded3;
+}
+
+:where(button, select, input, textarea, summary, [role="button"]):focus-visible {
+  outline: 3px solid var(--ui-border-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px var(--ui-surface-paper), 0 0 0 4px color-mix(in srgb, var(--ui-border-focus) 28%, transparent);
+}
+
+:where(button, select, input, textarea):disabled {
+  color: var(--ui-control-disabled-text);
+  background-color: var(--ui-surface-disabled);
+  border-color: var(--ui-border-control);
+  opacity: .9;
+  filter: none;
+}
+
+body.collection-mode .collection-filters label > span,
+body.collection-mode .collection-tag-shortcuts > span,
+body.collection-mode .collection-active-filters > span {
+  color: var(--ui-text-on-light-muted);
+}
+
+body.collection-mode .deck-builder-panel label,
+body.collection-mode .deck-builder-panel .muted {
+  color: var(--ui-text-on-dark-muted);
+}
+
+body.collection-mode .collection-filters input,
+body.collection-mode .collection-filters select,
+body.collection-mode .deck-builder-panel input,
+body.collection-mode .deck-builder-panel select {
+  min-height: 40px;
+}
+
+@media (max-width: 760px) {
+  body.collection-mode .collection-filters input,
+  body.collection-mode .collection-filters select,
+  body.collection-mode .deck-builder-panel input,
+  body.collection-mode .deck-builder-panel select,
+  body.collection-mode .collection-filters button {
+    min-height: 44px;
+  }
 }
