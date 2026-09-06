@@ -3,7 +3,7 @@ import { applyCosmeticEquip, applyCosmeticPurchase, normalizePlayerCosmetics, ty
 import type { SnapshotPersistence } from "./storage.js";
 import { createRankedProfile, normalizeRankedConfig, normalizeRankedContentConfig, normalizeRankedProfile, rankedK, rankedStanding, ratingDelta, type PlayerRankedProfile, type RankedContentConfig, type RankedOutcome, type RankedSystemConfig } from "./ranked.js";
 import { normalizeProgressionConfig, processProgressionEvents, rewardGrantFromRewardItems, type ProgressionConfig, type ProgressionEvent } from "./progression.js";
-import { assertDeckInput, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
+import { assertDeckInput, assertDeckVariantOwnership, deckFingerprint, normalizePlayerDeck, validatePlayerDeck, type PlayerDeck, type PlayerDeckView } from "./player-decks.js";
 import { createEmptyPlayerStats, DEFAULT_MATCH_HISTORY_LIMIT, normalizeMatchHistoryRecord, normalizePlayerStats, type MatchHistoryInput, type MatchHistoryRecord, type PlayerStats } from "./match-history.js";
 import type { CardDefinition, DeckEntry, DeckFormat } from "./types.js";
 import { buildFirstDayDeck, buildStarterPackagePlan, normalizeStarterAvatar, normalizeStarterDepartment } from "./starter-access.js";
@@ -328,6 +328,7 @@ export class PlayerProfileService {
     const now = this.nowFactory();
     const cards = Array.isArray(draft.cards) ? structuredClone(draft.cards) : [];
     assertDeckInput({ cards }, this.deckDefinitions, this.deckFormat);
+    if (profile.meta.collectionMode === "OWNED_COPIES") assertDeckVariantOwnership({ cards }, profile.meta);
     let id = String(draft.id ?? this.deckIdFactory());
     while (profile.decks.some((deck) => deck.id === id)) id = `${id}-${Math.random().toString(36).slice(2, 6)}`;
     profile.decks.push(normalizePlayerDeck({ ...draft, id, cards, source:draft.source ?? "player", revision:1 }, id, now));
@@ -343,6 +344,7 @@ export class PlayerProfileService {
     if (expectedRevision != null && Number(expectedRevision) !== deck.revision) throw new Error("DECK_CONFLICT");
     const cards = Array.isArray(draft.cards) ? structuredClone(draft.cards) : deck.cards;
     assertDeckInput({ cards }, this.deckDefinitions, this.deckFormat);
+    if (profile.meta.collectionMode === "OWNED_COPIES") assertDeckVariantOwnership({ cards }, profile.meta);
     deck.name = String(draft.name ?? deck.name).trim().replace(/\s+/g, " ").slice(0, 48) || deck.name;
     deck.cards = cards;
     deck.updatedAt = this.nowFactory();
@@ -479,6 +481,7 @@ export class PlayerProfileService {
     for (const draft of drafts) {
       const name = String(draft.name ?? "Custom Deck");
       const cards = Array.isArray(draft.cards) ? structuredClone(draft.cards) : [];
+      assertDeckInput({ cards }, this.deckDefinitions, this.deckFormat);
       const sourceRef = `browser-local:v1:${deckFingerprint(name, cards)}`;
       if (profile.decks.some((deck) => deck.sourceRef === sourceRef)) {
         skipped.push(sourceRef);

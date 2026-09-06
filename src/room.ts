@@ -97,7 +97,7 @@ export interface MatchCompletionResult {
     finalRep: number | null;
   }>;
 }
-export type RoomErrorCode = "ROOM_NOT_FOUND" | "ROOM_FULL" | "INVALID_TOKEN" | "INVALID_DECK" | "MATCH_NOT_READY" | "REPLAY_NOT_AVAILABLE" | "PROFILE_NOT_IN_ROOM" | "SESSION_SUPERSEDED" | "REMATCH_NOT_READY" | "RATED_REMATCH_DISABLED";
+export type RoomErrorCode = "ROOM_NOT_FOUND" | "ROOM_FULL" | "INVALID_TOKEN" | "INVALID_DECK" | "DECK_NOT_OWNED" | "MATCH_NOT_READY" | "REPLAY_NOT_AVAILABLE" | "PROFILE_NOT_IN_ROOM" | "SESSION_SUPERSEDED" | "REMATCH_NOT_READY" | "RATED_REMATCH_DISABLED";
 
 export class RoomError extends Error {
   constructor(public readonly code: RoomErrorCode, message: string) {

@@ -1429,6 +1429,7 @@ function renderIntentCommitStatus(match) {
 
 function deckPersistenceMessage(error) {
   if (error?.code === 'DECK_CONFLICT') return t('decks.conflict');
+  if (error?.code === 'DECK_NOT_OWNED') return t('decks.notOwned');
   return t('decks.saveFailed');
 }
 async function retryServerDecks() {
@@ -4499,7 +4500,34 @@ function deckCopies(deck, definitionId) {
 }
 
 function deckVariantCopies(deck, definitionId, variantId = null) {
-  return deck?.cards?.find((entry) => entry.definitionId === definitionId && (entry.variantId ?? null) === (variantId ?? null))?.copies ?? 0;
+  return (deck?.cards ?? []).filter((entry) => entry.definitionId === definitionId && (entry.variantId ?? null) === (variantId ?? null)).reduce((sum, entry) => sum + Number(entry.copies || 0), 0);
+}
+
+function ownedCopiesForDeckVariant(definitionId, variantId = null) {
+  return variantId ? ownedExecutiveEditionCopies(definitionId, variantId) : ownedCopies(definitionId);
+}
+
+function availableCopiesForDeckVariant(deck, definitionId, variantId = null) {
+  return Math.max(0, ownedCopiesForDeckVariant(definitionId, variantId) - deckVariantCopies(deck, definitionId, variantId));
+}
+
+function canSwapDeckCopyToVariant(deck, definitionId, fromVariantId, toVariantId) {
+  const sourceCopies = deckVariantCopies(deck, definitionId, fromVariantId);
+  const targetCopies = deckVariantCopies(deck, definitionId, toVariantId);
+  const ownedTargetCopies = ownedCopiesForDeckVariant(definitionId, toVariantId);
+  const availableTargetCopies = Math.max(0, ownedTargetCopies - targetCopies);
+  return {
+    allowed: sourceCopies > 0 && availableTargetCopies > 0,
+    sourceCopies,
+    targetCopies,
+    ownedTargetCopies,
+    availableTargetCopies,
+    reason: sourceCopies <= 0
+      ? collectionCopy('finishSwapSourceMissing')
+      : availableTargetCopies <= 0
+        ? collectionCopy(toVariantId ? 'executiveCopiesExhausted' : 'standardCopiesExhausted')
+        : null
+  };
 }
 
 function writeDeckCopies(deck, definitionId, copies) {
@@ -4594,12 +4622,11 @@ function swapDeckCopy(deck, targetId) {
 }
 
 function swapDeckFinish(deck, definitionId, fromVariant, toVariant) {
-  const fromCopies = deckVariantCopies(deck, definitionId, fromVariant);
-  const ownedTarget = toVariant ? ownedExecutiveEditionCopies(definitionId, toVariant) : ownedCopies(definitionId);
-  if (fromCopies <= 0 || ownedTarget <= 0) return false;
+  const status = canSwapDeckCopyToVariant(deck, definitionId, fromVariant, toVariant);
+  if (!status.allowed) { state.deckBuilderMessage = status.reason; return false; }
   recordDeckEdit(deck, () => {
-    writeDeckVariantCopies(deck, definitionId, fromVariant, fromCopies - 1);
-    writeDeckVariantCopies(deck, definitionId, toVariant, deckVariantCopies(deck, definitionId, toVariant) + 1);
+    writeDeckVariantCopies(deck, definitionId, fromVariant, status.sourceCopies - 1);
+    writeDeckVariantCopies(deck, definitionId, toVariant, status.targetCopies + 1);
     sortDeckEntries(deck);
   });
   state.collectionPreviewId = definitionId;
@@ -5193,6 +5220,9 @@ function renderCollectionCard(def, deck) {
   const standardDeckCopies = deckVariantCopies(deck, def.id, null);
   const executiveDeckCopies = deckVariantCopies(deck, def.id, executiveId);
   const finishSwapTarget = selectedFinish === 'EXECUTIVE' && standardDeckCopies > 0 && executiveOwned > 0 ? executiveId : selectedFinish === 'STANDARD' && executiveDeckCopies > 0 && ownedCopies(def.id) > 0 ? 'STANDARD' : null;
+  const finishSwapFrom = finishSwapTarget === 'STANDARD' ? executiveId : null;
+  const finishSwapTo = finishSwapTarget === 'STANDARD' ? null : finishSwapTarget;
+  const finishSwapStatus = finishSwapTarget ? canSwapDeckCopyToVariant(deck, def.id, finishSwapFrom, finishSwapTo) : null;
   const selected = state.collectionPreviewId === def.id;
   const isNew = state.newCollectionCards.has(def.id);
   const alphaAccessOnly = Boolean(state.account && state.metaProfile?.alphaPlaytestAccess?.enabled && owned === 0);
@@ -5202,7 +5232,7 @@ function renderCollectionCard(def, deck) {
     ${renderCatalogCardFace(def, { tier, variantId:selectedVariant, finishBadgePlacement:'artwork', isNew, artReady:Boolean(def.artId), owned })}
     ${alphaAccessOnly ? `<span class="alpha-access-chip">${esc(lobbyCopy('ALPHA ACCESS · NOT OWNED','ALPHA-ZUGANG · NICHT IM BESITZ'))}</span>` : ''}
     ${executiveOwned ? `<div class="card-variant-picker" role="group" aria-label="${esc(collectionCopy('finish'))}"><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="STANDARD" class="${selectedVariant ? '' : 'selected'}">${esc(collectionCopy('standard'))} <small>${esc(ownedCopies(def.id))}</small></button><button type="button" data-card-variant="${esc(def.id)}" data-card-variant-value="EXECUTIVE" class="${selectedVariant ? 'selected gold' : 'gold'}">${esc(collectionCopy('executiveEdition'))} <small>${esc(executiveOwned)}</small></button></div>` : ''}
-    ${finishSwapTarget ? `<button class="collection-finish-swap" data-deck-finish-swap="${esc(def.id)}" data-deck-finish-to="${esc(finishSwapTarget)}">${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}</button>` : ''}
+    ${finishSwapTarget ? `<button class="collection-finish-swap" data-deck-finish-swap="${esc(def.id)}" data-deck-finish-to="${esc(finishSwapTarget)}" ${finishSwapStatus?.allowed ? '' : 'disabled'} title="${esc(finishSwapStatus?.reason ?? '')}" aria-label="${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}">${esc(finishSwapTarget === 'STANDARD' ? lobbyCopy('Use Standard','Standard verwenden') : lobbyCopy('Use Executive Edition','Executive Edition verwenden'))}</button>${finishSwapStatus && !finishSwapStatus.allowed && finishSwapStatus.reason ? `<small class="collection-finish-swap-reason">${esc(finishSwapStatus.reason)}</small>` : ''}` : ''}
     ${swapSource ? `<div class="collection-swap-control"><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-swap-target="${esc(def.id)}" ${swapStatus?.allowed ? '' : 'disabled'} title="${esc(swapStatus?.reason ?? 'Swap in this card')}">${swapSource.id===def.id ? 'SWAP SOURCE' : 'SWAP IN'}</button></div>` : `<div class="collection-copy-control"><button data-deck-minus="${esc(def.id)}" ${copies <= 0 ? 'disabled' : ''}>−</button><span><b>${esc(copies)}</b> / ${esc(limit)} IN DECK</span><button data-deck-plus="${esc(def.id)}" ${copies >= deckCeiling || deckCardCount(deck) >= state.format.deckSize ? 'disabled' : ''}>+</button></div>`}
   </article>`;
 }

@@ -8,7 +8,7 @@ import { PlayerProfileService } from "../src/profile.js";
 import { ALPHA_FORMAT } from "../src/formats.js";
 import { alphaDeckPresets } from "../src/decks.js";
 import { buildStarterPackagePlan, createPendingAccountMeta, isTrainingLoanerDeck, normalizeStarterAvatar, normalizeStarterDepartment, STARTER_AVATAR_IDS, STARTER_BOOSTER_CONFIG, STARTER_DEPARTMENT_CONFIG, trainingLoanerAllowed, trainingLoanerIds } from "../src/starter-access.js";
-import { validatePlayerDeck } from "../src/player-decks.js";
+import { assertDeckOwnership, availableCopiesForDeckVariant, canSwapDeckCopyToVariant, validatePlayerDeck } from "../src/player-decks.js";
 
 const definitions = Object.values(alphaDefinitions);
 
@@ -215,5 +215,32 @@ const legacy = legacyService.create(legacyPending);
 assert.throws(() => legacyService.selectStarterAvatar(legacy.profileToken, "COS-AVA-008"), /STARTER_AVATAR_CHOICE_UNAVAILABLE/);
 const legacyDepartment = legacyService.completeStarterOnboarding(legacy.profileToken, "IT");
 assert.equal(legacyDepartment.meta.starterOnboarding.selectedDepartment, "IT");
+
+const finishOwnership = { ownedCards:{ "CS-001":3 }, ownedCardVariants:{ "CS-001-EXEC":1 } };
+const standardDeck = { cards:[{ definitionId:"CS-001", copies:3 }] };
+const oneExecDeck = { cards:[{ definitionId:"CS-001", copies:2 }, { definitionId:"CS-001", copies:1, variantId:"CS-001-EXEC" }] };
+assert.equal(canSwapDeckCopyToVariant(standardDeck, "CS-001", null, "CS-001-EXEC", { ownedCards:{ "CS-001":3 }, ownedCardVariants:{} }).allowed, false, "no Executive ownership must block the finish swap");
+assert.equal(availableCopiesForDeckVariant(standardDeck, "CS-001", "CS-001-EXEC", finishOwnership), 1);
+assert.equal(canSwapDeckCopyToVariant(standardDeck, "CS-001", null, "CS-001-EXEC", finishOwnership).allowed, true);
+assert.equal(canSwapDeckCopyToVariant(oneExecDeck, "CS-001", null, "CS-001-EXEC", finishOwnership).allowed, false, "a second Executive copy must be blocked when only one is owned");
+assert.equal(canSwapDeckCopyToVariant(oneExecDeck, "CS-001", "CS-001-EXEC", null, finishOwnership).allowed, true, "Executive to Standard remains available when a Standard copy is owned");
+const twoExecOwnership = { ownedCards:{ "CS-001":3 }, ownedCardVariants:{ "CS-001-EXEC":2 } };
+const twoExecDeck = { cards:[{ definitionId:"CS-001", copies:1 }, { definitionId:"CS-001", copies:2, variantId:"CS-001-EXEC" }] };
+assert.equal(canSwapDeckCopyToVariant(twoExecDeck, "CS-001", null, "CS-001-EXEC", twoExecOwnership).allowed, false, "two owned Executive copies must exhaust the third swap");
+assert.equal(canSwapDeckCopyToVariant({ cards:[{ definitionId:"CS-001", copies:3 }] }, "CS-001", null, "CS-001-EXEC", twoExecOwnership).allowed, true, "two owned Executive copies must permit the first swap");
+assert.equal(canSwapDeckCopyToVariant({ cards:[{ definitionId:"CS-001", copies:3 }] }, "CS-001", null, "CS-001-EXEC", { ownedCards:{ "CS-001":3 }, ownedCardVariants:{ "CS-001-EXEC":3 } }).allowed, true, "three owned Executive copies must permit a full finish swap");
+const standardLimitedOwnership = { ownedCards:{ "CS-001":2 }, ownedCardVariants:{ "CS-001-EXEC":1 } };
+assert.equal(canSwapDeckCopyToVariant(oneExecDeck, "CS-001", "CS-001-EXEC", null, standardLimitedOwnership).allowed, false, "switching back must respect Standard ownership capacity");
+assert.equal(canSwapDeckCopyToVariant({ cards:[{ definitionId:"CS-001", copies:1 }, { definitionId:"CS-001", copies:1, variantId:"CS-001-EXEC" }] }, "CS-001", "CS-001-EXEC", null, standardLimitedOwnership).allowed, true, "switching back becomes legal after freeing a Standard copy");
+assert.throws(() => assertDeckOwnership({ cards:[{ definitionId:"CS-001", copies:2, variantId:"CS-001-EXEC" }] }, finishOwnership), /DECK_NOT_OWNED/);
+assert.doesNotThrow(() => assertDeckOwnership({ cards:[{ definitionId:"CS-001", copies:1, variantId:"CS-001-EXEC" }, { definitionId:"CS-001", copies:2 }] }, finishOwnership));
+const ownedDeckMeta = structuredClone(created.profile.meta);
+ownedDeckMeta.collectionMode = "OWNED_COPIES";
+ownedDeckMeta.ownedCards = { "CS-001":3 };
+ownedDeckMeta.ownedCardVariants = { "CS-001-EXEC":1 };
+service.updateMeta(created.profileToken, ownedDeckMeta);
+assert.throws(() => service.createDeck(created.profileToken, { id:"invalid-exec", name:"Invalid Executive deck", cards:[{ definitionId:"CS-001", copies:2, variantId:"CS-001-EXEC" }] }), /DECK_NOT_OWNED/, "owned profile deck creation must reject excess Executive copies");
+const validFinishDeck = service.createDeck(created.profileToken, { id:"valid-exec", name:"Valid Executive deck", cards:[{ definitionId:"CS-001", copies:2 }, { definitionId:"CS-001", copies:1, variantId:"CS-001-EXEC" }] });
+assert.throws(() => service.updateDeck(created.profileToken, "valid-exec", { cards:[{ definitionId:"CS-001", copies:2, variantId:"CS-001-EXEC" }] }, validFinishDeck.decks.find((deck) => deck.id === "valid-exec")?.revision), /DECK_NOT_OWNED/, "owned profile deck update must reject excess Executive copies");
 
 console.log("Starter grant, Alpha access and Training loaner tests passed.");

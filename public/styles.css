@@ -13062,6 +13062,8 @@ body.match-mode .hover-card-face.executive-edition { border-color:#845316; backg
 .card-variant-picker button.gold.selected { background:linear-gradient(180deg,#ffeaa0,#c79332); color:#4b3209; }
 .card-variant-picker button small { margin-left:2px; font-size:5px; opacity:.75; }
 .collection-finish-swap { width:100%; margin:0 1px 2px; padding:3px 4px; border:1px solid #a17a2b; border-radius:3px; background:linear-gradient(180deg,#fff0b3,#d6a642); color:#4b3209; font-size:6px; font-weight:950; letter-spacing:.04em; }
+.collection-finish-swap:disabled { border-color:#b9b0a2; background:#e4dfd7; color:#665f56; cursor:not-allowed; opacity:1; }
+.collection-finish-swap-reason { display:block; margin:0 2px 2px; color:#665f56; font-size:7px; line-height:1.2; }
 @media (prefers-reduced-motion: reduce) { .card-art-stage .executive-art-foil,.catalog-art-stage .executive-art-foil,.hover-card-face.executive-edition .card-art-window::after { transition:none; } }
 @media (hover:none), (pointer:coarse) {
   .card.executive-edition,

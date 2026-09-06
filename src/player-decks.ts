@@ -25,6 +25,19 @@ export interface PlayerDeckValidation {
 
 export type PlayerDeckView = PlayerDeck & { validation: PlayerDeckValidation };
 
+export interface DeckVariantOwnership {
+  ownedCards?: Record<string, number>;
+  ownedCardVariants?: Record<string, number>;
+}
+
+export interface DeckVariantSwapStatus {
+  allowed: boolean;
+  sourceCopies: number;
+  targetCopies: number;
+  ownedTargetCopies: number;
+  availableTargetCopies: number;
+}
+
 function cleanName(value: unknown): string {
   const name = String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 48);
   return name || "Custom Deck";
@@ -50,6 +63,72 @@ function normalizeCards(value: unknown): DeckEntry[] {
     counts.set(key, current);
   }
   return [...counts.values()].sort((a, b) => a.definitionId.localeCompare(b.definitionId) || (a.variantId ?? "").localeCompare(b.variantId ?? "")).map(({ definitionId, variantId, copies }) => ({ definitionId, copies, ...(variantId ? { variantId } : {}) }));
+}
+
+export function deckVariantCopies(deck: Pick<PlayerDeck, "cards">, definitionId: string, variantId?: string | null): number {
+  const normalizedVariantId = normalizeCardVariantId(definitionId, variantId);
+  return deck.cards
+    .filter((entry) => entry.definitionId === definitionId && normalizeCardVariantId(definitionId, entry.variantId) === normalizedVariantId)
+    .reduce((sum, entry) => sum + Number(entry.copies || 0), 0);
+}
+
+export function ownedCopiesForVariant(definitionId: string, variantId: string | null | undefined, ownership: DeckVariantOwnership): number {
+  const normalizedVariantId = normalizeCardVariantId(definitionId, variantId);
+  return normalizedVariantId
+    ? Number(ownership.ownedCardVariants?.[normalizedVariantId] ?? 0)
+    : Number(ownership.ownedCards?.[definitionId] ?? 0);
+}
+
+export function availableCopiesForDeckVariant(
+  deck: Pick<PlayerDeck, "cards">,
+  definitionId: string,
+  variantId: string | null | undefined,
+  ownership: DeckVariantOwnership
+): number {
+  return Math.max(0, ownedCopiesForVariant(definitionId, variantId, ownership) - deckVariantCopies(deck, definitionId, variantId));
+}
+
+export function canSwapDeckCopyToVariant(
+  deck: Pick<PlayerDeck, "cards">,
+  definitionId: string,
+  fromVariantId: string | null | undefined,
+  toVariantId: string | null | undefined,
+  ownership: DeckVariantOwnership
+): DeckVariantSwapStatus {
+  const sourceCopies = deckVariantCopies(deck, definitionId, fromVariantId);
+  const targetCopies = deckVariantCopies(deck, definitionId, toVariantId);
+  const ownedTargetCopies = ownedCopiesForVariant(definitionId, toVariantId, ownership);
+  const availableTargetCopies = Math.max(0, ownedTargetCopies - targetCopies);
+  return {
+    allowed: sourceCopies > 0 && availableTargetCopies > 0,
+    sourceCopies,
+    targetCopies,
+    ownedTargetCopies,
+    availableTargetCopies
+  };
+}
+
+export function assertDeckVariantOwnership(deck: Pick<PlayerDeck, "cards">, ownership: DeckVariantOwnership): void {
+  const requested = new Map<string, { definitionId: string; variantId: string | null; copies: number }>();
+  for (const entry of deck.cards) {
+    const variantId = normalizeCardVariantId(entry.definitionId, entry.variantId);
+    if (!variantId) continue;
+    const key = `${entry.definitionId}\u0000${variantId ?? ""}`;
+    const current = requested.get(key) ?? { definitionId:entry.definitionId, variantId, copies:0 };
+    current.copies += Number(entry.copies || 0);
+    requested.set(key, current);
+  }
+  for (const { definitionId, variantId, copies } of requested.values()) {
+    if (ownedCopiesForVariant(definitionId, variantId, ownership) < copies) throw new Error("DECK_NOT_OWNED");
+  }
+}
+
+export function assertDeckOwnership(deck: Pick<PlayerDeck, "cards">, ownership: DeckVariantOwnership): void {
+  assertDeckVariantOwnership(deck, ownership);
+  for (const entry of deck.cards) {
+    if (normalizeCardVariantId(entry.definitionId, entry.variantId)) continue;
+    if (ownedCopiesForVariant(entry.definitionId, null, ownership) < Number(entry.copies || 0)) throw new Error("DECK_NOT_OWNED");
+  }
 }
 
 export function deckFingerprint(name: string, cards: DeckEntry[]): string {
@@ -90,10 +169,16 @@ export function validatePlayerDeck(
   const errors = [...formatResult.errors];
   const missingCards: Array<{ definitionId: string; missing: number; variantId?: string | null }> = [];
   if (ownedCards) {
+    const ownership = { ownedCards, ownedCardVariants };
+    const seen = new Set<string>();
     for (const entry of deck.cards) {
-      const owned = entry.variantId ? Number(ownedCardVariants?.[entry.variantId] ?? 0) : Number(ownedCards[entry.definitionId] ?? 0);
-      const missing = Math.max(0, entry.copies - owned);
-      if (missing) missingCards.push({ definitionId: entry.definitionId, missing, ...(entry.variantId ? { variantId: entry.variantId } : {}) });
+      const variantId = normalizeCardVariantId(entry.definitionId, entry.variantId);
+      const key = `${entry.definitionId}\u0000${variantId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const copies = deckVariantCopies(deck, entry.definitionId, variantId);
+      const missing = Math.max(0, copies - ownedCopiesForVariant(entry.definitionId, variantId, ownership));
+      if (missing) missingCards.push({ definitionId: entry.definitionId, missing, ...(variantId ? { variantId } : {}) });
     }
   }
   return {
