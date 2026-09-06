@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath } from '../public/match-vfx.js';
+import { VFX_TIMING, VFX_EASING, installVfxTiming } from '../public/vfx-timing.js';
 
 const played = (seq, id = 'employee') => ({ seq, type:'CARD_PLAYED', cardInstanceId:id, playerId:'P1', data:{cardType:'EMPLOYEE'} });
 test('hydration, duplicate delivery and truncated historical replay never restart VFX', () => {
@@ -66,6 +67,70 @@ const battle=(seq,id='a',target='b')=>({seq,type:'BATTLE_RESOLVED',playerId:'P1'
 const names=e=>e.steps.map(s=>s.type);
 const options={roomId:'room',now:0};
 
+const total=e=>e.steps.reduce((sum,s)=>sum+s.duration,0);
+test('semantic timing owner supplies CSS and readable placement/Archive ranges',()=>{
+  const css=new Map();installVfxTiming({setProperty:(k,v)=>css.set(k,v)});
+  assert.equal(Number(css.get('--vfx-time-card-travel')),VFX_TIMING.cardTravel);
+  assert.equal(Number(css.get('--vfx-time-archive-travel')),VFX_TIMING.archiveTravel);
+  assert.equal(css.get('--vfx-ease'),VFX_EASING.feedback);
+  assert.ok(Object.isFrozen(VFX_TIMING));
+  for(const type of ['EMPLOYEE','SYSTEM','INCIDENT']) {
+    const q=createPresentationQueue();q.enqueue([{...played(1),type:type==='INCIDENT'?'INCIDENT_SET':'CARD_PLAYED',data:{cardType:type}}],options);
+    const travel=q.take(0).steps[0].duration;
+    assert.equal(travel,type==='EMPLOYEE'?VFX_TIMING.cardTravel:VFX_TIMING.supportTravel);
+    assert.ok(travel>=300 && travel<=420);
+  }
+  const q=createPresentationQueue();q.enqueue([archived(1)],options);
+  const travel=q.take(0).steps.find(s=>s.type==='archive').duration;
+  assert.equal(travel,VFX_TIMING.archiveTravel);assert.ok(travel>=380&&travel<=500);
+});
+test('ordinary combat retains full anticipation, impact hold and recovery without catch-up',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3)],options);
+  const item=q.take(0);assert.equal(item.type,'combat');assert.equal(item.catchUp,false);
+  const steps=presentationSteps(item);
+  const hold=steps.find(s=>s.type==='impactHold');
+  assert.ok(hold.critical && hold.duration>=120 && hold.duration<=180);
+  assert.ok(names(item).indexOf('impact')<names(item).indexOf('impactHold'));
+  assert.ok(names(item).indexOf('impactHold')<names(item).indexOf('outcome'));
+  assert.ok(total(item)<1600);assert.ok(steps.every(s=>!s.static));
+});
+test('two normal battles fit the budget and the second does not age into compression',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3),attack(4,'c','d'),archived(5,'d','c'),battle(6,'c','d')],options);
+  const first=q.take(0);assert.equal(first.type,'combat');q.complete(first.key);
+  const second=q.take(total(first));assert.equal(second.type,'combat');assert.equal(second.catchUp,false);
+  assert.ok(total(first)+total(second)<=VFX_TIMING.queueBudget);
+});
+test('ordinary Action retains a separate stage, resolve hold and physical Archive',()=>{
+  const q=createPresentationQueue();q.enqueue([{...played(1,'action'),data:{cardType:'ACTION'}},
+    {seq:2,type:'ACTION_RESOLVED',playerId:'P1',cardInstanceId:'action'},archived(3,'action','action')],options);
+  const item=q.take(0);assert.equal(item.type,'action');assert.equal(item.catchUp,false);
+  assert.deepEqual(item.steps.map(s=>s.duration),[VFX_TIMING.actionStage,VFX_TIMING.actionResolve,VFX_TIMING.archiveTravel]);
+  assert.ok(item.steps.find(s=>s.type==='resolve').duration>=120);
+  assert.ok(total(item)<900);
+});
+test('direct REP holds signed feedback before a short lethal confirmation, without a second outcome flash',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1,'a',null),{seq:2,type:'REPUTATION_CHANGED',playerId:'P2',data:{reason:'DIRECT_ATTACK',delta:-20}},{seq:3,type:'GAME_ENDED'}],options);
+  const direct=q.take(0);assert.equal(direct.type,'direct');
+  assert.equal(direct.steps.find(s=>s.type==='impactHold').duration,VFX_TIMING.repHold);
+  assert.equal(feedbackForEvent(direct.events.find(e=>e.type==='REPUTATION_CHANGED'))[0].amount,-20);
+  q.complete(direct.key);const result=q.take(total(direct));
+  assert.equal(result.type,'result');assert.ok(result.steps[0].critical);
+  const finalBeat=total(direct)+total(result);assert.ok(finalBeat>=700&&finalBeat<=1000);
+  assert.ok(VFX_TIMING.repCue>VFX_TIMING.repHold);
+});
+test('reduced-motion and aged catch-up omit spatial timing but retain readable critical holds',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3)],options);
+  const item=q.take(VFX_TIMING.catchUpAge+1);assert.equal(item.catchUp,true);
+  for(const mode of [{reducedMotion:true},{catchUp:true}]) {
+    const steps=presentationSteps(item,mode);
+    assert.ok(steps.filter(s=>['commit','return'].includes(s.type)).every(s=>s.duration===0));
+    assert.ok(steps.filter(s=>s.critical).every(s=>s.duration>0));
+  }
+  const reduced=presentationSteps(item,{reducedMotion:true});
+  assert.ok(reduced.find(s=>s.type==='archive').duration<VFX_TIMING.archiveTravel);
+  assert.ok(reduced.reduce((sum,s)=>sum+s.duration,0)<800);
+});
+
 test('one authoritative hand play creates one physical request despite duplicate SSE/rerenders',()=>{
   const q=createPresentationQueue(); let captures=0;
   q.enqueue([played(1),played(1)],{...options,prepare:()=>captures++});
@@ -79,7 +144,7 @@ test('one authoritative hand play creates one physical request despite duplicate
 test('confirmed combat groups travel, impact, outcome and archive even though Archive is emitted first',()=>{
   const q=createPresentationQueue();q.enqueue([battle(4),archived(3),attack(1)],options);
   const item=q.take(0);
-  assert.equal(item.type,'combat');assert.deepEqual(names(item),['commit','impact','outcome','archive','return']);
+  assert.equal(item.type,'combat');assert.deepEqual(names(item),['commit','impact','impactHold','outcome','archive','return']);
   assert.deepEqual(item.payload.destroyedIds,['b']);assert.equal(item.payload.archived.length,1);
   assert.equal(q.take(10),null,'a second group cannot start in the middle of an outcome');
   q.complete('wrong-key');assert.equal(q.busy,true);q.complete(item.key);assert.equal(q.busy,false);
@@ -87,7 +152,7 @@ test('confirmed combat groups travel, impact, outcome and archive even though Ar
 
 test('direct lethal keeps attack and signed REP ahead of the result gate',()=>{
   const q=createPresentationQueue();q.enqueue([attack(1,'a',null),{seq:2,type:'REPUTATION_CHANGED',playerId:'P2',data:{reason:'DIRECT_ATTACK',delta:-20}},{seq:3,type:'GAME_ENDED'}],options);
-  const direct=q.take(0);assert.equal(direct.type,'direct');assert.deepEqual(names(direct),['commit','impact','outcome','return']);
+  const direct=q.take(0);assert.equal(direct.type,'direct');assert.deepEqual(names(direct),['commit','impact','impactHold','return']);
   assert.equal(direct.events.find(e=>e.type==='REPUTATION_CHANGED').data.delta,-20);
   q.complete(direct.key);assert.equal(q.take(1000).type,'result');
 });
@@ -102,7 +167,7 @@ test('two rapid battles preserve exact attack pairing and serial event order',()
 test('response-window split resolves an attack once without a second commit',()=>{
   const q=createPresentationQueue();q.enqueue([attack(1)],options);const first=q.take(0);q.complete(first.key);
   q.enqueue([archived(5),battle(6)],{...options,now:2000});const result=q.take(2000);
-  assert.equal(result.payload.attack.seq,1);assert.deepEqual(names(result),['impact','outcome','archive','return']);
+  assert.equal(result.payload.attack.seq,1);assert.deepEqual(names(result),['impact','impactHold','outcome','archive','return']);
 });
 
 test('an Action and its actual destruction/archive outcomes form one ordered group',()=>{

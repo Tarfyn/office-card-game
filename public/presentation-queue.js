@@ -1,15 +1,21 @@
 // Pure presentation planning. Event IDs and outcomes come exclusively from the server.
-export const PRESENTATION_BUDGET_MS = 2600;
+import { VFX_TIMING as timing } from './vfx-timing.js';
+export const PRESENTATION_BUDGET_MS = timing.queueBudget;
 export const PRESENTATION_MAX_PENDING = 6;
-const duration = { travel:240, commit:220, impact:100, outcome:500, archive:280, return:160, settle:100, resolve:340, result:0, summary:620 };
-const critical = new Set(['impact','outcome','archive','resolve','result','summary']);
+const duration = { travel:timing.cardTravel, commit:timing.attackCommit, impact:timing.impact,
+  impactHold:timing.impactHold, outcome:timing.outcomeHold, archive:timing.archiveTravel,
+  return:timing.attackerReturn, settle:timing.placementSettle, resolve:timing.actionResolve,
+  result:timing.lethalHold, summary:timing.summary };
+const critical = new Set(['impact','impactHold','outcome','archive','resolve','result','summary']);
 const step = (type) => ({ type, duration:duration[type], critical:critical.has(type) });
 const isPlay = (e) => e.type === 'CARD_PLAYED' || e.type === 'INCIDENT_SET';
 
 export function presentationSteps(entry, { reducedMotion = false, catchUp = false } = {}) {
   return entry.steps.map((s) => ({ ...s, duration:
     catchUp && !s.critical ? 0 : reducedMotion && ['travel','commit','return'].includes(s.type) ? 0 :
-    reducedMotion && s.type === 'archive' ? 160 : s.duration,
+    (reducedMotion || catchUp) && s.type === 'archive' ? timing.staticArchive :
+    reducedMotion && s.type === 'outcome' ? timing.staticOutcome :
+    reducedMotion && s.type === 'result' ? timing.staticLethal : s.duration,
     static:reducedMotion || catchUp
   }));
 }
@@ -25,7 +31,12 @@ export function planPresentations(events, attacks = new Map()) {
     const entry = { key:`${type}:${anchor.seq}`, type, seq:ordered[0]?.seq ?? anchor.seq,
       priority:type === 'result' ? 2 : 1, events:ordered, payload, steps:steps.map(step), startedAt:null };
     entry.sfxPreset=type; // Optional future hook; no audio dependency or playback here.
-    entry.maxDuration = entry.steps.reduce((sum,s) => sum+s.duration,0) + 300;
+    for (const s of entry.steps) {
+      if(s.type==='travel') s.duration=type.startsWith('action') ? timing.actionStage :
+        anchor.type==='INCIDENT_SET'||anchor.data?.cardType==='SYSTEM' ? timing.supportTravel : timing.cardTravel;
+      if(type==='direct' && s.type==='impactHold') s.duration=timing.repHold;
+    }
+    entry.maxDuration = entry.steps.reduce((sum,s) => sum+s.duration,0) + timing.lifetimeSlack;
     entries.push(entry);
   };
   for (const event of events) if (event.type === 'ATTACK_DECLARED') attacks.set(event.cardInstanceId,event);
@@ -52,7 +63,7 @@ export function planPresentations(events, attacks = new Map()) {
     ));
     const archived = related.filter((e) => e.type === 'CARD_ARCHIVED');
     add(battle ? 'combat' : 'direct',event,related,
-      [...(freshAttack ? ['commit'] : []),'impact','outcome',...(archived.length ? ['archive'] : []),'return'],
+      [...(freshAttack ? ['commit'] : []),'impact','impactHold',...(battle ? ['outcome'] : []),...(archived.length ? ['archive'] : []),'return'],
       { attackerId, targetId:d.targetId ?? null, defenderId:direct ? event.playerId : null,
         attack, archived, destroyedIds:battle ? d.destroyedIds ?? [] : [], winnerId:d.winnerId ?? null });
     if((attacks.get(attackerId)?.seq??0)<event.seq) attacks.delete(attackerId);
@@ -137,7 +148,7 @@ export function createPresentationQueue() {
         if((entry.payload.archived?.length??0)>4) {
           const payload=summaryOf([entry]);
           entry.type='summary';entry.payload=payload;entry.events=[];
-          entry.steps=[step('summary')];entry.maxDuration=duration.summary+300;
+          entry.steps=[step('summary')];entry.maxDuration=duration.summary+timing.lifetimeSlack;
         }
         prepare(entry); pending.push(entry);
       }
@@ -149,7 +160,7 @@ export function createPresentationQueue() {
         if(important.length) {
           const first=important[0];
           pending=[{key:`${roomId}:summary:${first.seq}:${watermark}`,type:'summary',seq:first.seq,priority:1,
-            events:[],payload:summaryOf(important),steps:[step('summary')],maxDuration:920,enqueuedAt:now,startedAt:null}];
+            events:[],payload:summaryOf(important),steps:[step('summary')],maxDuration:duration.summary+timing.lifetimeSlack,enqueuedAt:now,startedAt:null}];
         } else pending=pending.slice(-1);
       }
       return {fresh,used:planned.used};
@@ -157,7 +168,7 @@ export function createPresentationQueue() {
     take(now=Date.now()) {
       if(current || !pending.length) return null;
       current=pending.shift(); current.startedAt=now;
-      current.catchUp=now-current.enqueuedAt>1200;
+      current.catchUp=now-current.enqueuedAt>timing.catchUpAge;
       return current;
     },
     complete(key) { if(current?.key===key) current=null; },

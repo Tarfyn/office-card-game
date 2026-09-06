@@ -1,5 +1,6 @@
 // Presentation only: consume authoritative events; never infer legality or outcomes.
 import { createPresentationQueue, presentationSteps } from './presentation-queue.js';
+import { VFX_TIMING, VFX_EASING, installVfxTiming } from './vfx-timing.js';
 export { createPresentationQueue, presentationSteps } from './presentation-queue.js';
 const MAX_EFFECTS = 16;
 const MAX_PENDING = 24;
@@ -118,6 +119,7 @@ export function physicalPath(from,to,{commit=false}={}) {
 }
 
 export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureCombat=()=>'', onCombat=()=>{}, onIdle=()=>{}, onStep=()=>{} }) {
+  installVfxTiming(document.documentElement.style);
   const queue = createFeedbackQueue();
   const presentation = createPresentationQueue();
   const active = new Map();
@@ -169,7 +171,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     const key=`${cue.kind}:${cue.target.type}:${cue.target.id}`;
     if([...active.keys()].some(node=>node.dataset.vfxKey===key&&node.dataset.eventSeq===String(cue.seq))) return;
     const node=spawn(cue,rect,sourceRect);
-    if(node) active.set(node,setTimeout(()=>remove(node),parseFloat(getComputedStyle(node).getPropertyValue('--vfx-life'))||700));
+    if(node) active.set(node,setTimeout(()=>remove(node),parseFloat(getComputedStyle(node).getPropertyValue('--vfx-life'))||VFX_TIMING.cue));
   }
   function fieldNode(id) { return targetNode(field(id),currentMatch?.viewerId); }
   function cardNode(id) { return document.querySelector(`.own-hand > .card[data-card-ref="${CSS.escape(id)}"]`) ?? fieldNode(id); }
@@ -190,7 +192,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     }
     if(entry.type==='combat'||entry.type==='direct') entry.combatHtml=captureCombat(entry.events,entry.payload.attack);
   }
-  function proxy(entry,id,from,to,duration,{fade=false}={}) {
+  function proxy(entry,id,from,to,duration,{fade=false,anticipate=false}={}) {
     const snapshot=entry.visuals?.get(id);
     if(!snapshot||!from||!to||media.matches||targeting||entry.epoch!==geometryEpoch||entry.catchUp||!duration) return;
     let item=proxies.get(id);
@@ -216,7 +218,12 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       return `translate(${r.left+r.width/2-snapshot.width/2}px,${r.top+r.height/2-snapshot.height/2}px) rotate(${r.angle??0}deg) scale(${scale})`;
     };
     item.animation?.cancel();
-    item.animation=item.node.animate([{transform:pose(from),opacity:1},{transform:pose(to),opacity:fade?0:1}],{duration,easing:'cubic-bezier(.2,.75,.25,1)',fill:'forwards'});
+    const frames=[{transform:pose(from),opacity:1}];
+    if(anticipate) frames.push({offset:.18,transform:pose({...from,left:from.left-(to.left-from.left)*.08,top:from.top-(to.top-from.top)*.08}),opacity:1});
+    // Keep the card solid through most of Archive travel, then tuck it away.
+    if(fade) frames.push({offset:.7,transform:pose({...to,left:from.left+(to.left-from.left)*.85,top:from.top+(to.top-from.top)*.85,width:from.width+(to.width-from.width)*.85}),opacity:.85});
+    frames.push({transform:pose(to),opacity:fade?0:1});
+    item.animation=item.node.animate(frames,{duration,easing:VFX_EASING.travel,fill:'forwards'});
     suppressed.add(id);fieldNode(id)?.setAttribute('data-presentation-hidden','true');
   }
   function destination(entry,id) {
@@ -266,11 +273,16 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       const target=p.targetId ? field(p.targetId) : player(p.defenderId??opposite(attack?.playerId??p.playerId));
       const to=rectOf(targetNode(target,currentMatch?.viewerId))??entry.visuals?.get(p.targetId)?.rect;
       entry.commitOrigin=from;entry.commitDestination=physicalPath(from,to,{commit:true});
-      proxy(entry,id,from,entry.commitDestination,s.duration);
+      proxy(entry,id,from,entry.commitDestination,s.duration,{anticipate:true});
       cueNow({kind:'commit',target:field(id),seq:entry.seq},from);
       cueNow({kind:'travel',source:field(id),target,seq:entry.seq},to,from);
     } else if(s.type==='impact') {
+      // Direct REP has no destruction outcome card: its portrait/delta is the
+      // impact, and stays visible through the dedicated REP hold.
+      if(entry.type==='direct' && entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
       eventsCues(entry,['BATTLE_RESOLVED','REPUTATION_CHANGED']);
+    } else if(s.type==='impactHold') {
+      // Keep the existing impact frame visible. Do not respawn/restart its cue.
     } else if(s.type==='outcome') {
       if(entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
       else eventsCues(entry,['CARD_ARCHIVED'],{receipt:false});
@@ -323,7 +335,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       // A stalled main thread must not resume a long decorative backlog.
       // Critical beats still run in order with their short static fallback.
       const late=Date.now()-entry.startedAt>entry.maxDuration;
-      const s=late ? {...planned,static:true,duration:planned.critical?Math.min(planned.duration,160):0} : planned;
+      const s=late ? {...planned,static:true,duration:planned.critical?Math.min(planned.duration,VFX_TIMING.lateCritical):0} : planned;
       runStep(entry,s);
       const complete=()=>{
         if(running!==entry) return;
@@ -418,7 +430,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       const nodes = placements.map((args) => spawn(...args)).filter(Boolean);
       for (const node of nodes) {
         if (!active.has(node)) continue;
-        const lifetime = parseFloat(getComputedStyle(node).getPropertyValue('--vfx-life')) || 700;
+        const lifetime = parseFloat(getComputedStyle(node).getPropertyValue('--vfx-life')) || VFX_TIMING.cue;
         active.set(node, setTimeout(() => remove(node), lifetime));
       }
       for(const id of suppressed) fieldNode(id)?.setAttribute('data-presentation-hidden','true');

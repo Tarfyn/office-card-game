@@ -2,6 +2,33 @@
 // Match DOM and shipped styles, without app.js/SSE. No browser dependency is added.
 import { strict as assert } from 'node:assert';
 
+// Sample the animation's normalized midpoint, not a wall-clock frame deadline.
+// This catches a long nominal duration whose easing still hides most movement.
+export async function verifyReadableTiming(page) {
+  const result=await page.evaluate(async()=>{
+    const {createMatchVfx}=await import('/match-vfx.js');
+    const {VFX_TIMING}=await import('/vfx-timing.js');
+    const source=document.querySelector('.own-hand > .card');
+    const slot=document.querySelector('#ownBoard .employee-row .empty-slot');
+    const id=source.dataset.cardRef;
+    const match={viewerId:'P1',turnNumber:1,activePlayerId:'P1',phase:'MAIN',lastEventSeq:1,status:'ACTIVE'};
+    const vfx=createMatchVfx({archiveLabel:()=> 'ARCHIVED'});
+    vfx.enqueue([{seq:1,type:'CARD_PLAYED',playerId:'P1',cardInstanceId:id,data:{cardType:'EMPLOYEE'}}],{roomId:'timing',match,present:true});
+    const card=source.cloneNode(true);card.classList.remove('hand-fan-card');card.style.cssText='';slot.replaceWith(card);source.remove();
+    vfx.sync(match);
+    const animation=document.querySelector('.presentation-proxy').getAnimations()[0];
+    animation.pause();animation.currentTime=animation.effect.getTiming().duration/2;
+    const result={duration:animation.effect.getTiming().duration,expected:VFX_TIMING.cardTravel,
+      css:Number(getComputedStyle(document.documentElement).getPropertyValue('--vfx-time-card-travel')),
+      midpoint:animation.effect.getComputedTiming().progress};
+    vfx.reset();return result;
+  });
+  assert.equal(result.duration,result.expected);assert.equal(result.css,result.expected);
+  assert.ok(result.midpoint>.5 && result.midpoint<.85,'pickup remains quick but meaningful travel remains after halfway');
+  assert.equal(await page.locator('.presentation-proxy,[data-presentation-hidden]').count(),0);
+  return result;
+}
+
 export async function verifyPhysicalPresentation(page) {
   await page.evaluate(async()=>{
     const {createMatchVfx}=await import('/match-vfx.js');
@@ -89,7 +116,7 @@ export async function verifyReducedPresentation(page) {
   await page.waitForFunction(()=>!window.reducedVfx.busy);
   assert.equal(await page.evaluate(()=>window.reducedProxyCount),0);
   assert.equal(await page.evaluate(()=>window.reducedArchiveCount),1);
-  assert.equal(await page.evaluate(()=>window.reducedSteps.join(',')),'commit,impact,outcome,archive,return');
+  assert.equal(await page.evaluate(()=>window.reducedSteps.join(',')),'commit,impact,impactHold,outcome,archive,return');
   assert.equal(await page.locator('[data-presentation-hidden]').count(),0);
   await page.evaluate(()=>window.reducedVfx.reset());
   await page.emulateMedia({reducedMotion:'no-preference'});
