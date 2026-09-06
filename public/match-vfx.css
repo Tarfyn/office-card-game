@@ -1,0 +1,181 @@
+/* Match feedback tokens are owned here. Millisecond numbers also drive bounded DOM cleanup. */
+body.match-mode {
+  --vfx-brass:#e6bd70;
+  --vfx-teal:#70dccb;
+  --vfx-red:#ff8179;
+  --vfx-green:#8ee0a6;
+  --vfx-blue:#8dcfff;
+  --vfx-life:700;
+  --vfx-snap:180ms;
+  --vfx-settle:420ms;
+  --vfx-ease:cubic-bezier(.18,.8,.28,1);
+}
+
+/* One presentation owner: remove legacy board animation that restarts on replacement DOM.
+   Card geometry, foil, targeting, hand fan transforms and server state remain independent. */
+body.match-mode .board-lane .card,
+body.match-mode .board-lane.zone-transition-active,
+body.match-mode .archive-compact.archive-impact,
+body.match-mode .archive-compact.zone-transition-active,
+body.match-mode .resource-card.reputation-resource.cue-reputation-loss,
+body.match-mode .resource-card.reputation-resource.cue-reputation-gain,
+body.match-mode .game-shell.event-reputation-changed .battlefield-surface::after {
+  animation:none !important;
+}
+
+#matchVfxHost {
+  position:fixed;
+  inset:0;
+  z-index:345;
+  overflow:clip;
+  pointer-events:none;
+  contain:strict;
+}
+.match-vfx {
+  position:absolute;
+  color:var(--vfx-brass);
+  pointer-events:none;
+  transform-origin:left center;
+  --vfx-life:700;
+}
+.vfx-mark {
+  display:block;
+  position:absolute;
+  inset:1px;
+  border:2px solid currentColor;
+  border-radius:4px;
+  opacity:0;
+  box-shadow:0 0 12px color-mix(in srgb,currentColor 28%,transparent);
+  animation:vfx-edge calc(var(--vfx-life) * 1ms) var(--vfx-ease) both;
+}
+.vfx-arrive .vfx-mark {
+  border-top:0;
+  animation-name:vfx-land;
+}
+.vfx-commit { color:var(--vfx-brass); --vfx-life:420; }
+.vfx-commit .vfx-mark { border-style:double; border-width:3px; }
+.vfx-travel { color:var(--vfx-brass); --vfx-life:520; }
+.vfx-travel .vfx-mark {
+  inset:0;
+  border:0;
+  height:2px;
+  border-radius:0;
+  transform-origin:left center;
+  background:linear-gradient(90deg,transparent,currentColor 80%,#fff4d8);
+  animation:vfx-scan 520ms var(--vfx-ease) both;
+}
+.vfx-impact, .vfx-damage, .vfx-denied { color:var(--vfx-red); }
+.vfx-impact .vfx-mark, .vfx-damage .vfx-mark { animation-name:vfx-impact; border-width:3px; }
+.vfx-resolve { color:var(--vfx-teal); }
+.vfx-confirm, .vfx-turn { color:var(--vfx-green); }
+.vfx-opponent-turn { color:var(--vfx-red); }
+.vfx-resolve .vfx-mark, .vfx-confirm .vfx-mark {
+  border-width:0 0 3px 3px;
+  animation-name:vfx-approve;
+}
+.vfx-warning { color:var(--vfx-brass); }
+.vfx-redirect { color:var(--vfx-blue); }
+.vfx-denied .vfx-mark, .vfx-warning .vfx-mark { border-style:dashed; }
+.vfx-archive { color:var(--vfx-red); --vfx-life:850; }
+.vfx-archive .vfx-mark { border-style:dashed; animation-name:vfx-file-away; }
+.vfx-receive { color:var(--vfx-brass); --vfx-life:850; }
+.match-vfx > b {
+  position:absolute;
+  top:100%;
+  left:50%;
+  transform:translateX(-50%);
+  padding:3px 5px;
+  border:1px solid currentColor;
+  border-radius:3px;
+  background:#141e27;
+  font:800 clamp(10px,.75vw,16px)/1.1 ui-monospace,monospace;
+  white-space:nowrap;
+  animation:vfx-label calc(var(--vfx-life) * 1ms) ease both;
+}
+.vfx-archive > b {
+  top:42%;
+  font-size:clamp(8px,.6vw,13px);
+  border:3px double currentColor;
+  transform:translateX(-50%) rotate(-6deg);
+}
+
+/* Extend the existing event-keyed combat host: a directional commit, then a readable stamp. */
+body.match-mode .battle-card-shell { --vfx-direction:1; animation-name:vfx-clash; }
+body.match-mode .battle-card-side:last-child .battle-card-shell { --vfx-direction:-1; }
+body.match-mode .battle-card-side.winner .battle-card-shell { animation-name:vfx-clash,battle-winner-glow; }
+body.match-mode .battle-card-side.archived .battle-card-shell > .card {
+  animation:vfx-archive-card var(--vfx-settle) ease 940ms both;
+}
+body.match-mode .resolution-moment > span {
+  display:inline-block;
+  border-bottom:2px solid var(--vfx-teal);
+  animation:vfx-stamp var(--vfx-snap) var(--vfx-ease) both;
+}
+body.match-mode .resolution-moment.negated > span { border-color:var(--vfx-red); }
+body.match-mode .resolution-moment.delayed > span { border-color:var(--vfx-brass); }
+body.match-mode .archive-stamp { color:var(--vfx-red); border-color:currentColor; }
+body.match-mode:has(#combatPresentationHost .battle-resolution-overlay) .hover-card-preview,
+body.match-mode:has(#combatPresentationHost .battle-resolution-overlay) #matchFeedbackHost [data-feedback-slot="attack"] {
+  visibility:hidden;
+}
+
+/* Stable notification hosts keep their reading lifetime; only the entrance is animated. */
+body.match-mode #matchFeedbackHost .gameplay-presentation,
+body.match-mode #matchFeedbackHost .attack-presentation {
+  animation:vfx-notice var(--vfx-snap) ease-out both;
+}
+body.match-mode .card-modal:focus-visible { outline:2px solid var(--vfx-blue); outline-offset:2px; }
+/* The fan's empty bounding box must not intercept board-native placement taps. */
+body.match-mode .own-hand { pointer-events:none; }
+body.match-mode .own-hand > .card { pointer-events:auto; }
+@media (hover:hover) and (pointer:fine) {
+  body.match-mode .board-lane .card:focus-visible {
+    outline:2px solid var(--vfx-blue);
+    outline-offset:3px;
+  }
+}
+
+@keyframes vfx-land {
+  0% { opacity:0; transform:translateY(-6px) scale(1.04); }
+  25% { opacity:.95; transform:translateY(2px) scale(.99); }
+  55% { opacity:.6; transform:none; }
+  100% { opacity:0; transform:none; }
+}
+@keyframes vfx-edge { 0%,100% { opacity:0; } 20%,48% { opacity:.85; } }
+@keyframes vfx-scan {
+  0%,20% { opacity:0; transform:scaleX(.06); }
+  35% { opacity:.9; }
+  72% { opacity:.8; transform:scaleX(1); }
+  100% { opacity:0; transform:scaleX(1); }
+}
+@keyframes vfx-impact {
+  0% { opacity:0; transform:scale(.94); }
+  20% { opacity:.95; transform:scale(1.04); }
+  45% { opacity:.65; transform:scale(1); }
+  100% { opacity:0; transform:scale(1.02); }
+}
+@keyframes vfx-approve { 0% { opacity:0; transform:translateY(3px); } 25%,50% { opacity:.85; transform:none; } 100% { opacity:0; transform:none; } }
+@keyframes vfx-file-away { 0%,18% { opacity:.7; transform:none; } 100% { opacity:0; transform:translateY(10px) scale(.94); } }
+@keyframes vfx-label { 0% { opacity:0; } 18%,75% { opacity:1; } 100% { opacity:0; } }
+@keyframes vfx-notice { from { opacity:.45; } to { opacity:1; } }
+@keyframes vfx-stamp { from { opacity:.4; scale:1.06; } to { opacity:1; scale:1; } }
+@keyframes vfx-clash {
+  0% { opacity:.5; transform:translateX(calc(-7px * var(--vfx-direction))) scale(.97); }
+  38% { opacity:1; transform:translateX(calc(-4px * var(--vfx-direction))); }
+  56% { transform:translateX(calc(8px * var(--vfx-direction))) scale(1.02); }
+  76% { transform:translateX(calc(-2px * var(--vfx-direction))); }
+  100% { opacity:1; transform:none; }
+}
+@keyframes vfx-archive-card { from { opacity:1; } to { opacity:.58; } }
+
+@media (prefers-reduced-motion:reduce) {
+  .match-vfx { --vfx-life:650; }
+  .match-vfx .vfx-mark, .match-vfx > b { animation:none; opacity:.8; }
+  .vfx-travel { display:none; }
+  body.match-mode #matchFeedbackHost *,
+  body.match-mode .battle-card-side.archived .battle-card-shell > .card,
+  body.match-mode .resolution-moment > span,
+  body.match-mode .card-modal { animation:none !important; }
+  /* Existing stamps start at opacity:0. Reduced motion must still reveal the outcome. */
+  body.match-mode .archive-stamp, body.match-mode .prevented-stamp { opacity:1; }
+}

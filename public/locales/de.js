@@ -1,4 +1,5 @@
 const deCatalog = {
+  vfx: { archived: "ARCHIVIERT" },
   meta: { title: "Office Card Game — v{version} Alpha-Playtest" },
   accessibility: { skipToGame: "Zum Spielinhalt springen" },
   nav: { backToLobby: "Zurück zur Lobby", lobby: "Lobby" },

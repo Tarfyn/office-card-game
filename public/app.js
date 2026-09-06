@@ -81,9 +81,11 @@ function acceptView(view) {
 // Regression compatibility marker for v4.4 replay source wiring
 // Regression compatibility marker for v4.3 source wiring: v4.3 keeps timer profiles off while adding filtered human playtest samples
 // Regression compatibility marker for v4.2 source wiring: analytics/export?format=csv
-import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslations, setDocumentTranslationParams, localizedCard, cardTypeLabel, observeLocalizedApp } from './i18n.js';
+import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslations, setDocumentTranslationParams, localizedCard, cardTypeLabel, observeLocalizedApp, applyLegacyAppTranslations } from './i18n.js';
 import { tutorialStepForMatch, tutorialActionAllowed } from './tutorial-script.js';
+import { createMatchVfx } from './match-vfx.js';
 const app = document.querySelector('#app');
+const matchVfx = createMatchVfx({ archiveLabel:() => t('vfx.archived') });
 applyDocumentTranslations();
 function syncLanguageSwitcher() {
   const select = document.querySelector('#languageSelect');
@@ -1855,6 +1857,7 @@ function clearTransientMatchUi({ clearCommit = true, clearCues = true } = {}) {
     state.intentBusy = false;
   }
   if (clearCues) {
+    matchVfx.reset();
     for (const timer of [state.visualCueTimer,state.attackPresentationTimer,state.gameplayPresentationTimer,state.resolutionTraceTimer,state.flowCueTimer,state.zoneCueTimer]) if (timer) clearTimeout(timer);
     state.visualCueTimer = null;
     state.visualCue = null;
@@ -3047,7 +3050,10 @@ function resolutionOutcomeEvent() {
   const negatedAction = [...cues].reverse().find((event) => event.type === 'ACTION_RESOLVED' && event.data?.negated);
   if (negatedAction) return negatedAction;
   const priority = ['CHAIN_ITEM_DELAYED','CHAIN_ITEM_NEGATED','ACTION_RESOLVED','CHAIN_RESOLVED'];
-  return priority.map((type) => [...cues].reverse().find((event) => event.type === type)).find(Boolean) ?? null;
+  const outcome = priority.map((type) => [...cues].reverse().find((event) => event.type === type)).find(Boolean) ?? null;
+  // A plain chain-complete plaque adds no information over the authoritative combat result.
+  if (outcome?.type === 'CHAIN_RESOLVED' && /^(battle|direct):/.test(combatPresentationKey())) return null;
+  return outcome;
 }
 
 function renderResolutionMoment() {
@@ -3089,6 +3095,32 @@ function syncResolutionPresentationHost() {
   if (host.dataset.presentationKey === key) return;
   host.dataset.presentationKey = key;
   host.innerHTML = html;
+}
+
+// Keep readable notification nodes alive across SSE, polling and interaction renders.
+function syncMatchFeedbackHost() {
+  let host = document.querySelector('#matchFeedbackHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'matchFeedbackHost';
+    document.body.appendChild(host);
+  }
+  const items = [
+    ['attack', state.attackPresentation?.event?.seq, renderAttackPresentation],
+    ['gameplay', state.gameplayPresentation?.event?.seq, renderGameplayPresentation],
+    ['zone', zoneCueMotionKey(), renderZoneTransitionCue],
+    ['visual', state.gameplayPresentation ? null : state.visualCue?.seq, renderVisualCue]
+  ];
+  for (const [name, eventKey, markup] of items) {
+    let slot = host.querySelector(`[data-feedback-slot="${name}"]`);
+    if (eventKey == null) { slot?.remove(); continue; }
+    const key = `${state.view.roomId}:${currentLocale()}:${eventKey}`;
+    if (slot?.dataset.presentationKey === key) continue;
+    if (!slot) { slot = document.createElement('div'); slot.dataset.feedbackSlot = name; host.appendChild(slot); }
+    slot.dataset.presentationKey = key;
+    slot.innerHTML = markup();
+    applyLegacyAppTranslations(slot);
+  }
 }
 
 function turnStatus(match) {
@@ -3858,6 +3890,7 @@ function renderCardModal() {
 }
 
 function appendEvents(events = [], { present = true } = {}) {
+  matchVfx.enqueue(events, { roomId:state.view?.roomId, present, ownerOf:(id) => cardByRef(id)?.controllerId });
   const significant = new Set(['CARD_PLAYED','PROMOTION_COMPLETED','ATTACK_DECLARED','ATTACK_TARGET_REDIRECTED','DESTRUCTION_PREVENTED','EMPLOYEE_DESTROYED','CARD_DESTROYED','BATTLE_RESOLVED','BREAKTHROUGH_DAMAGE','REPUTATION_CHANGED','REPUTATION_LOSS_REDUCED','INCIDENT_ACTIVATED','ABILITY_ACTIVATED','ACTION_RESOLVED','CHAIN_ITEM_ADDED','CHAIN_ITEM_NEGATED','CHAIN_ITEM_DELAYED','CHAIN_RESOLVED','GAME_ENDED']);
   const movementSignificant = new Set(['CARD_DRAWN','CARD_MOVED','CARD_ARCHIVED','CARD_REVEALED','DECK_SHUFFLED']);
   const freshCues = [];
@@ -7980,10 +8013,12 @@ function renderGame() {
       </div>
       ${matchResultPresentationReady(match) ? `<div id="matchResultDetail" class="match-result-detail">${renderMatchResultPanel(match)}</div>` : ''}
     </div>
-  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderAttackPresentation()}${renderGameplayPresentation()}${renderZoneTransitionCue()}${state.gameplayPresentation ? '' : renderVisualCue()}${renderMatchEndOverlay(match)}${renderCardModal()}`;
+  </div>${renderTurnFlowCue(match)}<div id="hoverCardPreview" class="hover-card-preview hidden"></div>${renderAttackOverlay(match)}${renderMatchEndOverlay(match)}${renderCardModal()}`;
+  syncMatchFeedbackHost();
   markRenderedTransientMotion();
   syncCombatPresentationHost();
   syncResolutionPresentationHost();
+  matchVfx.sync(match);
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   // Compatibility marker: addEventListener('click', playAnotherMatch)
@@ -8029,7 +8064,10 @@ function render() {
   document.body.classList.toggle('collection-mode', collectionMode);
   document.body.classList.toggle('cosmetic-mode', personnelMode || shopMode);
   document.body.classList.toggle('achievement-mode', achievementMode);
-  if (!liveMatch) document.querySelector('#resolutionPresentationHost')?.remove();
+  if (!liveMatch) {
+    matchVfx.reset();
+    for (const id of ['resolutionPresentationHost','combatPresentationHost','matchFeedbackHost']) document.getElementById(id)?.remove();
+  }
   if (!state.session && state.mode === 'FINISH_REVIEW') return renderFinishReview();
   if (!state.session && state.mode === 'OPS') return renderOpsDashboard();
   if (!state.session && state.mode === 'COLLECTION') return renderCollection();

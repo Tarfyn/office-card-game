@@ -1,4 +1,5 @@
 const enCatalog = {
+  vfx: { archived: "ARCHIVED" },
   meta: { title: "Office Card Game — v{version} Alpha Playtest" },
   accessibility: { skipToGame: "Skip to game content" },
   nav: { backToLobby: "Back to lobby", lobby: "Lobby" },

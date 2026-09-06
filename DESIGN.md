@@ -25,3 +25,13 @@ The game presents an exaggerated internal corporate world through a tactile exec
 - Logout immediately revokes the server session and returns to the preserved local Guest identity.
 - `/ops` is a dedicated server-protected route. Hidden navigation is only a convenience and never the authorization boundary.
 - Any future admin mutation requires an attributable audit record containing who, when, action, target, before, after, and reason.
+
+## Match motion feedback
+
+Match VFX uses compact approval edges, fax-like directional streaks and archive stamps. It does not move the canonical field grid or replace card anatomy. Keep the board legible; do not add ambient particles, per-card render loops or fantasy spell effects.
+
+Runtime token ownership remains in CSS (Model B). `public/match-vfx.css` owns `--vfx-brass` (#e6bd70), `--vfx-teal` (#70dccb), `--vfx-red` (#ff8179), `--vfx-green` (#8ee0a6), `--vfx-blue` (#8dcfff), the 180ms snap, 420ms settle, and per-family `--vfx-life` in milliseconds. `public/match-vfx.js` reads that lifetime for cleanup; it owns bounded event deduplication and decorative overlay placement. No theme adapter or generated token copy is introduced.
+
+`appendEvents` is the authoritative event intake. Initial hydration consumes events silently. Feedback has no authority over target legality, phase advancement, Tutorial gates or result timing. The existing combat and resolution hosts plus `syncMatchFeedbackHost` own readable, event-keyed presentation. Identical updates keep those DOM nodes. A plain chain-complete notice and hover detail yield to the combat result; meaningful Action outcomes remain visible.
+
+Reduced motion keeps a static edge/delta cue, removes directional travel and movement, and always shows ARCHIVED/SAVED outcomes. Decorative cues are hidden from assistive technology; the existing localized status text, REP counts, Archive and Match Log carry persistent meaning. See [the VFX foundation](docs/match-vfx.md) for the event mapping and limits.
