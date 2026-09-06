@@ -2,6 +2,66 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath } from '../public/match-vfx.js';
 import { VFX_TIMING, VFX_EASING, installVfxTiming } from '../public/vfx-timing.js';
+import { DEPARTMENT_MODIFIERS, SIGNATURE_LIMITS, signaturePreset, signatureForStep, visibleSignatureMetadata, lethalOutcome } from '../public/vfx-signatures.js';
+
+test('Phase 3 leaves CORE feedback and all scheduled timing values unchanged',()=>{
+  assert.equal(signatureForStep({type:'placement',events:[],payload:{}},'settle',null),null);
+  assert.equal(signatureForStep({type:'action',events:[{type:'ACTION_RESOLVED'}],payload:{}},'resolve',null),null);
+  assert.deepEqual(feedbackForEvent({type:'POWER_MODIFIED',data:{amount:2}}),[]);
+  assert.deepEqual([VFX_TIMING.cardTravel,VFX_TIMING.supportTravel,VFX_TIMING.placementSettle,VFX_TIMING.actionStage,VFX_TIMING.actionResolve,VFX_TIMING.archiveTravel,VFX_TIMING.attackCommit,VFX_TIMING.impactHold,VFX_TIMING.repHold,VFX_TIMING.repCue,VFX_TIMING.lethalHold,VFX_TIMING.queueBudget,VFX_TIMING.catchUpAge],
+    [360,340,80,220,180,420,300,150,260,950,220,2900,1600]);
+});
+test('Executive signature uses canonical visible variant metadata, never rarity or DOM classes',()=>{
+  const def={id:'N-002',department:'NEUTRAL'};
+  const standard=visibleSignatureMetadata({definitionId:'N-002',variantId:null},def);
+  const executive=visibleSignatureMetadata({definitionId:'N-002',variantId:'N-002-EXEC'},def);
+  assert.equal(signaturePreset('executive',standard),null);
+  assert.equal(signaturePreset('executive',executive).level,'HERO');
+  assert.equal(visibleSignatureMetadata({variantId:'N-002-EXEC'},def),null,'hidden identity must not be reconstructed');
+  assert.equal(visibleSignatureMetadata({definitionId:'N-003',variantId:'N-002-EXEC'},def),null);
+});
+test('department composition is deterministic and distinguishes every department without card-specific presets',()=>{
+  for(const [department,modifier] of Object.entries(DEPARTMENT_MODIFIERS)) {
+    assert.equal(signaturePreset('resolve',{department}).modifier,modifier);
+    assert.equal(signaturePreset('negate',{department}).modifier,modifier);
+  }
+  assert.equal(new Set(Object.values(DEPARTMENT_MODIFIERS)).size,6);
+  assert.equal(signaturePreset('resolve',{department:'UNKNOWN'}).modifier,'paperwork');
+});
+test('only authoritative reputation-zero match end enables lethal Hero; no result wait is added',()=>{
+  assert.equal(lethalOutcome([{type:'GAME_ENDED',data:{reason:'TUTORIAL_COMPLETE'}}]),null);
+  assert.equal(lethalOutcome([{type:'REPUTATION_CHANGED',data:{after:1}}]),null);
+  const events=[{seq:1,type:'ATTACK_DECLARED',playerId:'P1',cardInstanceId:'a',data:{}},{seq:2,type:'REPUTATION_CHANGED',playerId:'P2',data:{reason:'DIRECT_ATTACK',after:0,delta:-1}},{seq:3,type:'GAME_ENDED',playerId:'P1',data:{reason:'REPUTATION_ZERO'}}];
+  const q=createPresentationQueue();q.enqueue(events,{roomId:'hero',now:0});const direct=q.take(0);
+  assert.deepEqual(direct.payload.lethal,{seq:3,playerId:'P2'});
+  q.complete(direct.key);const result=q.take(700);
+  assert.equal(direct.steps.reduce((n,s)=>n+s.duration,0)+result.steps[0].duration,920);
+  q.complete(result.key);q.enqueue(events,{roomId:'hero',now:1000});assert.equal(q.busy,false);
+});
+test('Hero hydration and room watermark prevent historical replay after reload or takeover',()=>{
+  const event={seq:20,type:'GAME_ENDED',playerId:'P1',data:{reason:'REPUTATION_ZERO'}};
+  const q=createPresentationQueue();q.enqueue([event],{roomId:'hero',present:false});
+  q.enqueue([event],{roomId:'hero',present:true});assert.equal(q.busy,false);
+});
+test('dense catch-up retains critical lethal metadata and static Hero fallback',()=>{
+  const q=createPresentationQueue();const events=Array.from({length:8},(_,i)=>({seq:i+1,type:'CARD_ARCHIVED',playerId:'P2',cardInstanceId:'b'+i,data:{causeSourceId:'effect'+i}}));
+  events.push({seq:9,type:'GAME_ENDED',playerId:'P1',data:{reason:'REPUTATION_ZERO'}});
+  q.enqueue(events,{roomId:'hero',now:0});const summary=q.take(0);q.complete(summary.key);
+  assert.equal(summary.type,'summary');assert.equal(summary.payload.archivedCount,8);assert.ok(summary.payload.lethal);
+  assert.equal(q.take(620),null);
+  const preset=signaturePreset('lethal',null,{staticFeedback:true});
+  assert.equal(preset.level,'HERO');assert.equal(preset.particles,0);assert.equal(preset.static,true);
+});
+test('important resolution, rejection and shared multi-Archive scope use ENGINE hierarchy',()=>{
+  const event={type:'ACTION_RESOLVED',data:{negated:true}};
+  assert.equal(signatureForStep({type:'action',events:[event],payload:{}},'resolve',null).kind,'negate');
+  const multi={type:'action',events:[],payload:{cardId:'a',archived:[{cardInstanceId:'b'},{cardInstanceId:'c'}]}};
+  assert.equal(signatureForStep(multi,'resolve',null).kind,'resolve');
+  assert.equal(signatureForStep({...multi,type:'combat'},'archive',null).kind,'scope');
+  assert.equal(signaturePreset('delay',null).level,'ENGINE');
+  assert.ok(signaturePreset('resolve',null).particles<signaturePreset('lethal',null).particles);
+  assert.equal(SIGNATURE_LIMITS.particles,24);assert.equal(SIGNATURE_LIMITS.roots,3);
+});
 
 const played = (seq, id = 'employee') => ({ seq, type:'CARD_PLAYED', cardInstanceId:id, playerId:'P1', data:{cardType:'EMPLOYEE'} });
 test('hydration, duplicate delivery and truncated historical replay never restart VFX', () => {

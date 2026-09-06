@@ -1,6 +1,7 @@
 // Presentation only: consume authoritative events; never infer legality or outcomes.
 import { createPresentationQueue, presentationSteps } from './presentation-queue.js';
 import { VFX_TIMING, VFX_EASING, installVfxTiming } from './vfx-timing.js';
+import { SIGNATURE_LIMITS, visibleSignatureMetadata, signaturePreset, signatureForStep, decorateSignature } from './vfx-signatures.js';
 export { createPresentationQueue, presentationSteps } from './presentation-queue.js';
 const MAX_EFFECTS = 16;
 const MAX_PENDING = 24;
@@ -36,7 +37,8 @@ export function feedbackForEvent(event, ownerOf = () => null) {
       return [cue(data.negated ? 'denied' : 'resolve', source, { fallback:archive(ownerOf(event.cardInstanceId) ?? event.playerId) })];
     case 'ABILITY_ACTIVATED':
     case 'INCIDENT_ACTIVATED': return [cue('confirm')];
-    case 'CHAIN_ITEM_DELAYED': return [cue('warning')];
+    case 'CHAIN_ITEM_DELAYED': return [cue('warning',source,{signatureKind:'delay'})];
+    case 'POWER_MODIFIED': return Math.abs(Number(data.amount))>=3 ? [cue('confirm',source,{signatureKind:'major'})] : [];
     case 'DESTRUCTION_PREVENTED': return [cue('confirm')];
     case 'CARD_ARCHIVED':
       return [cue('archive'), cue('receive', archive(event.playerId ?? ownerOf(event.cardInstanceId)))];
@@ -118,7 +120,7 @@ export function physicalPath(from,to,{commit=false}={}) {
   return {...from,left:from.left+(distance?dx/distance*reach:0),top:from.top+(distance?dy/distance*reach:0)};
 }
 
-export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureCombat=()=>'', onCombat=()=>{}, onIdle=()=>{}, onStep=()=>{} }) {
+export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureCombat=()=>'', onCombat=()=>{}, onIdle=()=>{}, onStep=()=>{}, cardMetadata=()=>null }) {
   installVfxTiming(document.documentElement.style);
   const queue = createFeedbackQueue();
   const presentation = createPresentationQueue();
@@ -131,6 +133,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   let room = null;
   let phase = null;
   let previousRects = new Map();
+  let lethalPresented=-1;
   const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   const remove = (node) => {
     clearTimeout(active.get(node));
@@ -183,6 +186,8 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   function prepare(entry) {
     entry.epoch=geometryEpoch;
     entry.visuals=new Map();
+    const metadata=cardMetadata(entry.payload.cardId??entry.payload.attackerId);
+    entry.signatureMetadata=visibleSignatureMetadata(metadata?.card,metadata?.definition);
     const ids=new Set([entry.payload.attackerId,entry.payload.cardId,...entry.events.flatMap(e=>[e.cardInstanceId,e.data?.attackerId,e.data?.targetId,...(e.data?.destroyedIds??[])])].filter(Boolean));
     for(const id of ids) {
       const source=snapshotPresentationCard(cardNode(id));
@@ -250,6 +255,35 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     for(const [id,amount] of Object.entries(entry.payload.damage)) if(amount) cueNow({kind:amount<0?'damage':'confirm',target:player(id),seq:entry.seq,amount},rectOf(targetNode(player(id),currentMatch?.viewerId)));
     for(const id of ['P1','P2']) if(entry.payload.archivedByPlayer[id]) cueNow({kind:'receive',target:archive(id),seq:entry.seq},rectOf(targetNode(archive(id),currentMatch?.viewerId)));
   }
+  function showSignature(entry,s) {
+    const p=entry.payload,staticFeedback=s.static||targeting||entry.epoch!==geometryEpoch;
+    let preset=signatureForStep(entry,s.type,entry.signatureMetadata,{staticFeedback});
+    let rect,origin,targets=[],life;
+    if(p.lethal && ['impact','result','summary'].includes(s.type)) {
+      if(lethalPresented===p.lethal.seq) return;
+      lethalPresented=p.lethal.seq;
+      preset=signaturePreset('lethal',null,{staticFeedback});
+      rect=rectOf(document.querySelector(p.lethal.playerId===currentMatch?.viewerId?'#ownBoard':'#opponentBoard'));
+      const steps=presentationSteps(entry,{reducedMotion:media.matches,catchUp:entry.catchUp});
+      const index=steps.findIndex(step=>step.type===s.type);
+      life=steps.slice(index).reduce((sum,step)=>sum+step.duration,0)+(s.type==='impact'?(media.matches?VFX_TIMING.staticLethal:VFX_TIMING.lethalHold):0);
+    } else if(preset) {
+      origin=entry.travelDestination??destination(entry,p.cardId??p.attackerId);
+      targets=(p.archived??[]).filter(e=>e.cardInstanceId!==p.cardId).map(e=>destination(entry,e.cardInstanceId)).filter(Boolean);
+      if(preset.kind==='executive') rect=origin;
+      else {
+        const points=[origin,...targets].filter(Boolean);
+        if(points.length) {
+          const left=Math.min(...points.map(r=>r.left)),top=Math.min(...points.map(r=>r.top));
+          rect={left,top,width:Math.max(...points.map(r=>r.left+r.width))-left,height:Math.max(...points.map(r=>r.top+r.height))-top};
+        } else rect=rectOf(document.querySelector('.board-phase-divider'));
+      }
+      // Arrival/resolve accents share the existing V1 cue lifetime, not a queue wait.
+      life=media.matches?VFX_TIMING.reducedCue:VFX_TIMING.cue;
+    }
+    if(!preset||!rect) return;
+    cueNow({kind:'signature',target:field(`${entry.key}:${preset.kind}`),seq:entry.seq,preset,life,origin,targets},rect);
+  }
   function runStep(entry,s) {
     onStep(entry,s);
     const p=entry.payload, id=p.cardId??p.attackerId;
@@ -315,9 +349,11 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       onCombat(null);
       if(!p.destroyedIds?.includes(id) && fieldNode(id)) proxy(entry,id,entry.commitDestination,destination(entry,id),s.duration);
     } else if(s.type==='summary') showSummary(entry);
+    showSignature(entry,s);
   }
   function finishEntry(entry) {
     clearTimeout(timer);timer=null;stopMotion();onCombat(null);entry.summaryNode?.remove();
+    if(entry.type==='result'||entry.payload.lethal&&entry.type==='summary') for(const node of active.keys()) if(node.dataset.signature==='lethal') remove(node);
     presentation.complete(entry.key);running=null;
     if(presentation.busy) pump(); else onIdle();
   }
@@ -351,6 +387,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   function finishAll() {
     const wasBusy=presentation.busy;
     clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;
+    for(const node of active.keys()) if(node.classList.contains('vfx-signature')) remove(node);
     // Preserve the watermark: cancellation must not turn old events into new animations.
     while(presentation.busy) { const entry=presentation.current??presentation.take();if(entry)presentation.complete(entry.key); }
     onCombat(null);if(wasBusy) onIdle();
@@ -371,6 +408,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     node.className = `match-vfx vfx-${cue.kind}`;
     node.dataset.vfxKey = key;
     node.dataset.eventSeq = String(cue.seq);
+    if(cue.life) node.style.setProperty('--vfx-life',String(cue.life));
     if (cue.kind === 'travel') {
       const x = sourceRect.left + sourceRect.width / 2;
       const y = sourceRect.top + sourceRect.height / 2;
@@ -383,6 +421,15 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     const mark = document.createElement('i');
     mark.className = 'vfx-mark';
     node.appendChild(mark);
+    const metadata=cue.signatureKind?cardMetadata(cue.target.id):null;
+    const preset=cue.preset??(cue.signatureKind?signaturePreset(cue.signatureKind,visibleSignatureMetadata(metadata?.card,metadata?.definition),{staticFeedback:media.matches||targeting}):null);
+    if(preset) {
+      const roots=[...active.keys()].filter(n=>n.classList.contains('vfx-signature'));
+      while(roots.length>=SIGNATURE_LIMITS.roots) remove(roots.shift());
+      const particleRoom=Math.max(0,SIGNATURE_LIMITS.particles-document.querySelectorAll('.signature-paper').length);
+      if(cue.kind==='signature') mark.remove();
+      decorateSignature(node,preset,{rect,origin:cue.origin,targets:cue.targets,particleRoom});
+    }
     if (cue.kind === 'archive' || cue.amount) {
       const label = document.createElement('b');
       label.textContent = cue.kind === 'archive' ? archiveLabel() : `${cue.amount > 0 ? '+' : ''}${cue.amount} REP`;
@@ -405,7 +452,10 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     },
     sync(match,{isTargeting=false}={}) {
       currentMatch=match;targeting=isTargeting;
-      if(targeting) stopMotion();
+      if(targeting) {
+        stopMotion();
+        for(const node of active.keys()) if(node.classList.contains('vfx-signature')&&node.dataset.signature!=='lethal') remove(node);
+      }
       if (!match || document.hidden) { clear(); queue.drain(Infinity); return; }
       const viewerId = match.viewerId;
       const cues = queue.drain();
@@ -439,6 +489,6 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     get busy() { return presentation.busy; },
     get diagnostics() { return {size:presentation.size,proxies:proxies.size,key:running?.key??null}; },
     finish:finishAll,
-    reset() { clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;presentation.reset();onCombat(null);actionOrigins.clear();clear(); queue.reset(); previousRects.clear(); phase = null; room = null; host?.remove(); host = null;currentMatch=null; }
+    reset() { clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;presentation.reset();onCombat(null);actionOrigins.clear();clear(); queue.reset(); previousRects.clear(); phase = null; room = null; lethalPresented=-1;host?.remove(); host = null;currentMatch=null; }
   };
 }

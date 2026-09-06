@@ -1,5 +1,6 @@
 // Pure presentation planning. Event IDs and outcomes come exclusively from the server.
 import { VFX_TIMING as timing } from './vfx-timing.js';
+import { lethalOutcome } from './vfx-signatures.js';
 export const PRESENTATION_BUDGET_MS = timing.queueBudget;
 export const PRESENTATION_MAX_PENDING = 6;
 const duration = { travel:timing.cardTravel, commit:timing.attackCommit, impact:timing.impact,
@@ -94,6 +95,10 @@ export function planPresentations(events, attacks = new Map()) {
     }
   }
   // Keep at most the current attack per card, even across open response windows.
+  const lethal=lethalOutcome(events);
+  if(lethal) for(const entry of entries) {
+    if(entry.type==='result' || entry.events.some(e=>e.type==='REPUTATION_CHANGED' && e.playerId===lethal.playerId && e.data?.after===0)) entry.payload.lethal=lethal;
+  }
   while (attacks.size > 18) attacks.delete(attacks.keys().next().value);
   return { entries:entries.sort((a,b)=>a.priority-b.priority || a.seq-b.seq), used };
 }
@@ -103,7 +108,7 @@ function summaryOf(entries) {
   const damage = { P1:0, P2:0 };
   const archivedByPlayer = { P1:0, P2:0 };
   const repChanges = { P1:{loss:0,gain:0}, P2:{loss:0,gain:0} };
-  let battles=0, resolutions=0, denied=0, result=false, archivedCount=0;
+  let battles=0, resolutions=0, denied=0, result=false, archivedCount=0, lethal=null;
   for (const entry of entries) {
     if (entry.type === 'summary') {
       const p=entry.payload;
@@ -112,8 +117,10 @@ function summaryOf(entries) {
       for(const id of ['P1','P2']) archivedByPlayer[id]+=p.archivedByPlayer[id];
       for(const id of ['P1','P2']) for(const kind of ['loss','gain']) repChanges[id][kind]+=p.repChanges[id][kind];
       battles+=p.battles; resolutions+=p.resolutions; denied+=p.denied; result ||= p.result; archivedCount+=p.archivedCount;
+      lethal=p.lethal??lethal;
       continue;
     }
+    lethal=entry.payload.lethal??lethal;
     for (const e of entry.events) {
       if (e.type==='CARD_ARCHIVED') { archived.add(e.cardInstanceId); archivedCount++; if(e.playerId in archivedByPlayer) archivedByPlayer[e.playerId]++; }
       if (e.type==='DESTRUCTION_PREVENTED') saved.add(e.cardInstanceId);
@@ -126,7 +133,7 @@ function summaryOf(entries) {
       if (e.type==='GAME_ENDED') result=true;
     }
   }
-  return { archived:[...archived].slice(0,80), saved:[...saved].slice(0,80), archivedCount, archivedByPlayer, damage, repChanges, battles, resolutions, denied, result };
+  return { archived:[...archived].slice(0,80), saved:[...saved].slice(0,80), archivedCount, archivedByPlayer, damage, repChanges, battles, resolutions, denied, result, lethal };
 }
 
 export function createPresentationQueue() {

@@ -8,9 +8,9 @@ const css = root("public/styles.css");
 const server = root("server/server.mjs");
 const packageJson = JSON.parse(root("package.json"));
 
-assert.equal(packageJson.version, "7.69.68");
-assert.match(server, /version: "7\.69\.68"/);
-assert.match(server, /version:"7\.69\.68"/);
+assert.equal(packageJson.version, "7.69.69");
+assert.match(server, /version: "7\.69\.69"/);
+assert.match(server, /version:"7\.69\.69"/);
 assert.match(app, /function appendEvents\(events = \[\], \{ present = true \} = \{\}\)/);
 assert.match(app, /appendEvents\(view\.events, \{ present:!hydratingSession \}\)/);
 assert.match(app, /state\.connectionStatus = 'RECOVERED'/);

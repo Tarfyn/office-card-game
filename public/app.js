@@ -86,6 +86,7 @@ import { tutorialStepForMatch, tutorialActionAllowed } from './tutorial-script.j
 import { createMatchVfx } from './match-vfx.js';
 const app = document.querySelector('#app');
 const matchVfx = createMatchVfx({
+  cardMetadata:(id) => { const card=cardByRef(id); return {card,definition:cardDef(card?.definitionId)}; },
   archiveLabel:() => t('vfx.archived'),
   captureCombat:(events,attack) => renderCombatEvents(attack && !events.some(e=>e.seq===attack.seq) ? [attack,...events] : events),
   onCombat:(entry) => { state.presentationCombat=entry; syncCombatPresentationHost(); },
