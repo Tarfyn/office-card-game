@@ -85,7 +85,16 @@ import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslation
 import { tutorialStepForMatch, tutorialActionAllowed } from './tutorial-script.js';
 import { createMatchVfx } from './match-vfx.js';
 const app = document.querySelector('#app');
-const matchVfx = createMatchVfx({ archiveLabel:() => t('vfx.archived') });
+const matchVfx = createMatchVfx({
+  archiveLabel:() => t('vfx.archived'),
+  captureCombat:(events,attack) => renderCombatEvents(attack && !events.some(e=>e.seq===attack.seq) ? [attack,...events] : events),
+  onCombat:(entry) => { state.presentationCombat=entry; syncCombatPresentationHost(); },
+  onIdle:() => { if(state.matchResultGate?.pending) resolveMatchResultPresentationGate(state.matchResultGate.key); else if(state.view?.match?.status==='ENDED') render(); },
+  summaryLabel:(summary) => {
+    const rep=(id)=>[summary.repChanges[id].loss,summary.repChanges[id].gain].filter(Boolean).map(n=>`${n>0?'+':''}${n}`).join(' / ')||'0';
+    return t('vfx.catchUp', { battles:summary.battles, resolved:summary.resolutions, archived:summary.archivedCount, denied:summary.denied, saved:summary.saved.length, p1Rep:rep('P1'), p2Rep:rep('P2') });
+  }
+});
 applyDocumentTranslations();
 function syncLanguageSwitcher() {
   const select = document.querySelector('#languageSelect');
@@ -1550,16 +1559,17 @@ function finalResolutionEventsForView(view, previousView) {
 
 function finalResolutionPresentationDelay(events) {
   if (!events.length) return 0;
-  if (prefersReducedMotion()) return RESULT_PRESENTATION_MIN_MS;
-  const hasArchiveResolution = events.some((event) => ['EMPLOYEE_DESTROYED','CARD_DESTROYED','CARD_ARCHIVED','BREAKTHROUGH_DAMAGE'].includes(event.type));
-  return Math.min(RESULT_PRESENTATION_MAX_MS, hasArchiveResolution ? 3800 : 1500);
+  // Queue completion opens the result promptly. This timer is only the hard ceiling.
+  return Math.max(RESULT_PRESENTATION_MIN_MS, RESULT_PRESENTATION_MAX_MS);
 }
 
 function resolveMatchResultPresentationGate(key) {
   if (state.matchResultGate?.key !== key) return;
+  clearTimeout(state.matchResultGateTimer);
   state.matchResultGate.ready = true;
   state.matchResultGate.pending = false;
   state.matchResultGateTimer = null;
+  matchVfx.finish();
   render();
 }
 
@@ -1593,7 +1603,7 @@ function syncMatchResultPresentationGate(view, previousView) {
 
 function matchResultPresentationReady(match) {
   const key = matchResultPresentationKey(state.view);
-  return Boolean(match?.status === 'ENDED' && (!key || state.matchResultGate?.key !== key || state.matchResultGate.ready));
+  return Boolean(match?.status === 'ENDED' && !matchVfx.busy && (!key || state.matchResultGate?.key !== key || state.matchResultGate.ready));
 }
 
 function clearRecoveryNoticeTimer() {
@@ -2980,7 +2990,10 @@ function renderVisualCue() {
 
 // Regression compatibility marker for v5.0 combat presentation source: class="combat-moment
 function renderCombatMoment() {
-  const cues = visualCueEvents();
+  return renderCombatEvents(visualCueEvents());
+}
+
+function renderCombatEvents(cues) {
   const battle = [...cues].reverse().find((event) => event.type === 'BATTLE_RESOLVED');
   const directAttack = [...cues].reverse().find((event) => event.type === 'ATTACK_DECLARED' && event.data?.targetId == null);
   const directRep = directAttack ? [...cues].reverse().find((event) => event.type === 'REPUTATION_CHANGED' && event.data?.reason === 'DIRECT_ATTACK') : null;
@@ -3019,12 +3032,9 @@ function renderCombatMoment() {
 }
 
 function combatPresentationKey() {
+  if(state.presentationCombat) return state.presentationCombat.key;
   const cues = visualCueEvents();
-  const battle = [...cues].reverse().find((event) => event.type === 'BATTLE_RESOLVED');
-  if (battle) return `battle:${battle.seq}`;
-  const directAttack = [...cues].reverse().find((event) => event.type === 'ATTACK_DECLARED' && event.data?.targetId == null);
-  const directRep = directAttack ? [...cues].reverse().find((event) => event.type === 'REPUTATION_CHANGED' && event.data?.reason === 'DIRECT_ATTACK') : null;
-  if (directAttack && directRep) return `direct:${directAttack.seq}:${directRep.seq}`;
+  // Combat is owned by the queue, never the latest member of a truncated cue batch.
   const promotion = [...cues].reverse().find((event) => event.type === 'PROMOTION_COMPLETED');
   return promotion ? `promotion:${promotion.seq}` : '';
 }
@@ -3032,7 +3042,7 @@ function combatPresentationKey() {
 function syncCombatPresentationHost() {
   let host = document.querySelector('#combatPresentationHost');
   const key = combatPresentationKey();
-  const html = key ? renderCombatMoment() : '';
+  const html = key ? state.presentationCombat?.html ?? renderCombatMoment() : '';
   if (!html) { host?.remove(); return; }
   if (!host) {
     host = document.createElement('div');
@@ -3042,7 +3052,9 @@ function syncCombatPresentationHost() {
   }
   if (host.dataset.presentationKey === key) return;
   host.dataset.presentationKey = key;
+  host.classList.toggle('queued-combat',Boolean(state.presentationCombat));
   host.innerHTML = html;
+  applyLegacyAppTranslations(host);
 }
 
 function resolutionOutcomeEvent() {
@@ -3052,7 +3064,7 @@ function resolutionOutcomeEvent() {
   const priority = ['CHAIN_ITEM_DELAYED','CHAIN_ITEM_NEGATED','ACTION_RESOLVED','CHAIN_RESOLVED'];
   const outcome = priority.map((type) => [...cues].reverse().find((event) => event.type === type)).find(Boolean) ?? null;
   // A plain chain-complete plaque adds no information over the authoritative combat result.
-  if (outcome?.type === 'CHAIN_RESOLVED' && /^(battle|direct):/.test(combatPresentationKey())) return null;
+  if (outcome?.type === 'CHAIN_RESOLVED' && (state.presentationCombat || matchVfx.busy)) return null;
   return outcome;
 }
 
@@ -3890,7 +3902,7 @@ function renderCardModal() {
 }
 
 function appendEvents(events = [], { present = true } = {}) {
-  matchVfx.enqueue(events, { roomId:state.view?.roomId, present, ownerOf:(id) => cardByRef(id)?.controllerId });
+  const freshPresentationSeqs=matchVfx.enqueue(events, { roomId:state.view?.roomId, match:state.view?.match, present, ownerOf:(id) => cardByRef(id)?.controllerId });
   const significant = new Set(['CARD_PLAYED','PROMOTION_COMPLETED','ATTACK_DECLARED','ATTACK_TARGET_REDIRECTED','DESTRUCTION_PREVENTED','EMPLOYEE_DESTROYED','CARD_DESTROYED','BATTLE_RESOLVED','BREAKTHROUGH_DAMAGE','REPUTATION_CHANGED','REPUTATION_LOSS_REDUCED','INCIDENT_ACTIVATED','ABILITY_ACTIVATED','ACTION_RESOLVED','CHAIN_ITEM_ADDED','CHAIN_ITEM_NEGATED','CHAIN_ITEM_DELAYED','CHAIN_RESOLVED','GAME_ENDED']);
   const movementSignificant = new Set(['CARD_DRAWN','CARD_MOVED','CARD_ARCHIVED','CARD_REVEALED','DECK_SHUFFLED']);
   const freshCues = [];
@@ -3900,6 +3912,7 @@ function appendEvents(events = [], { present = true } = {}) {
   for (const event of events) {
     if (state.eventLog.some((x) => x.seq === event.seq)) continue;
     state.eventLog.push(event);
+    if(!freshPresentationSeqs.has(event.seq)) continue;
     if (significant.has(event.type)) freshCues.push(event);
     if (event.type === 'ATTACK_DECLARED') freshAttacks.push(event);
     if (movementSignificant.has(event.type)) freshMovement.push(event);
@@ -8018,7 +8031,7 @@ function renderGame() {
   markRenderedTransientMotion();
   syncCombatPresentationHost();
   syncResolutionPresentationHost();
-  matchVfx.sync(match);
+  matchVfx.sync(match,{isTargeting:Boolean(state.interaction)});
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   // Compatibility marker: addEventListener('click', playAnotherMatch)

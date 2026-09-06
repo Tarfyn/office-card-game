@@ -20,10 +20,10 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69.9 version markers are current",()=>{
-assert.equal(pkg.version,"7.69.66");
-assert.match(server,/version: "7.69.66"/);
-assert.match(server,/version:"7\.69\.66"/);
-assert.match(server,/Office Card Game v7\.69\.66 server/);
+assert.equal(pkg.version,"7.69.67");
+assert.match(server,/version: "7.69.67"/);
+assert.match(server,/version:"7\.69\.67"/);
+assert.match(server,/Office Card Game v7\.69\.67 server/);
   assert.match(html,/v7\.69\.18 Alpha Playtest/);
   assert.match(readme,/## v7\.69\.9 — Responsive Board \+ Interaction Follow-up/);
   assert.match(pkg.scripts.test,/dist\/test\/v7699\.test\.js/);
@@ -91,8 +91,10 @@ test("attack mode is board-native, toggleable, escape-cancellable and supports d
 
 test("combat overlay is keyed and mounted once outside normal match rerenders",()=>{
   const combat=sliceBetween(app,"function combatPresentationKey", "function resolutionOutcomeEvent");
-  assert.match(combat,/battle:\$\{battle\.seq\}/);
-  assert.match(combat,/direct:\$\{directAttack\.seq\}:\$\{directRep\.seq\}/);
+  // Phase 2's authoritative queue supplies the stable group key instead of
+  // selecting only the latest battle from a truncated render batch.
+  assert.match(combat,/state\.presentationCombat\.key/);
+  assert.match(combat,/state\.presentationCombat\?\.html/);
   assert.match(combat,/host\.dataset\.presentationKey === key\) return/);
   assert.match(combat,/document\.body\.appendChild\(host\)/);
   const game=sliceBetween(app,"function renderGame()", "function render()");

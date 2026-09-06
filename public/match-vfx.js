@@ -1,4 +1,6 @@
 // Presentation only: consume authoritative events; never infer legality or outcomes.
+import { createPresentationQueue, presentationSteps } from './presentation-queue.js';
+export { createPresentationQueue, presentationSteps } from './presentation-queue.js';
 const MAX_EFFECTS = 16;
 const MAX_PENDING = 24;
 const MAX_AGE_MS = 1200;
@@ -49,7 +51,7 @@ export function createFeedbackQueue() {
   let pending = [];
   return {
     reset() { room = null; watermark = -1; pending = []; },
-    enqueue(events, { roomId, present = true, now = Date.now(), ownerOf } = {}) {
+    enqueue(events, { roomId, present = true, now = Date.now(), ownerOf, skip = new Set() } = {}) {
       if (room !== roomId) { this.reset(); room = roomId; }
       const previous = watermark;
       const seen = new Set();
@@ -58,7 +60,7 @@ export function createFeedbackQueue() {
         seen.add(event.seq);
         watermark = Math.max(watermark, event.seq);
         if (event.type === 'ATTACK_TARGET_REDIRECTED') pending = pending.filter((cue) => cue.kind !== 'travel');
-        if (present) pending.push(...feedbackForEvent(event, ownerOf).map((cue) => ({ ...cue, at:now })));
+        if (present && !skip.has(event.seq)) pending.push(...feedbackForEvent(event, ownerOf).map((cue) => ({ ...cue, at:now })));
       }
       pending = pending.slice(-MAX_PENDING);
     },
@@ -73,9 +75,56 @@ export function createFeedbackQueue() {
   };
 }
 
-export function createMatchVfx({ archiveLabel }) {
+// One coordinate space for hand, either field, Archive and REP: viewport CSS pixels.
+export function readPresentationGeometry(node, { allowOffscreen=false }={}) {
+  if (!node) return null;
+  const r=node.getBoundingClientRect();
+  if(!r.width || !r.height || (!allowOffscreen && (r.bottom<0 || r.top>innerHeight || r.right<0 || r.left>innerWidth))) return null;
+  const css=getComputedStyle(node);
+  if(css.display==='none' || css.visibility==='hidden') return null;
+  const matrix=new DOMMatrixReadOnly(css.transform==='none' ? undefined : css.transform);
+  return {left:r.left,top:r.top,width:r.width,height:r.height,angle:matrix.is2D ? Math.atan2(matrix.b,matrix.a)*180/Math.PI : 0};
+}
+
+// Freeze only already-rendered visible content, never reconstruct a hidden definition.
+// Explicit computed layout keeps the same anatomy outside the hand/field CSS ancestry.
+export function snapshotPresentationCard(node) {
+  const rect=readPresentationGeometry(node);
+  if(!rect) return null;
+  const clone=node.cloneNode(true);
+  const originals=[node,...node.querySelectorAll('*')], copies=[clone,...clone.querySelectorAll('*')];
+  const properties='display position inset box-sizing width height min-width min-height max-width max-height padding margin gap grid-template-columns grid-template-rows grid-column grid-row flex flex-direction flex-wrap align-items justify-content align-self font-family font-size font-weight font-style line-height letter-spacing text-align text-transform white-space color background border border-radius overflow object-fit object-position opacity clip-path'.split(' ');
+  originals.forEach((original,index)=>{
+    const copy=copies[index],css=getComputedStyle(original);
+    properties.forEach(p=>copy.style.setProperty(p,css.getPropertyValue(p)));
+    for(const attr of [...copy.attributes]) if(attr.name==='id'||attr.name.startsWith('data-')||attr.name==='tabindex'||attr.name.startsWith('on')) copy.removeAttribute(attr.name);
+    copy.style.setProperty('animation','none','important');
+    copy.style.setProperty('transition','none','important');
+    copy.style.setProperty('pointer-events','none','important');
+  });
+  Object.assign(clone.style,{position:'relative',inset:'auto',margin:'0',transform:'none',rotate:'none',scale:'none',opacity:'1',visibility:'visible'});
+  clone.classList.remove('hand-fan-card','selected','attack-selected','legal-card');
+  const width=node.offsetWidth || rect.width,height=node.offsetHeight || rect.height;
+  Object.assign(clone.style,{width:`${width}px`,height:`${height}px`,minWidth:'0',minHeight:'0',maxWidth:'none',maxHeight:'none'});
+  return {rect,width,height,template:clone};
+}
+
+export function physicalPath(from,to,{commit=false}={}) {
+  if(!from||!to) return null;
+  const dx=to.left+to.width/2-from.left-from.width/2,dy=to.top+to.height/2-from.top-from.height/2;
+  if(!commit) return {...to,angle:to.angle??0};
+  const distance=Math.hypot(dx,dy),reach=Math.min(distance*.22,from.height*.55);
+  return {...from,left:from.left+(distance?dx/distance*reach:0),top:from.top+(distance?dy/distance*reach:0)};
+}
+
+export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureCombat=()=>'', onCombat=()=>{}, onIdle=()=>{}, onStep=()=>{} }) {
   const queue = createFeedbackQueue();
+  const presentation = createPresentationQueue();
   const active = new Map();
+  const proxies = new Map();
+  const suppressed = new Set();
+  const actionOrigins = new Map();
+  let timer=null, currentMatch=null, targeting=false, geometryEpoch=0, running=null;
   let host = null;
   let room = null;
   let phase = null;
@@ -88,10 +137,11 @@ export function createMatchVfx({ archiveLabel }) {
   };
   const clear = () => { for (const node of active.keys()) remove(node); };
   // One set of listeners per application; never installed from render().
-  window.addEventListener('resize', () => { clear(); previousRects.clear(); }, { passive:true });
-  window.addEventListener('scroll', () => { clear(); previousRects.clear(); }, { passive:true, capture:true });
-  document.addEventListener('visibilitychange', () => { clear(); queue.drain(Infinity); });
-  media.addEventListener('change', clear);
+  const invalidateGeometry=()=>{ clear(); previousRects.clear(); geometryEpoch++; stopMotion(); actionOrigins.clear(); };
+  window.addEventListener('resize', invalidateGeometry, { passive:true });
+  window.addEventListener('scroll', invalidateGeometry, { passive:true, capture:true });
+  document.addEventListener('visibilitychange', () => { clear(); queue.drain(Infinity); stopMotion(); if(document.hidden) finishAll(); });
+  media.addEventListener('change', () => { clear(); stopMotion(); });
 
   function targetNode(target, viewerId) {
     if (!target?.id) return null;
@@ -103,10 +153,195 @@ export function createMatchVfx({ archiveLabel }) {
     return null;
   }
   function rectOf(node) {
-    if (!node) return null;
-    const r = node.getBoundingClientRect();
-    if (!r.width || !r.height || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return null;
-    return { left:r.left, top:r.top, width:r.width, height:r.height };
+    return readPresentationGeometry(node);
+  }
+  function archiveDestination(playerId) {
+    // An offscreen stack still gives the correct exit direction. If collapsed,
+    // use that player's outer board edge; no invented gameplay zone or pixels.
+    const actual=readPresentationGeometry(targetNode(archive(playerId),currentMatch?.viewerId),{allowOffscreen:true});
+    if(actual) return actual;
+    const own=playerId===currentMatch?.viewerId;
+    const board=rectOf(document.querySelector(own?'#ownBoard':'#opponentBoard'));
+    return board ? {left:board.left+board.width,top:own?board.top+board.height:board.top,width:board.width*.025,height:board.height*.025,angle:0} : null;
+  }
+
+  function cueNow(cue,rect,sourceRect) {
+    const key=`${cue.kind}:${cue.target.type}:${cue.target.id}`;
+    if([...active.keys()].some(node=>node.dataset.vfxKey===key&&node.dataset.eventSeq===String(cue.seq))) return;
+    const node=spawn(cue,rect,sourceRect);
+    if(node) active.set(node,setTimeout(()=>remove(node),parseFloat(getComputedStyle(node).getPropertyValue('--vfx-life'))||700));
+  }
+  function fieldNode(id) { return targetNode(field(id),currentMatch?.viewerId); }
+  function cardNode(id) { return document.querySelector(`.own-hand > .card[data-card-ref="${CSS.escape(id)}"]`) ?? fieldNode(id); }
+  function stopMotion() {
+    for(const {node,animation} of proxies.values()) { animation?.cancel();node.remove(); }
+    proxies.clear(); suppressed.clear();
+    document.querySelectorAll('[data-presentation-hidden]').forEach(n=>n.removeAttribute('data-presentation-hidden'));
+  }
+  function prepare(entry) {
+    entry.epoch=geometryEpoch;
+    entry.visuals=new Map();
+    const ids=new Set([entry.payload.attackerId,entry.payload.cardId,...entry.events.flatMap(e=>[e.cardInstanceId,e.data?.attackerId,e.data?.targetId,...(e.data?.destroyedIds??[])])].filter(Boolean));
+    for(const id of ids) {
+      const source=snapshotPresentationCard(cardNode(id));
+      const saved=actionOrigins.get(id);
+      if(source) entry.visuals.set(id,source);
+      else if(saved && Date.now()-saved.at<3000) entry.visuals.set(id,saved.visual);
+    }
+    if(entry.type==='combat'||entry.type==='direct') entry.combatHtml=captureCombat(entry.events,entry.payload.attack);
+  }
+  function proxy(entry,id,from,to,duration,{fade=false}={}) {
+    const snapshot=entry.visuals?.get(id);
+    if(!snapshot||!from||!to||media.matches||targeting||entry.epoch!==geometryEpoch||entry.catchUp||!duration) return;
+    let item=proxies.get(id);
+    if(!item) {
+      // A maximum of four physical cards; larger outcomes use the static catch-up receipt.
+      if(proxies.size>=4) return;
+      if(!host) { host=document.createElement('div');host.id='matchVfxHost';host.setAttribute('aria-hidden','true');document.body.appendChild(host); }
+      const node=document.createElement('div');node.className='presentation-proxy';node.inert=true;node.setAttribute('aria-hidden','true');
+      node.dataset.presentationKey=entry.key;
+      Object.assign(node.style,{width:`${snapshot.width}px`,height:`${snapshot.height}px`});
+      node.appendChild(snapshot.template.cloneNode(true));host.appendChild(node);
+      item={node,animation:null,snapshot};proxies.set(id,item);
+    } else if(item.snapshot!==snapshot) {
+      // A destroyed attacker now departs from the larger combat card. Keep the
+      // proxy node, but reconcile its anatomy/size before using that geometry.
+      item.node.replaceChildren(snapshot.template.cloneNode(true));
+      Object.assign(item.node.style,{width:`${snapshot.width}px`,height:`${snapshot.height}px`});
+      item.snapshot=snapshot;
+    }
+    const pose=(r)=>{
+      const a=(r.angle??0)*Math.PI/180;
+      const scale=r.width/(snapshot.width*Math.abs(Math.cos(a))+snapshot.height*Math.abs(Math.sin(a)));
+      return `translate(${r.left+r.width/2-snapshot.width/2}px,${r.top+r.height/2-snapshot.height/2}px) rotate(${r.angle??0}deg) scale(${scale})`;
+    };
+    item.animation?.cancel();
+    item.animation=item.node.animate([{transform:pose(from),opacity:1},{transform:pose(to),opacity:fade?0:1}],{duration,easing:'cubic-bezier(.2,.75,.25,1)',fill:'forwards'});
+    suppressed.add(id);fieldNode(id)?.setAttribute('data-presentation-hidden','true');
+  }
+  function destination(entry,id) {
+    return rectOf(fieldNode(id)) ?? (entry.epoch===geometryEpoch ? entry.visuals?.get(id)?.rect : null) ?? null;
+  }
+  function stage(entry) {
+    if(entry.epoch!==geometryEpoch) return null;
+    const source=entry.visuals?.get(entry.payload.cardId)?.rect;
+    const divider=rectOf(document.querySelector('.board-phase-divider'));
+    if(!source||!divider) return null;
+    // A visual midpoint near the phase divider, not a gameplay zone.
+    return {...source,left:divider.left+divider.width/2-source.width/2,top:divider.top+divider.height/2-source.height/2,angle:0};
+  }
+  function eventsCues(entry,types,{receipt=true}={}) {
+    for(const event of entry.events.filter(e=>types.includes(e.type))) for(const cue of feedbackForEvent(event)) {
+      if(!receipt&&cue.kind==='receive') continue;
+      const before=entry.epoch===geometryEpoch ? entry.visuals?.get(cue.target.id)?.rect : null;
+      cueNow(cue,rectOf(targetNode(cue.target,currentMatch?.viewerId))??before??rectOf(targetNode(cue.fallback,currentMatch?.viewerId)));
+    }
+  }
+  function showSummary(entry) {
+    const node=document.createElement('div');node.className='presentation-summary';node.setAttribute('role','status');node.textContent=summaryLabel(entry.payload);
+    document.body.appendChild(node);entry.summaryNode=node;
+    for(const [id,amount] of Object.entries(entry.payload.damage)) if(amount) cueNow({kind:amount<0?'damage':'confirm',target:player(id),seq:entry.seq,amount},rectOf(targetNode(player(id),currentMatch?.viewerId)));
+    for(const id of ['P1','P2']) if(entry.payload.archivedByPlayer[id]) cueNow({kind:'receive',target:archive(id),seq:entry.seq},rectOf(targetNode(archive(id),currentMatch?.viewerId)));
+  }
+  function runStep(entry,s) {
+    onStep(entry,s);
+    const p=entry.payload, id=p.cardId??p.attackerId;
+    if(s.static) stopMotion();
+    if(s.type==='travel') {
+      const from=entry.visuals?.get(id)?.rect;
+      const to=entry.type==='placement' ? rectOf(fieldNode(id)) : stage(entry);
+      entry.travelDestination=to;
+      proxy(entry,id,from,to,s.duration);
+      if(entry.type!=='placement' && entry.visuals?.has(id) && to) {
+        actionOrigins.set(id,{at:Date.now(),visual:{...entry.visuals.get(id),rect:to}});
+        while(actionOrigins.size>8) actionOrigins.delete(actionOrigins.keys().next().value);
+      }
+      if(s.static && from) cueNow({kind:'confirm',target:field(id),seq:entry.seq},from);
+    } else if(s.type==='settle') {
+      stopMotion();
+      cueNow({kind:entry.type==='placement'?'arrive':'resolve',target:field(id),seq:entry.seq},entry.travelDestination??destination(entry,id));
+    } else if(s.type==='commit') {
+      const from=destination(entry,id);
+      const attack=p.attack ?? entry.events.find(e=>e.type==='ATTACK_DECLARED');
+      const target=p.targetId ? field(p.targetId) : player(p.defenderId??opposite(attack?.playerId??p.playerId));
+      const to=rectOf(targetNode(target,currentMatch?.viewerId))??entry.visuals?.get(p.targetId)?.rect;
+      entry.commitOrigin=from;entry.commitDestination=physicalPath(from,to,{commit:true});
+      proxy(entry,id,from,entry.commitDestination,s.duration);
+      cueNow({kind:'commit',target:field(id),seq:entry.seq},from);
+      cueNow({kind:'travel',source:field(id),target,seq:entry.seq},to,from);
+    } else if(s.type==='impact') {
+      eventsCues(entry,['BATTLE_RESOLVED','REPUTATION_CHANGED']);
+    } else if(s.type==='outcome') {
+      if(entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
+      else eventsCues(entry,['CARD_ARCHIVED'],{receipt:false});
+    } else if(s.type==='resolve') {
+      // Retain a staged Action through its resolve beat, then reuse that same
+      // proxy for Archive. The authoritative Action has already resolved.
+      for(const event of entry.events.filter(e=>e.type==='ACTION_RESOLVED')) {
+        const cue=feedbackForEvent(event)[0];
+        cueNow(cue,entry.travelDestination??stage(entry)??rectOf(targetNode(cue.fallback,currentMatch?.viewerId)));
+      }
+    } else if(s.type==='archive') {
+      // Read all coordinates first. The result host is still visible for its source cards.
+      const moves=(p.archived??[]).map((e,index)=>{
+        const overlay=document.querySelector('#combatPresentationHost');
+        const side=e.cardInstanceId===p.attackerId ? 0 : 1;
+        const combatCard=overlay?.querySelectorAll('.battle-card-shell > .card')[side];
+        const visible=entry.combatHtml && combatCard ? snapshotPresentationCard(combatCard) : null;
+        if(visible) entry.visuals.set(e.cardInstanceId,visible);
+        const from=visible?.rect??(entry.epoch===geometryEpoch ? (e.cardInstanceId===p.cardId ? entry.travelDestination??stage(entry) : null)??entry.visuals?.get(e.cardInstanceId)?.rect : null);
+        const to=archiveDestination(e.playerId);
+        return {e,from,to,index};
+      });
+      onCombat(null);
+      for(const {e,from,to} of moves) {
+        cueNow({kind:'archive',target:field(e.cardInstanceId),seq:e.seq},from);
+        proxy(entry,e.cardInstanceId,from,to,s.duration,{fade:true});
+        actionOrigins.delete(e.cardInstanceId);
+      }
+    } else if(s.type==='return') {
+      onCombat(null);
+      if(!p.destroyedIds?.includes(id) && fieldNode(id)) proxy(entry,id,entry.commitDestination,destination(entry,id),s.duration);
+    } else if(s.type==='summary') showSummary(entry);
+  }
+  function finishEntry(entry) {
+    clearTimeout(timer);timer=null;stopMotion();onCombat(null);entry.summaryNode?.remove();
+    presentation.complete(entry.key);running=null;
+    if(presentation.busy) pump(); else onIdle();
+  }
+  function pump() {
+    if(running||!currentMatch||document.hidden) return;
+    const entry=presentation.take();
+    if(!entry) return;
+    running=entry;
+    const steps=presentationSteps(entry,{reducedMotion:media.matches,catchUp:entry.catchUp});
+    let index=0;
+    const next=()=>{
+      if(running!==entry) return;
+      if(index>=steps.length) { finishEntry(entry);return; }
+      const planned=steps[index++];
+      // A stalled main thread must not resume a long decorative backlog.
+      // Critical beats still run in order with their short static fallback.
+      const late=Date.now()-entry.startedAt>entry.maxDuration;
+      const s=late ? {...planned,static:true,duration:planned.critical?Math.min(planned.duration,160):0} : planned;
+      runStep(entry,s);
+      const complete=()=>{
+        if(running!==entry) return;
+        if(s.type==='archive') for(const e of entry.payload.archived??[]) {
+          cueNow({kind:'receive',target:archive(e.playerId),seq:e.seq},rectOf(targetNode(archive(e.playerId),currentMatch?.viewerId)));
+        }
+        next();
+      };
+      if(!s.duration) complete(); else timer=setTimeout(complete,s.duration);
+    };
+    next();
+  }
+  function finishAll() {
+    const wasBusy=presentation.busy;
+    clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;
+    // Preserve the watermark: cancellation must not turn old events into new animations.
+    while(presentation.busy) { const entry=presentation.current??presentation.take();if(entry)presentation.complete(entry.key); }
+    onCombat(null);if(wasBusy) onIdle();
   }
   function spawn(cue, rect, sourceRect) {
     if (!rect || (cue.kind === 'travel' && (!sourceRect || media.matches))) return;
@@ -149,9 +384,16 @@ export function createMatchVfx({ archiveLabel }) {
   return {
     enqueue(events, options) {
       if (room !== options.roomId) { this.reset(); room = options.roomId; }
-      queue.enqueue(events, { ...options, present:options.present && !document.hidden });
+      const present=options.present && !document.hidden;
+      currentMatch=options.match??currentMatch;
+      const {used,fresh}=presentation.enqueue(events,{...options,present,prepare});
+      if(fresh.some(e=>e.type==='ATTACK_TARGET_REDIRECTED')) { stopMotion();if(running) running.catchUp=true; }
+      queue.enqueue(events, { ...options, present,skip:used });
+      return new Set(fresh.map(e=>e.seq));
     },
-    sync(match) {
+    sync(match,{isTargeting=false}={}) {
+      currentMatch=match;targeting=isTargeting;
+      if(targeting) stopMotion();
       if (!match || document.hidden) { clear(); queue.drain(Infinity); return; }
       const viewerId = match.viewerId;
       const cues = queue.drain();
@@ -179,7 +421,12 @@ export function createMatchVfx({ archiveLabel }) {
         const lifetime = parseFloat(getComputedStyle(node).getPropertyValue('--vfx-life')) || 700;
         active.set(node, setTimeout(() => remove(node), lifetime));
       }
+      for(const id of suppressed) fieldNode(id)?.setAttribute('data-presentation-hidden','true');
+      pump();
     },
-    reset() { clear(); queue.reset(); previousRects.clear(); phase = null; room = null; host?.remove(); host = null; }
+    get busy() { return presentation.busy; },
+    get diagnostics() { return {size:presentation.size,proxies:proxies.size,key:running?.key??null}; },
+    finish:finishAll,
+    reset() { clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;presentation.reset();onCombat(null);actionOrigins.clear();clear(); queue.reset(); previousRects.clear(); phase = null; room = null; host?.remove(); host = null;currentMatch=null; }
   };
 }

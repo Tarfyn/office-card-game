@@ -128,6 +128,49 @@ body.match-mode .card-modal:focus-visible { outline:2px solid var(--vfx-blue); o
 /* The fan's empty bounding box must not intercept board-native placement taps. */
 body.match-mode .own-hand { pointer-events:none; }
 body.match-mode .own-hand > .card { pointer-events:auto; }
+
+/* Physical proxies live outside app.innerHTML and never participate in board layout. */
+.presentation-proxy {
+  position:absolute;
+  left:0;
+  top:0;
+  transform-origin:center;
+  pointer-events:none;
+  will-change:transform,opacity;
+  contain:layout style;
+}
+.presentation-proxy * { pointer-events:none !important; }
+.presentation-proxy .card-info, .presentation-proxy .card-ability { display:none !important; }
+body.match-mode .board-lane [data-presentation-hidden] { opacity:0 !important; transition:none !important; }
+.presentation-summary {
+  position:fixed;
+  bottom:18%;
+  left:50%;
+  transform:translateX(-50%);
+  max-width:min(90vw,38rem);
+  padding:.65rem 1rem;
+  background:#112622;
+  color:#f3eedf;
+  border:1px solid var(--vfx-brass);
+  border-radius:4px;
+  z-index:346;
+  pointer-events:none;
+  text-align:center;
+}
+/* The queue has already performed the commit. Show its captured outcome immediately. */
+body.match-mode .queued-combat .battle-resolution-overlay,
+body.match-mode .queued-combat .battle-card-shell,
+body.match-mode .queued-combat .battle-card-shell > .card,
+body.match-mode .queued-combat .battle-player-side,
+body.match-mode .queued-combat .archive-stamp,
+body.match-mode .queued-combat .prevented-stamp {
+  animation:none !important;
+}
+body.match-mode .queued-combat .battle-resolution-overlay { opacity:1; }
+body.match-mode .queued-combat .battle-card-side.winner .battle-card-shell { box-shadow:0 0 0 3px rgba(74,225,118,.48); }
+body.match-mode .queued-combat .battle-player-side.hit .player-avatar-slot { animation-delay:0s; }
+body.match-mode .queued-combat .archive-stamp,
+body.match-mode .queued-combat .prevented-stamp { opacity:1; }
 @media (hover:hover) and (pointer:fine) {
   body.match-mode .board-lane .card:focus-visible {
     outline:2px solid var(--vfx-blue);

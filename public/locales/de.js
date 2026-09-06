@@ -1,5 +1,5 @@
 const deCatalog = {
-  vfx: { archived: "ARCHIVIERT" },
+  vfx: { archived: "ARCHIVIERT", catchUp: "{battles} Kämpfe · {resolved} aufgelöst · {archived} archiviert · {saved} gerettet · {denied} negiert · P1 REP {p1Rep} · P2 REP {p2Rep}" },
   meta: { title: "Office Card Game — v{version} Alpha-Playtest" },
   accessibility: { skipToGame: "Zum Spielinhalt springen" },
   nav: { backToLobby: "Zurück zur Lobby", lobby: "Lobby" },

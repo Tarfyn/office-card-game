@@ -1,5 +1,5 @@
 const enCatalog = {
-  vfx: { archived: "ARCHIVED" },
+  vfx: { archived: "ARCHIVED", catchUp: "{battles} battles · {resolved} resolved · {archived} archived · {saved} saved · {denied} negated · P1 REP {p1Rep} · P2 REP {p2Rep}" },
   meta: { title: "Office Card Game — v{version} Alpha Playtest" },
   accessibility: { skipToGame: "Skip to game content" },
   nav: { backToLobby: "Back to lobby", lobby: "Lobby" },

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { createFeedbackQueue, feedbackForEvent } from '../public/match-vfx.js';
+import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath } from '../public/match-vfx.js';
 
 const played = (seq, id = 'employee') => ({ seq, type:'CARD_PLAYED', cardInstanceId:id, playerId:'P1', data:{cardType:'EMPLOYEE'} });
 test('hydration, duplicate delivery and truncated historical replay never restart VFX', () => {
@@ -58,4 +58,127 @@ test('resolved, negated and set feedback carry no hidden card definitions', () =
   assert.equal(feedbackForEvent({...event,data:{}})[0].kind, 'resolve');
   assert.deepEqual(feedbackForEvent({...event,type:'INCIDENT_SET'}).map(cue=>cue.kind), ['arrive']);
   assert.deepEqual(feedbackForEvent({...played(2),data:{cardType:'ACTION'}}), [], 'transient Actions do not pretend to land on the board');
+});
+
+const attack=(seq,id='a',target='b')=>({seq,type:'ATTACK_DECLARED',cardInstanceId:id,playerId:'P1',data:{targetId:target}});
+const archived=(seq,id='b',cause='a')=>({seq,type:'CARD_ARCHIVED',playerId:'P2',cardInstanceId:id,data:{fromZone:'EMPLOYEE_FIELD',causeSourceId:cause}});
+const battle=(seq,id='a',target='b')=>({seq,type:'BATTLE_RESOLVED',playerId:'P1',cardInstanceId:id,data:{attackerId:id,targetId:target,destroyedIds:[target],winnerId:id}});
+const names=e=>e.steps.map(s=>s.type);
+const options={roomId:'room',now:0};
+
+test('one authoritative hand play creates one physical request despite duplicate SSE/rerenders',()=>{
+  const q=createPresentationQueue(); let captures=0;
+  q.enqueue([played(1),played(1)],{...options,prepare:()=>captures++});
+  q.enqueue([played(1)],{...options,prepare:()=>captures++});
+  assert.equal(captures,1);assert.equal(q.size,1);
+  const item=q.take(0);assert.equal(item.type,'placement');assert.deepEqual(names(item),['travel','settle']);
+  q.complete(item.key);assert.equal(q.busy,false);
+  q.enqueue([played(1)],options);assert.equal(q.busy,false);
+});
+
+test('confirmed combat groups travel, impact, outcome and archive even though Archive is emitted first',()=>{
+  const q=createPresentationQueue();q.enqueue([battle(4),archived(3),attack(1)],options);
+  const item=q.take(0);
+  assert.equal(item.type,'combat');assert.deepEqual(names(item),['commit','impact','outcome','archive','return']);
+  assert.deepEqual(item.payload.destroyedIds,['b']);assert.equal(item.payload.archived.length,1);
+  assert.equal(q.take(10),null,'a second group cannot start in the middle of an outcome');
+  q.complete('wrong-key');assert.equal(q.busy,true);q.complete(item.key);assert.equal(q.busy,false);
+});
+
+test('direct lethal keeps attack and signed REP ahead of the result gate',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1,'a',null),{seq:2,type:'REPUTATION_CHANGED',playerId:'P2',data:{reason:'DIRECT_ATTACK',delta:-20}},{seq:3,type:'GAME_ENDED'}],options);
+  const direct=q.take(0);assert.equal(direct.type,'direct');assert.deepEqual(names(direct),['commit','impact','outcome','return']);
+  assert.equal(direct.events.find(e=>e.type==='REPUTATION_CHANGED').data.delta,-20);
+  q.complete(direct.key);assert.equal(q.take(1000).type,'result');
+});
+
+test('two rapid battles preserve exact attack pairing and serial event order',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1,'a','b'),archived(2,'b'),battle(3,'a','b'),attack(4,'a','c'),archived(5,'c'),battle(6,'a','c')],options);
+  const first=q.take(0);assert.equal(first.type,'combat');assert.equal(first.payload.attack.seq,1);assert.equal(first.payload.targetId,'b');
+  q.complete(first.key);const second=q.take(1200);assert.equal(second.type,'combat');assert.equal(second.payload.attack.seq,4);assert.equal(second.payload.targetId,'c');
+  assert.notEqual(first.key,second.key);
+});
+
+test('response-window split resolves an attack once without a second commit',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1)],options);const first=q.take(0);q.complete(first.key);
+  q.enqueue([archived(5),battle(6)],{...options,now:2000});const result=q.take(2000);
+  assert.equal(result.payload.attack.seq,1);assert.deepEqual(names(result),['impact','outcome','archive','return']);
+});
+
+test('an Action and its actual destruction/archive outcomes form one ordered group',()=>{
+  const q=createPresentationQueue();q.enqueue([
+    {seq:1,type:'CARD_PLAYED',cardInstanceId:'action',playerId:'P1',data:{cardType:'ACTION'}},
+    archived(2,'one','action'),archived(3,'two','action'),
+    {seq:4,type:'ACTION_RESOLVED',cardInstanceId:'action',playerId:'P1'},archived(5,'action')
+  ],options);
+  const result=q.take(0);assert.equal(result.type,'action');assert.deepEqual(names(result),['travel','resolve','archive']);
+  assert.deepEqual(result.payload.archived.map(e=>e.cardInstanceId),['one','two','action']);
+});
+
+test('catch-up has bounded storage while retaining critical totals and match completion',()=>{
+  const q=createPresentationQueue();const events=[];
+  for(let i=0;i<30;i++) events.push(attack(i*4+1,`a${i}`,`b${i}`),archived(i*4+2,`b${i}`,`a${i}`),battle(i*4+3,`a${i}`,`b${i}`));
+  events.push({seq:130,type:'REPUTATION_CHANGED',playerId:'P2',data:{delta:-9}},{seq:131,type:'GAME_ENDED'});
+  q.enqueue(events,options);assert.ok(q.size<=6);const result=q.take(0);
+  assert.equal(result.type,'summary');assert.equal(result.payload.battles,30);assert.equal(result.payload.archivedCount,30);
+  assert.equal(result.payload.archived.length,30);assert.equal(result.payload.damage.P2,-9);assert.equal(result.payload.result,true);
+  assert.ok(result.maxDuration<1000);
+  q.complete(result.key);assert.equal(q.busy,false);
+});
+
+test('history hydration, room boundaries and takeover replay keep a monotonic watermark',()=>{
+  const q=createPresentationQueue();q.enqueue([played(99)],{...options,present:false});
+  q.enqueue([played(2),played(99)],options);assert.equal(q.busy,false);
+  q.enqueue([played(100)],options);const live=q.take(0);q.complete(live.key);
+  q.enqueue([played(100)],options);assert.equal(q.busy,false);
+  q.enqueue([played(1)],{...options,roomId:'new'});assert.equal(q.size,1);
+});
+
+test('reduced motion skips spatial steps but retains ordered impact, outcome and Archive feedback',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3)],options);
+  const steps=presentationSteps(q.take(0),{reducedMotion:true});
+  assert.equal(steps.find(s=>s.type==='commit').duration,0);
+  assert.equal(steps.find(s=>s.type==='return').duration,0);
+  for(const name of ['impact','outcome','archive']) assert.ok(steps.find(s=>s.type===name).duration>0);
+  assert.ok(steps.every(s=>s.static));
+});
+
+test('viewport paths follow either opponent orientation and scale without hardcoded coordinates',()=>{
+  const own={left:400,top:700,width:100,height:140,angle:3},opp={left:400,top:180,width:200,height:280,angle:0};
+  const up=physicalPath(own,opp,{commit:true}),down=physicalPath(opp,own,{commit:true});
+  assert.ok(up.top<own.top);assert.ok(down.top>opp.top);assert.equal(up.angle,3);assert.equal(down.angle,0);
+  assert.deepEqual(physicalPath(own,opp),opp);assert.equal(physicalPath(null,opp),null);
+  assert.ok(Math.abs(up.top-own.top)<=own.height*.55);
+});
+
+test('a field move and its play event share one arrival owner',()=>{
+  const q=createPresentationQueue();
+  const result=q.enqueue([{seq:1,type:'CARD_MOVED',cardInstanceId:'employee',data:{to:'EMPLOYEE_FIELD'}},played(2)],options);
+  assert.deepEqual([...result.used].sort(),[1,2]);
+  assert.equal(q.size,1);assert.deepEqual(names(q.take(0)),['travel','settle']);
+});
+
+test('catch-up preserves both damage and healing instead of cancelling the feedback',()=>{
+  const q=createPresentationQueue();
+  q.enqueue([...Array.from({length:8},(_,i)=>({seq:i+1,type:'ACTION_RESOLVED',playerId:'P1',cardInstanceId:`action${i}`})),
+    {seq:9,type:'REPUTATION_CHANGED',playerId:'P2',data:{delta:-3}},
+    {seq:10,type:'REPUTATION_CHANGED',playerId:'P2',data:{delta:3}}],options);
+  const summary=q.take(0);assert.equal(summary.type,'summary');
+  assert.deepEqual(summary.payload.repChanges.P2,{loss:-3,gain:3});
+  assert.equal(summary.payload.resolutions,8);
+});
+
+test('redirects update a pending commit and history ingestion cannot restart it',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1)],options);
+  q.enqueue([{seq:2,type:'ATTACK_TARGET_REDIRECTED',data:{oldTargetId:'b',newTargetId:'c'}}],options);
+  const commit=q.take(0);assert.equal(commit.payload.targetId,'c');q.complete(commit.key);
+  q.enqueue([attack(1)],options);assert.equal(q.busy,false);
+});
+
+test('a wide destruction group uses one receipt without losing any Archive count',()=>{
+  const q=createPresentationQueue();q.enqueue(Array.from({length:18},(_,i)=>archived(i+1,`removed${i}`,'wide-effect')),options);
+  const receipt=q.take(0);assert.equal(receipt.type,'summary');
+  assert.equal(receipt.payload.archivedCount,18);assert.equal(receipt.payload.archived.length,18);
+  assert.deepEqual(receipt.payload.archivedByPlayer,{P1:0,P2:18});
+  assert.deepEqual(names(receipt),['summary']);q.complete(receipt.key);assert.equal(q.busy,false);
 });
