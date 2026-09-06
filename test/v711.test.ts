@@ -20,7 +20,7 @@ test("v7.11 connects completed boosters back into normal collection discovery", 
   assert.match(app,/function focusLastBoosterCollection\(kind = 'ALL'\)/);
   assert.match(app,/LAST_PACK_NEW/);
   assert.match(app,/New from last pack/);
-  assert.match(app,/data-view-last-booster/);
+  assert.match(app,/data-show-last-booster/);
   assert.match(app,/id="viewNewBoosterCards"/);
 });
 

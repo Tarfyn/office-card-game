@@ -26,8 +26,8 @@ test("v5.4 persists unseen acquired cards per stable local player profile", () =
 test("v5.4 records genuinely new booster first copies before ownership changes obscure them", () => {
   assert.match(app,/const ownedBefore = new Map/);
   assert.match(app,/const newCardIds = \[\.\.\.new Set\(\(result\.cardIds/);
-  assert.match(app,/state\.lastBooster = \{ \.\.\.result, newCardIds \}/);
-  assert.match(app,/const newCardIds = new Set\(state\.lastBooster\.newCardIds \?\? \[\]\)/);
+  assert.match(app,/state\.activeBooster = \{ \.\.\.result, newCardIds \}/);
+  assert.match(app,/const newCardIds = new Set\(booster\.newCardIds \?\? \[\]\)/);
   assert.match(app,/newUnique/);
   assert.match(app,/duplicatePulls/);
 });

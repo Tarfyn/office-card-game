@@ -201,6 +201,7 @@ const state = {
   newCollectionOwner: null,
   economyConfig: null,
   matchSettings: null,
+  activeBooster: null,
   lastBooster: null,
   boosterRevealCount: 0,
   economyMessage: null,
@@ -4754,6 +4755,14 @@ function focusLastBoosterCollection(kind = 'ALL') {
   requestAnimationFrame(() => document.querySelector('.collection-discovery')?.scrollIntoView({ behavior:'smooth', block:'start' }));
 }
 
+function reviewLastBooster() {
+  if (!state.lastBooster?.cardIds?.length) return;
+  state.activeBooster = null;
+  state.boosterRevealCount = state.lastBooster.cardIds.length;
+  renderCollection();
+  requestAnimationFrame(() => document.querySelector('.booster-reveal')?.scrollIntoView({ behavior:'smooth', block:'center' }));
+}
+
 function openCardInManagedDeck(deckId, definitionId, { add = false } = {}) {
   const target = state.customDecks.find((deck) => deck.id === deckId);
   if (!target) return false;
@@ -5218,11 +5227,12 @@ function renderEconomyRoadmap() {
 }
 
 function renderBoosterReveal() {
-  if (!state.lastBooster?.cardIds?.length) return '';
-  const total = state.lastBooster.cardIds.length;
+  const booster = state.activeBooster ?? state.lastBooster;
+  if (!booster?.cardIds?.length) return '';
+  const total = booster.cardIds.length;
   const revealed = Math.max(0, Math.min(total, Number(state.boosterRevealCount ?? total)));
   const complete = revealed >= total;
-  const newCardIds = new Set(state.lastBooster.newCardIds ?? []);
+  const newCardIds = new Set(booster.newCardIds ?? []);
   const newUnique = newCardIds.size;
   const duplicatePulls = Math.max(0, total - newUnique);
   const deckFlow = boosterDeckFlowStats();
@@ -5230,23 +5240,27 @@ function renderBoosterReveal() {
   const detail = complete ? packSummary : collectionCopy('revealHint');
   const title = complete ? collectionCopy('packComplete') : collectionCopy('packOpening');
   const headline = complete ? collectionCopy('cardsAddedCount', { count:total }) : collectionCopy('revealCardOf', { current:revealed + 1, total });
-  return `<div class="booster-reveal ${complete ? 'complete' : 'opening'}"><div class="booster-reveal-head"><div><span>${esc(title)}</span><strong>${esc(headline)}</strong><small>${esc(detail)}</small></div><div class="booster-reveal-actions"><b>${esc(revealed)}/${esc(total)} ${esc(collectionCopy('revealed'))}</b>${!complete ? `<button id="revealAllBooster">${esc(collectionCopy('revealAll'))}</button>` : `<button data-view-last-booster> ${esc(collectionCopy('viewPack'))}</button>${newUnique ? `<button id="viewNewBoosterCards">${esc(collectionCopy('newPulls'))}</button>` : ''}`}</div></div><div class="booster-card-row">${state.lastBooster.cardIds.map((id, index) => {
+  return `<div class="booster-reveal ${complete ? 'complete' : 'opening'}"><div class="booster-reveal-head"><div><span>${esc(title)}</span><strong>${esc(headline)}</strong><small>${esc(detail)}</small></div><div class="booster-reveal-actions"><b>${esc(revealed)}/${esc(total)} ${esc(collectionCopy('revealed'))}</b>${!complete ? `<button id="revealAllBooster">${esc(collectionCopy('revealAll'))}</button>` : `<button data-review-last-booster>${esc(collectionCopy('viewPack'))}</button>${newUnique ? `<button id="viewNewBoosterCards">${esc(collectionCopy('newPulls'))}</button>` : ''}`}</div></div><div class="booster-card-row">${booster.cardIds.map((id, index) => {
     const def=cardDef(id);
-    const tier=state.lastBooster.tiers?.[index] ?? sandboxRarityTier(def);
+    const tier=booster.tiers?.[index] ?? sandboxRarityTier(def);
     const isRevealed=index < revealed;
     const isNext=index === revealed;
-    const appearedEarlier=state.lastBooster.cardIds.slice(0,index).filter((item)=>item===id).length;
+    const appearedEarlier=booster.cardIds.slice(0,index).filter((item)=>item===id).length;
     const isCollectionNew=newCardIds.has(id) && appearedEarlier === 0;
     const isFreshPackPull=true;
     if (!isRevealed) return `<button class="booster-hit booster-facedown tier-${esc(String(tier).toLowerCase())} ${isNext ? 'next-reveal' : 'locked-reveal'}" ${isNext ? `data-booster-reveal="${index}"` : 'disabled'}><div class="booster-card-back"><span>OFFICE</span><b>ALPHA</b><small>${isNext ? esc(collectionCopy('tapToReveal')) : esc(collectionCopy('locked'))}</small></div></button>`;
-    const variantId=state.lastBooster.variantIds?.[index] ?? null;
+    const variantId=booster.variantIds?.[index] ?? null;
     const deckUses=savedDeckCardUse(id).filter((item)=>item.copies>0).length;
     return `<button class="booster-hit revealed type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(String(tier).toLowerCase())} ${finishClass(variantId)} ${isCollectionNew ? 'collection-new-pull' : ''}" data-collection-preview="${esc(id)}">${def ? renderCatalogCardFace(def, { tier, variantId, isNew:isFreshPackPull, artReady:Boolean(def.artId), owned:variantId ? ownedExecutiveEditionCopies(id, variantId) : ownedTotalCopies(id) }) : '<div class="catalog-card-face missing">Unknown card</div>'}<i class="booster-inspect">${esc(collectionCopy('inspect'))}</i>${deckUses ? `<i class="booster-deck-use">${esc(collectionCopy('usedInDeck', { count:deckUses, suffix:deckUses === 1 ? '' : 'S' }))}</i>` : ''}</button>`;
-  }).join('')}</div>${complete ? `<div class="booster-deck-bridge"><div><span>${esc(collectionCopy('packToDeck'))}</span><strong>${esc(collectionCopy('deckBridge', { opportunity:deckFlow.opportunityPulls, unique:deckFlow.uniquePulls }))}</strong><small>${esc(collectionCopy('deckBridgeHint'))}</small></div><button data-view-last-booster>${esc(collectionCopy('browsePack'))}</button></div>` : ''}</div>`;
+  }).join('')}</div>${complete ? `<div class="booster-deck-bridge"><div><span>${esc(collectionCopy('packToDeck'))}</span><strong>${esc(collectionCopy('deckBridge', { opportunity:deckFlow.opportunityPulls, unique:deckFlow.uniquePulls }))}</strong><small>${esc(collectionCopy('deckBridgeHint'))}</small></div><button data-show-last-booster>${esc(collectionCopy('showInCollection'))}</button></div>` : ''}</div>`;
 }
 
 function revealBoosterThrough(index) {
   state.boosterRevealCount = Math.max(Number(state.boosterRevealCount ?? 0), Number(index) + 1);
+  if (state.activeBooster?.cardIds?.length && state.boosterRevealCount >= state.activeBooster.cardIds.length) {
+    state.lastBooster = { ...state.activeBooster };
+    state.activeBooster = null;
+  }
   renderCollection();
 }
 
@@ -5262,12 +5276,16 @@ function renderEconomyLab() {
   const playableCapacity = collectionPlayableCapacity();
   const collectionFloor = Number(state.format?.deckSize ?? 40);
   const needsStarterFloor = playableCapacity < collectionFloor;
+  const price = Number(pack?.price ?? Infinity);
+  const packComplete = Boolean(state.lastBooster?.cardIds?.length && Number(state.boosterRevealCount ?? 0) >= state.lastBooster.cardIds.length && !state.activeBooster);
+  const packOpening = Boolean(state.activeBooster?.cardIds?.length && Number(state.boosterRevealCount ?? 0) < state.activeBooster.cardIds.length);
+  const canOpenPack = credits >= price && !state.economyBusy && !packOpening;
   return `<section class="economy-lab">
-    <div class="economy-lab-head"><div><span>${esc(collectionCopy('economyLab'))}</span><strong>${esc(collectionCopy('economyHeadline'))}</strong><small>${esc(collectionCopy('economyNote'))}</small></div><div class="wallet"><span>${esc(collectionCopy('officeCredits'))} <b>${credits}</b></span><span>${esc(collectionCopy('scrap'))} <b>${scraps}</b></span></div></div>
+    <div class="economy-lab-head"><div><span>${esc(collectionCopy('economyLab'))}</span><strong>${esc(collectionCopy('economyHeadline'))}</strong><small>${esc(collectionCopy('economyNote'))}</small></div></div>
     <div class="economy-loop" aria-label="${esc(collectionCopy('economyLoop'))}"><span><b>1</b>${esc(collectionCopy('economyLoopOpen'))}</span><i>→</i><span><b>2</b>${esc(collectionCopy('economyLoopBuild'))}</span><i>→</i><span><b>3</b>${esc(collectionCopy('economyLoopShred'))}</span><i>→</i><span><b>4</b>${esc(collectionCopy('economyLoopCraft'))}</span></div>
     <div class="economy-lab-grid">
       <article class="booster-station premium-pack-station"><div><span>${esc(collectionCopy('executiveEditionPack'))}</span><strong>${esc(executivePack?.name ?? collectionCopy('executiveEditionPack'))}</strong><p>${esc(collectionCopy('executivePackDescription'))}</p></div><div class="economy-actions"><button class="primary" id="openExecutiveEditionPack" ${executivePackCount < 1 || state.economyBusy ? 'disabled' : ''}>${esc(collectionCopy('openExecutivePack'))}</button></div></article>
-      <article class="booster-station"><div><span>${esc(collectionCopy('boosterLabel'))}</span><strong>${esc(pack?.name ?? 'Office Alpha Pack')}</strong><p>${esc(pack?.cardCount ?? 5)} ${esc(t('common.cards'))} · ${esc(pack?.price ?? '—')} ${esc(collectionCopy('officeCredits'))}</p><small>${esc(collectionCopy('boosterSlots'))}</small></div><div class="economy-actions">${!hasSandboxWallet || needsStarterFloor ? `<button class="primary" id="startEconomySandbox" ${state.economyBusy?'disabled':''}>${hasSandboxWallet ? esc(collectionCopy('restartStarter')) : esc(collectionCopy('startSandbox', { credits:economy.sandbox?.startingOfficeCredits ?? 500 }))}</button>` : `<button class="primary" id="openBooster" ${credits < Number(pack?.price ?? Infinity) || state.economyBusy ? 'disabled' : ''}>${esc(collectionCopy('openPack', { price:pack?.price ?? '—' }))}</button><button id="refillEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('refillWallet'))}</button>`}<button class="ghost" id="resetEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('reset'))}</button></div></article>
+      <article class="booster-station"><div><span>${esc(collectionCopy('boosterLabel'))}</span><strong>${esc(pack?.name ?? 'Office Alpha Pack')}</strong><p>${esc(pack?.cardCount ?? 5)} ${esc(t('common.cards'))} · ${esc(pack?.price ?? '—')} ${esc(collectionCopy('officeCredits'))}</p><small>${esc(collectionCopy('boosterSlots'))}</small></div><div class="economy-actions">${!hasSandboxWallet || needsStarterFloor ? `<button class="primary" id="startEconomySandbox" ${state.economyBusy?'disabled':''}>${hasSandboxWallet ? esc(collectionCopy('restartStarter')) : esc(collectionCopy('startSandbox', { credits:economy.sandbox?.startingOfficeCredits ?? 500 }))}</button>` : `<button class="primary" id="openBooster" ${canOpenPack ? '' : 'disabled'} aria-describedby="boosterOpenStatus">${esc(collectionCopy(packComplete ? 'openAnotherPack' : 'openPack', { price:pack?.price ?? '—' }))}</button>${!canOpenPack && credits < price ? `<small id="boosterOpenStatus" class="economy-insufficient">${esc(collectionCopy('insufficientCredits'))}</small>` : packOpening ? `<small id="boosterOpenStatus" class="economy-insufficient">${esc(collectionCopy('finishRevealFirst'))}</small>` : ''}<button id="refillEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('refillWallet'))}</button>`}<button class="ghost" id="resetEconomySandbox" ${state.economyBusy?'disabled':''}>${esc(collectionCopy('reset'))}</button></div></article>
       <article class="shredder-station"><span>${esc(collectionCopy('shredderLabel'))}</span><strong>${esc(collectionCopy('shredderHeadline'))}</strong><p>${esc(collectionCopy('shredderDescription', { deckSize:state.format?.deckSize ?? 40 }))}</p><small>${esc(collectionCopy('playableCapacity', { current:playableCapacity, minimum:collectionFloor }))} · ${(economy.rarityTiers ?? []).map((tier) => `${tier.id}: +${tier.scrapValue}/−${tier.craftCost}`).join(' · ')}</small><div class="economy-shortcuts"><button data-economy-filter="DECK_GAPS">${esc(collectionCopy('missingDeckCards'))}</button><button data-economy-filter="SHREDDABLE">${esc(collectionCopy('shredCandidates'))}</button></div></article>
     </div>
     ${state.economyMessage ? `<div class="economy-message">${esc(state.economyMessage)}</div>` : ''}
@@ -5298,6 +5316,7 @@ async function applyEconomyResponse(path, body, successMessage) {
 }
 
 async function startEconomySandbox() {
+  state.activeBooster = null;
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
   state.boosterRevealCount = 0;
@@ -5310,6 +5329,7 @@ async function refillEconomySandbox() {
 }
 
 async function resetEconomySandbox() {
+  state.activeBooster = null;
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
   state.boosterRevealCount = 0;
@@ -5325,7 +5345,8 @@ async function openEconomyBooster() {
   if (result) {
     const newCardIds = [...new Set((result.cardIds ?? []).filter((id) => Number(ownedBefore.get(id) ?? 0) === 0 && ownedTotalCopies(id) > 0))];
     markCollectionCardsNew(newCardIds);
-    state.lastBooster = { ...result, newCardIds };
+    state.activeBooster = { ...result, newCardIds };
+    state.lastBooster = { ...state.activeBooster };
     state.boosterRevealCount = 0;
     renderCollection();
   }
@@ -5335,7 +5356,8 @@ async function openExecutiveEditionPack() {
   const result = await applyEconomyResponse('/api/economy/pack/open', metaRequest({ packId:'EXECUTIVE_EDITION_PACK' }), () => collectionCopy('executivePackOpened'));
   if (result) {
     const def = cardDef(result.cardId);
-    state.lastBooster = { cardIds:[result.cardId], variantIds:[result.variantId], tiers:[def ? sandboxRarityTier(def) : 'T0'], newCardIds:[result.cardId] };
+    state.activeBooster = { cardIds:[result.cardId], variantIds:[result.variantId], tiers:[def ? sandboxRarityTier(def) : 'T0'], newCardIds:[result.cardId] };
+    state.lastBooster = { ...state.activeBooster };
     state.boosterRevealCount = 0;
     markCollectionCardsNew([result.cardId]);
     renderCollection();
@@ -5344,6 +5366,7 @@ async function openExecutiveEditionPack() {
 
 async function scrapEconomyCard(definitionId, confirmDeckImpact = false) {
   const def = cardDef(definitionId);
+  state.activeBooster = null;
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
   state.pendingScrapConfirmation = null;
@@ -5369,6 +5392,7 @@ function requestScrapEconomyCard(definitionId) {
 async function craftEconomyCard(definitionId) {
   const def = cardDef(definitionId);
   const wasOwned = ownedCopies(definitionId) > 0;
+  state.activeBooster = null;
   state.lastBooster = null;
   state.collectionPackFilter = 'ALL';
   const result = await applyEconomyResponse('/api/economy/craft', metaRequest({ definitionId, copies:1 }), (data) => collectionCopy('cardCrafted', { name:def?.name ?? definitionId, amount:data.craftCostEach }));
@@ -5669,9 +5693,9 @@ function renderCollection() {
   const activeFilters = activeCollectionFilters();
   const previewDef = cardDef(state.collectionPreviewId) ?? null;
   const setStats = collectionSetStats();
-  const currencies = state.economyConfig?.currencies ?? [{id:'OFFICE_CREDITS',name:'Office Credits'},{id:'SHREDDER_SCRAPS',name:'Shredder Scraps'}];
+  const currencies = [['OFFICE_CREDITS', collectionCopy('officeCredits')], ['SHREDDER_SCRAPS', collectionCopy('scrap')]];
   app.innerHTML = `<section class="collection-shell">
-    <header class="collection-toolbar"><div><button class="ghost" id="backToPlay">← ${esc(lobbyCopy('Play','Spielen'))}</button><strong>${esc(lobbyCopy('Collection & Deckbuilder','Sammlung & Deckbuilder'))}</strong><span class="muted">${esc(lobbyCopy('Build with owned cards or inspect the full Alpha set.','Baue mit eigenen Karten oder sieh dir das ganze Alpha-Set an.'))}</span><div class="collection-set-progress"><span><b>${esc(setStats.uniqueOwned)}</b> / ${esc(setStats.total)} ${esc(lobbyCopy('owned','im Besitz'))}</span><span><b>${esc(setStats.artReady)}</b> / ${esc(setStats.total)} ${esc(lobbyCopy('artwork','Artworks'))}</span>${setStats.unseenNew ? `<span class="new-set-count"><b>${esc(setStats.unseenNew)}</b> ${esc(lobbyCopy('new','neu'))}</span><button class="mark-seen-button" id="markAllCardsSeen">${esc(lobbyCopy('Mark seen','Als gesehen markieren'))}</button>` : ''}</div><div class="collection-mode-toggle" role="group" aria-label="${esc(lobbyCopy('Deckbuilder collection mode','Sammlungsmodus im Deckbuilder'))}"><button data-collection-mode="SANDBOX_ALL_AVAILABLE" class="${ownedDeckMode()?'':'active'}">${esc(lobbyCopy('All Alpha cards','Alle Alpha-Karten'))}</button><button data-collection-mode="OWNED_COPIES" class="${ownedDeckMode()?'active':''}">${esc(lobbyCopy('Owned copies','Eigene Exemplare'))}</button></div></div><div class="economy-preview">${currencies.map((currency) => `<span>${esc(currency.name.toUpperCase())} <b>${esc(state.metaProfile?.balances?.[currency.id] ?? 0)}</b></span>`).join('')}<small>${esc(ownedDeckMode() ? lobbyCopy('Owned-copy limits active · real account collection','Nur eigene Exemplare · echte Kontosammlung') : lobbyCopy('Alpha practice access · unowned cards are marked and unavailable for PvP','Alpha-Übungszugriff · nicht eigene Karten sind markiert und im PvP nicht verfügbar'))}</small></div></header>
+    <header class="collection-toolbar"><div><button class="ghost" id="backToPlay">← ${esc(lobbyCopy('Play','Spielen'))}</button><strong>${esc(lobbyCopy('Collection & Deckbuilder','Sammlung & Deckbuilder'))}</strong><span class="muted">${esc(lobbyCopy('Build with owned cards or inspect the full Alpha set.','Baue mit eigenen Karten oder sieh dir das ganze Alpha-Set an.'))}</span><div class="collection-set-progress"><span><b>${esc(setStats.uniqueOwned)}</b> / ${esc(setStats.total)} ${esc(lobbyCopy('owned','im Besitz'))}</span><span><b>${esc(setStats.artReady)}</b> / ${esc(setStats.total)} ${esc(lobbyCopy('artwork','Artworks'))}</span>${setStats.unseenNew ? `<span class="new-set-count"><b>${esc(setStats.unseenNew)}</b> ${esc(lobbyCopy('new','neu'))}</span><button class="mark-seen-button" id="markAllCardsSeen">${esc(lobbyCopy('Mark seen','Als gesehen markieren'))}</button>` : ''}</div><div class="collection-mode-toggle" role="group" aria-label="${esc(lobbyCopy('Deckbuilder collection mode','Sammlungsmodus im Deckbuilder'))}"><button data-collection-mode="SANDBOX_ALL_AVAILABLE" class="${ownedDeckMode()?'':'active'}">${esc(lobbyCopy('All Alpha cards','Alle Alpha-Karten'))}</button><button data-collection-mode="OWNED_COPIES" class="${ownedDeckMode()?'active':''}">${esc(lobbyCopy('Owned copies','Eigene Exemplare'))}</button></div></div><div class="economy-preview">${currencies.map(([id, label]) => `<span class="economy-balance-chip">${esc(label.toUpperCase())} <b class="economy-balance-value">${esc(state.metaProfile?.balances?.[id] ?? 0)}</b></span>`).join('')}<small>${esc(ownedDeckMode() ? lobbyCopy('Owned-copy limits active · real account collection','Nur eigene Exemplare · echte Kontosammlung') : lobbyCopy('Alpha practice access · unowned cards are marked and unavailable for PvP','Alpha-Übungszugriff · nicht eigene Karten sind markiert und im PvP nicht verfügbar'))}</small></div></header>
     ${renderEconomyLab()}
     ${renderEconomyRoadmap()}
     ${renderStarterDeckShelf()}
@@ -5732,8 +5756,16 @@ function renderCollection() {
   document.querySelector('#openBooster')?.addEventListener('click', openEconomyBooster);
   document.querySelector('#openExecutiveEditionPack')?.addEventListener('click', openExecutiveEditionPack);
   document.querySelector('[data-booster-reveal]')?.addEventListener('click', (event) => revealBoosterThrough(event.currentTarget.dataset.boosterReveal));
-  document.querySelector('#revealAllBooster')?.addEventListener('click', () => { state.boosterRevealCount = state.lastBooster?.cardIds?.length ?? 0; renderCollection(); });
-  document.querySelectorAll('[data-view-last-booster]').forEach((button) => button.addEventListener('click', () => focusLastBoosterCollection('ALL')));
+  document.querySelector('#revealAllBooster')?.addEventListener('click', () => {
+    state.boosterRevealCount = state.activeBooster?.cardIds?.length ?? state.lastBooster?.cardIds?.length ?? 0;
+    if (state.activeBooster) {
+      state.lastBooster = { ...state.activeBooster };
+      state.activeBooster = null;
+    }
+    renderCollection();
+  });
+  document.querySelectorAll('[data-review-last-booster]').forEach((button) => button.addEventListener('click', reviewLastBooster));
+  document.querySelectorAll('[data-show-last-booster]').forEach((button) => button.addEventListener('click', () => focusLastBoosterCollection('ALL')));
   document.querySelector('#viewNewBoosterCards')?.addEventListener('click', () => focusLastBoosterCollection('NEW'));
   document.querySelectorAll('[data-card-deck-open]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); if (openCardInManagedDeck(button.dataset.cardDeckOpen, button.dataset.cardDeckCard)) { renderCollection(); requestAnimationFrame(() => document.querySelector('.deck-builder-panel')?.scrollIntoView({ behavior:'smooth', block:'start' })); } }));
   document.querySelectorAll('[data-card-deck-add]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); if (openCardInManagedDeck(button.dataset.cardDeckAdd, button.dataset.cardDeckCard, { add:true })) { renderCollection(); requestAnimationFrame(() => document.querySelector('.deck-builder-panel')?.scrollIntoView({ behavior:'smooth', block:'start' })); } }));

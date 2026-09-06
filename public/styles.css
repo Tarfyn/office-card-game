@@ -4884,6 +4884,23 @@ body {
   .deck-completion-progress i { transition:none; }
 }
 
+/* Economy UX hotfix: one readable balance strip and an explicit pack-open state. */
+.collection-toolbar .economy-preview > .economy-balance-chip {
+  color:var(--text-on-dark);
+  border-color:rgba(218,198,158,.28);
+  background:#191e1b;
+}
+.collection-toolbar .economy-preview > .economy-balance-chip .economy-balance-value {
+  color:#f3d98e;
+  font-size:10px;
+}
+.economy-insufficient {
+  color:#7b332c;
+  font-size:8px;
+  font-weight:800;
+  line-height:1.3;
+}
+
 /* v7.4 capacity curve + deck composition polish */
 .curve-title-row { display:flex; align-items:end; justify-content:space-between; gap:8px; margin-top:9px; }
 .curve-title-row .curve-title { margin-top:0; }

@@ -35,6 +35,27 @@ test("v3.2 booster sandbox spends credits, awards five owned cards and increment
   assert.equal(Object.values(result.profile.ownedCards).reduce((a,b)=>a+b,0), 5);
 });
 
+test("booster UX hotfix keeps three consecutive purchases authoritative and finite", () => {
+  const pack = economy.boosters.packs[0];
+  let profile = createEconomySandboxProfile(pack.price * 3);
+  const results = [];
+  for (const seed of [32001, 32002, 32003]) {
+    const result = openSandboxBooster(profile, Object.values(alphaDefinitions), {
+      price:pack.price, cardCount:pack.cardCount, guaranteedTiers:pack.rarityDistribution.guaranteed, flexSlotWeights:pack.rarityDistribution.flexSlotWeights
+    }, seed);
+    profile = result.profile;
+    results.push(result);
+  }
+  assert.equal(results.length, 3);
+  assert.equal(profile.balances.OFFICE_CREDITS, 0);
+  assert.equal(profile.progression.boostersOpened, 3);
+  assert.equal(profile.rewardGrants.length, 3);
+  assert.equal(Object.values(profile.ownedCards).reduce((sum, count) => sum + count, 0), 15);
+  assert.throws(() => openSandboxBooster(profile, Object.values(alphaDefinitions), {
+    price:pack.price, cardCount:pack.cardCount, guaranteedTiers:pack.rarityDistribution.guaranteed, flexSlotWeights:pack.rarityDistribution.flexSlotWeights
+  }, 32004), /INSUFFICIENT_FUNDS/);
+});
+
 test("v3.2 configured shred and craft primitives remain available", () => {
   const t0 = economy.rarityTiers.find((tier:any)=>tier.id==="T0");
   let profile = createEconomySandboxProfile(0);
@@ -65,6 +86,17 @@ test("v3.2 browser exposes booster reveal, owned counts and targeted shred/craft
   assert.match(css, /\.booster-reveal/);
 });
 
+test("booster UX hotfix separates review from collection navigation and keeps one balance strip", () => {
+  assert.match(app, /activeBooster/);
+  assert.match(app, /data-review-last-booster/);
+  assert.match(app, /data-show-last-booster/);
+  assert.match(app, /openAnotherPack/);
+  assert.match(app, /finishRevealFirst/);
+  assert.match(app, /economy-balance-chip/);
+  assert.doesNotMatch(app, /data-view-last-booster/);
+  assert.match(css, /economy-insufficient/);
+});
+
 test("v3.2 server exposes stateless sandbox transaction endpoints and public shell version", () => {
   assert.match(server, /\/api\/economy\/sandbox\/start/);
   assert.match(server, /\/api\/economy\/booster\/open/);
@@ -73,4 +105,4 @@ test("v3.2 server exposes stateless sandbox transaction endpoints and public she
   assert.match(html, /alpha playtest/);
 });
 
-console.log(`${passed}/6 v3.2 tests passed.`);
+console.log(`${passed}/8 v3.2 tests passed.`);

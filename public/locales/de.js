@@ -173,6 +173,12 @@ deCatalog.firstSession = {
     pvpStarted: "pvp_started"
   }
 };
+Object.assign(deCatalog.collection, {
+  openAnotherPack: "Weiteres Pack öffnen · {price}",
+  finishRevealFirst: "Decke dieses Pack auf, bevor du ein weiteres öffnest.",
+  showInCollection: "In Sammlung anzeigen",
+  insufficientCredits: "Nicht genug Büro-Credits."
+});
 export const de = Object.freeze(deCatalog);
 
 // Temporary migration bridge for legacy UI that predates translation keys.

@@ -173,4 +173,10 @@ enCatalog.firstSession = {
     pvpStarted: "pvp_started"
   }
 };
+Object.assign(enCatalog.collection, {
+  openAnotherPack: "Open another pack · {price}",
+  finishRevealFirst: "Reveal this pack before opening another.",
+  showInCollection: "Show in Collection",
+  insufficientCredits: "Not enough Office Credits."
+});
 export const en = Object.freeze(enCatalog);
