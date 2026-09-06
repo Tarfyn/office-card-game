@@ -177,7 +177,8 @@ Object.assign(deCatalog.collection, {
   openAnotherPack: "Weiteres Pack öffnen · {price}",
   finishRevealFirst: "Decke dieses Pack auf, bevor du ein weiteres öffnest.",
   showInCollection: "In Sammlung anzeigen",
-  insufficientCredits: "Nicht genug Büro-Credits."
+  insufficientCredits: "Nicht genug Büro-Credits.",
+  profileUpdateFailed: "Das Pack konnte nicht gespeichert werden. Dein Guthaben wurde nicht verändert. Bitte versuche es erneut."
 });
 export const de = Object.freeze(deCatalog);
 

@@ -366,6 +366,35 @@ try {
       assert.equal(Object.values(afterTraining.meta.ownedCards).reduce((sum, quantity) => sum + Number(quantity), 0), 60, "Training loaners must not mint owned cards");
 
       await service.mutateProfile(httpSessionToken, (profile) => {
+        profile.meta.balances.OFFICE_CREDITS = 300;
+        return { profile };
+      });
+      const sequentialBoosterPurchases = [];
+      for (let packNumber = 1; packNumber <= 3; packNumber += 1) {
+        const purchaseResponse = await postAuth("/api/economy/booster/open", { packId:"ALPHA_OFFICE_PACK" }, registerCookie.split(";")[0]);
+        assert.equal(purchaseResponse.status, 200);
+        const purchaseBody = await purchaseResponse.json();
+        assert.equal(purchaseBody.cardIds.length, 5);
+        assert.equal(purchaseBody.serverProfile.meta.balances.OFFICE_CREDITS, 300 - packNumber * 100);
+        sequentialBoosterPurchases.push(purchaseBody);
+      }
+      const afterThreeBoosters = (await service.session(httpSessionToken)).profile;
+      const boosterGrantRefs = afterThreeBoosters.meta.rewardGrants.filter((grant) => grant.source === "booster").map((grant) => grant.sourceRef);
+      assert.equal(afterThreeBoosters.meta.balances.OFFICE_CREDITS, 0);
+      assert.equal(afterThreeBoosters.meta.progression.boostersOpened, 3);
+      assert.equal(boosterGrantRefs.length, 3);
+      assert.equal(new Set(boosterGrantRefs).size, 3);
+      assert.ok(boosterGrantRefs.every((sourceRef) => typeof sourceRef === "string" && sourceRef.length > 0));
+      const insufficientAfterThree = await postAuth("/api/economy/booster/open", { packId:"ALPHA_OFFICE_PACK" }, registerCookie.split(";")[0]);
+      assert.equal(insufficientAfterThree.status, 400);
+      assert.equal((await insufficientAfterThree.json()).error.code, "INSUFFICIENT_FUNDS");
+      const afterInsufficientAttempt = (await service.session(httpSessionToken)).profile;
+      assert.equal(afterInsufficientAttempt.meta.balances.OFFICE_CREDITS, 0);
+      assert.equal(afterInsufficientAttempt.meta.progression.boostersOpened, 3);
+      assert.equal(afterInsufficientAttempt.meta.rewardGrants.filter((grant) => grant.source === "booster").length, 3);
+      console.log(`DB_BOOSTER_FLOW_OK · packs=${sequentialBoosterPurchases.length} uniqueGrantRefs=${new Set(boosterGrantRefs).size}`);
+
+      await service.mutateProfile(httpSessionToken, (profile) => {
         profile.meta.balances.OFFICE_CREDITS = 100;
         return { profile };
       });
@@ -376,7 +405,8 @@ try {
       assert.deepEqual(boosterPurchases.map((response) => response.status).sort(), [200, 400]);
       const afterBooster = (await service.session(httpSessionToken)).profile;
       assert.equal(afterBooster.meta.balances.OFFICE_CREDITS, 0);
-      assert.equal(afterBooster.meta.progression.boostersOpened, 1);
+      assert.equal(afterBooster.meta.progression.boostersOpened, 4);
+      assert.equal(new Set(afterBooster.meta.rewardGrants.filter((grant) => grant.source === "booster").map((grant) => grant.sourceRef)).size, 4);
 
       await service.mutateProfile(httpSessionToken, (profile) => {
         profile.meta.balances.OFFICE_CREDITS = 240;
@@ -450,7 +480,7 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-assert.equal(allowedOps.system.version, "7.69.63");
+assert.equal(allowedOps.system.version, "7.69.64");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");

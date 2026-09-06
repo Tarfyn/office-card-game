@@ -418,7 +418,13 @@ export class PostgresAccountService {
       SELECT $1, item.id, item.deck_data, item.revision, to_timestamp(item.created_at / 1000.0), to_timestamp(item.updated_at / 1000.0)
       FROM jsonb_to_recordset($2::jsonb) AS item(id text, deck_data jsonb, revision integer, created_at bigint, updated_at bigint)`, [userId, JSON.stringify(decks.map((item) => ({ id:item.id, deck_data:item.deckData, revision:item.revision, created_at:item.createdAt, updated_at:item.updatedAt })))]);
     await client.query("DELETE FROM public.reward_grants WHERE user_id = $1", [userId]);
-    const grants = (profile.meta?.rewardGrants ?? []).map((grant) => ({ source_ref:String(grant.sourceRef), grant_data:grant, granted_at:Number(grant.grantedAt) || Date.now() }));
+    const grants = (profile.meta?.rewardGrants ?? []).map((grant, index) => ({
+      // Older sandbox boosters used a null sourceRef. Keep those historical
+      // grants projectable without collapsing multiple rows onto "null".
+      source_ref:grant.sourceRef ? String(grant.sourceRef) : `legacy:${String(grant.source ?? "grant")}:${Number(grant.grantedAt) || 0}:${index}`,
+      grant_data:grant,
+      granted_at:Number(grant.grantedAt) || Date.now()
+    }));
     if (grants.length) await client.query(`INSERT INTO public.reward_grants(user_id, source_ref, grant_data, granted_at)
       SELECT $1, item.source_ref, item.grant_data, to_timestamp(item.granted_at / 1000.0)
       FROM jsonb_to_recordset($2::jsonb) AS item(source_ref text, grant_data jsonb, granted_at bigint)`, [userId, JSON.stringify(grants)]);

@@ -14,6 +14,7 @@ const economy = JSON.parse(readFileSync(fileURLToPath(new URL("../../data/econom
 const app = readFileSync(fileURLToPath(new URL("../../public/app.js", import.meta.url)), "utf8");
 const css = readFileSync(fileURLToPath(new URL("../../public/styles.css", import.meta.url)), "utf8");
 const server = readFileSync(fileURLToPath(new URL("../../server/server.mjs", import.meta.url)), "utf8");
+const accountService = readFileSync(fileURLToPath(new URL("../../server/account-service.mjs", import.meta.url)), "utf8");
 const html = readFileSync(fileURLToPath(new URL("../../public/index.html", import.meta.url)), "utf8");
 
 test("v3.2 sandbox rarity assignment covers T0 through T3 without changing canonical card data", () => {
@@ -54,6 +55,15 @@ test("booster UX hotfix keeps three consecutive purchases authoritative and fini
   assert.throws(() => openSandboxBooster(profile, Object.values(alphaDefinitions), {
     price:pack.price, cardCount:pack.cardCount, guaranteedTiers:pack.rarityDistribution.guaranteed, flexSlotWeights:pack.rarityDistribution.flexSlotWeights
   }, 32004), /INSUFFICIENT_FUNDS/);
+  assert.deepEqual(new Set(profile.rewardGrants.map((grant) => grant.sourceRef)).size, 3);
+});
+
+test("authenticated booster projection uses stable non-null grant references", () => {
+  assert.match(server, /sourceRef:`booster:v1:\$\{Number\(context\.meta\.progression\?\.boostersOpened/);
+  assert.match(accountService, /legacy:\$\{String\(grant\.source \?\? \"grant\"\)/);
+  assert.match(app, /function economyErrorMessage\(error\)/);
+  assert.match(app, /profileUpdateFailed/);
+  assert.match(css, /collection-toolbar > div:first-child \.collection-mode-toggle/);
 });
 
 test("v3.2 configured shred and craft primitives remain available", () => {

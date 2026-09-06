@@ -632,6 +632,8 @@ export interface BoosterSandboxConfig {
   cardCount: number;
   guaranteedTiers: RarityTier[];
   flexSlotWeights: Partial<Record<RarityTier, number>>;
+  /** Stable projection key for an authenticated pack grant. */
+  sourceRef?: string | null;
   /** Provisional per-pack chance, not a gameplay rarity. */
   executiveEditionChancePerPack?: number;
   executiveEditionPool?: CardDefinition[];
@@ -708,7 +710,7 @@ export function openSandboxBooster(
     else next.ownedCards[id] = (next.ownedCards[id] ?? 0) + 1;
   }
   next.progression.boostersOpened += 1;
-  next.rewardGrants.push({ source:"booster", sourceRef:null, cards:cardIds.map((cardId, index) => ({ cardId, quantity:1, variantId:variantIds[index] })), officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:Date.now() });
+  next.rewardGrants.push({ source:"booster", sourceRef:config.sourceRef ?? `booster:v1:${next.progression.boostersOpened}`, cards:cardIds.map((cardId, index) => ({ cardId, quantity:1, variantId:variantIds[index] })), officeCredits:0, scrap:0, cosmetics:[], packs:[], grantedAt:Date.now() });
   return { profile: next, cardIds, tiers, variantIds, spentCredits: config.price };
 }
 

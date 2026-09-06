@@ -177,6 +177,7 @@ Object.assign(enCatalog.collection, {
   openAnotherPack: "Open another pack · {price}",
   finishRevealFirst: "Reveal this pack before opening another.",
   showInCollection: "Show in Collection",
-  insufficientCredits: "Not enough Office Credits."
+  insufficientCredits: "Not enough Office Credits.",
+  profileUpdateFailed: "The pack could not be saved. Your balance was not changed. Please try again."
 });
 export const en = Object.freeze(enCatalog);

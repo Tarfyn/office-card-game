@@ -5307,12 +5307,21 @@ async function applyEconomyResponse(path, body, successMessage) {
     state.economyMessage = successMessage(result);
     return result;
   } catch (error) {
-    state.economyMessage = error.message || collectionCopy('economyActionFailed');
+    if (state.account && ['PROFILE_MUTATION_FAILED','ACCOUNT_PERSISTENCE_UNAVAILABLE','DB_OPERATION_FAILED','DB_CONNECTION_REFUSED','DB_SHUTTING_DOWN','DATABASE_UNAVAILABLE','NETWORK_UNREACHABLE','NETWORK_TIMEOUT'].includes(error?.code)) {
+      try { await refreshServerProfile(); } catch { /* preserve the original actionable economy message */ }
+    }
+    state.economyMessage = economyErrorMessage(error);
     return null;
   } finally {
     state.economyBusy = false;
     renderCollection();
   }
+}
+
+function economyErrorMessage(error) {
+  if (error?.code === 'INSUFFICIENT_FUNDS') return collectionCopy('insufficientCredits');
+  if (error?.code === 'PROFILE_MUTATION_FAILED' || error?.code === 'DB_OPERATION_FAILED') return collectionCopy('profileUpdateFailed');
+  return error?.message || collectionCopy('economyActionFailed');
 }
 
 async function startEconomySandbox() {

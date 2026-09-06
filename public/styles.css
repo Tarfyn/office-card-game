@@ -13298,6 +13298,48 @@ body.match-mode .player-identity-copy { min-width:0; flex:1 1 auto; overflow:hid
   --ui-motion-fast: 160ms ease;
 }
 
+/* Keep the deckbuilder mode control in a stable header slot. The labels may
+   change with locale or selection, but the wallet/helper column must not move. */
+@media (min-width:1001px) {
+  .collection-toolbar {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(250px,auto);
+    align-items:start;
+  }
+  .collection-toolbar > div:first-child {
+    min-width:0;
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr);
+    align-items:center;
+    gap:9px 12px;
+  }
+  .collection-toolbar > div:first-child .collection-set-progress,
+  .collection-toolbar > div:first-child .collection-mode-toggle {
+    grid-column:1 / -1;
+  }
+  .collection-toolbar > div:first-child .collection-mode-toggle {
+    width:min(100%,430px);
+    min-width:360px;
+    margin-top:0;
+  }
+  .collection-toolbar > .economy-preview {
+    min-width:250px;
+    max-width:360px;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,max-content));
+    justify-content:end;
+    align-items:center;
+  }
+  .collection-toolbar > .economy-preview small { grid-column:1 / -1; }
+}
+
+@media (max-width:760px) {
+  .collection-toolbar > div:first-child .collection-mode-toggle {
+    min-width:0;
+    width:100%;
+  }
+}
+
 :where(button, select, input, textarea) { font: inherit; }
 :where(button, select, input, textarea) {
   transition: border-color var(--ui-motion-fast), box-shadow var(--ui-motion-fast),
