@@ -1,6 +1,6 @@
 {
   "name": "office-card-game-headless",
-  "version": "7.69.59",
+  "version": "7.69.60",
   "private": true,
   "type": "module",
   "scripts": {
