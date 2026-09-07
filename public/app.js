@@ -8032,7 +8032,7 @@ function renderGame() {
   markRenderedTransientMotion();
   syncCombatPresentationHost();
   syncResolutionPresentationHost();
-  matchVfx.sync(match,{isTargeting:Boolean(state.interaction)});
+  matchVfx.sync(match,{isTargeting:Boolean(state.interaction) && !state.intentBusy});
   document.querySelector('#claimMatchReward')?.addEventListener('click', claimMatchReward);
   document.querySelector('#resultBackLobby')?.addEventListener('click', parkSession);
   // Compatibility marker: addEventListener('click', playAnotherMatch)
@@ -8368,6 +8368,7 @@ async function sendIntent(intent) {
   setIntentCommit('SENDING', intent, { intentId, fromVersion:submittedVersion });
   state.intentBusy = true;
   render();
+  matchVfx.acknowledge(intent);
   try {
     // Hosted safety preflight: a proxy can leave SSE apparently open while one state event is delayed.
     // A cheap authoritative GET immediately before the mutation prevents stale stateVersion submissions.
@@ -8402,6 +8403,10 @@ async function sendIntent(intent) {
     } else {
       setIntentCommit('ACCEPTED', intent, { intentId, fromVersion:submittedVersion, toVersion:result.view?.match?.stateVersion });
       acceptedIntentFeedback(intent);
+      // Present the accepted projection now. Recovery readback must not hold motion.
+      state.selectedHand.clear();
+      state.interaction = null;
+      render();
       // Re-read after every accepted mutation. This catches immediate priority/turn handoffs even if SSE is buffered upstream.
       try { await refreshState(false, { preserveLiveOnError:true }); } catch { /* result.view remains authoritative for this intent */ }
       scheduleSyncPoll(350);
@@ -8418,6 +8423,7 @@ async function sendIntent(intent) {
     try { await refreshState(false); } catch { /* connection banner and toast retain the error */ }
     scheduleSyncPoll(350);
   } finally {
+    matchVfx.clearAcknowledgement();
     state.intentBusy = false;
     render();
   }

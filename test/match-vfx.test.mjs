@@ -4,12 +4,12 @@ import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, present
 import { VFX_TIMING, VFX_EASING, installVfxTiming } from '../public/vfx-timing.js';
 import { DEPARTMENT_MODIFIERS, SIGNATURE_LIMITS, signaturePreset, signatureForStep, visibleSignatureMetadata, lethalOutcome } from '../public/vfx-signatures.js';
 
-test('Phase 3 leaves CORE feedback and all scheduled timing values unchanged',()=>{
+test('Phase 3 classification stays unchanged while motion and queue waits have separate timings',()=>{
   assert.equal(signatureForStep({type:'placement',events:[],payload:{}},'settle',null),null);
   assert.equal(signatureForStep({type:'action',events:[{type:'ACTION_RESOLVED'}],payload:{}},'resolve',null),null);
   assert.deepEqual(feedbackForEvent({type:'POWER_MODIFIED',data:{amount:2}}),[]);
   assert.deepEqual([VFX_TIMING.cardTravel,VFX_TIMING.supportTravel,VFX_TIMING.placementSettle,VFX_TIMING.actionStage,VFX_TIMING.actionResolve,VFX_TIMING.archiveTravel,VFX_TIMING.attackCommit,VFX_TIMING.impactHold,VFX_TIMING.repHold,VFX_TIMING.repCue,VFX_TIMING.lethalHold,VFX_TIMING.queueBudget,VFX_TIMING.catchUpAge],
-    [360,340,80,220,180,420,300,150,260,950,220,2900,1600]);
+    [560,520,80,420,200,620,480,240,260,950,140,2900,1600]);
 });
 test('Executive signature uses canonical visible variant metadata, never rarity or DOM classes',()=>{
   const def={id:'N-002',department:'NEUTRAL'};
@@ -128,6 +128,46 @@ const names=e=>e.steps.map(s=>s.type);
 const options={roomId:'room',now:0};
 
 const total=e=>e.steps.reduce((sum,s)=>sum+s.duration,0);
+test('slower motion reallocates serial outcome/return waits instead of increasing lethal gating',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3)],options);
+  const e=q.take(0),steps=e.steps;
+  assert.ok(steps.find(s=>s.type==='archive').duration>420);
+  assert.ok(steps.find(s=>s.type==='outcome').duration<=80,'Archive departs promptly after the visible impact/outcome envelope');
+  assert.equal(steps.find(s=>s.type==='return').duration,0,'return overlaps confirmed impact/Archive');
+  assert.ok(total(e)<=1430,'normal battle has no additional queue backlog');
+});
+test('residual lifetimes are not charged to critical presentation or catch-up budget',()=>{
+  const q=createPresentationQueue();q.enqueue([played(1)],options);const entry=q.take(0);
+  assert.ok(VFX_TIMING.executiveResidual>=800);
+  assert.ok(VFX_TIMING.executiveResidual>total(entry));
+  assert.equal(total(entry),VFX_TIMING.cardTravel+VFX_TIMING.placementSettle);
+  assert.equal(VFX_TIMING.queueBudget,2900);assert.equal(VFX_TIMING.catchUpAge,1600);
+});
+test('entry capture and initial travel have no planned pre-motion wait',()=>{
+  const q=createPresentationQueue();let prepared=false;
+  q.enqueue([played(1)],{...options,prepare:()=>{prepared=true;}});
+  assert.ok(prepared);const e=q.take(0);assert.equal(e.startedAt,0);
+  assert.equal(e.steps[0].type,'travel');assert.equal(e.catchUp,false);
+});
+test('open response windows still return an attacker without inventing an impact',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1)],options);const e=q.take(0);
+  assert.equal(e.type,'attack');assert.deepEqual(names(e),['commit','return']);
+  assert.equal(e.steps[1].duration,VFX_TIMING.attackerReturn);
+});
+test('Tutorial and isolated result presentation keep the prior fallback timing',()=>{
+  for(const reason of ['TUTORIAL_COMPLETE','REPUTATION_ZERO']) {
+    const q=createPresentationQueue();q.enqueue([{seq:1,type:'GAME_ENDED',playerId:'P1',data:{reason}}],options);
+    assert.equal(q.take(0).steps[0].duration,220);
+  }
+});
+test('reduced motion does not inherit the longer impact/travel envelope',()=>{
+  const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3)],options);
+  const e=q.take(0),steps=presentationSteps(e,{reducedMotion:true});
+  assert.equal(steps.find(s=>s.type==='commit').duration,0);
+  assert.ok(steps.find(s=>s.type==='impactHold').duration<=150);
+  assert.equal(steps.find(s=>s.type==='archive').duration,VFX_TIMING.staticArchive);
+  assert.ok(steps.reduce((n,s)=>n+s.duration,0)<500);
+});
 test('semantic timing owner supplies CSS and readable placement/Archive ranges',()=>{
   const css=new Map();installVfxTiming({setProperty:(k,v)=>css.set(k,v)});
   assert.equal(Number(css.get('--vfx-time-card-travel')),VFX_TIMING.cardTravel);
@@ -138,18 +178,18 @@ test('semantic timing owner supplies CSS and readable placement/Archive ranges',
     const q=createPresentationQueue();q.enqueue([{...played(1),type:type==='INCIDENT'?'INCIDENT_SET':'CARD_PLAYED',data:{cardType:type}}],options);
     const travel=q.take(0).steps[0].duration;
     assert.equal(travel,type==='EMPLOYEE'?VFX_TIMING.cardTravel:VFX_TIMING.supportTravel);
-    assert.ok(travel>=300 && travel<=420);
+    assert.ok(travel>=450 && travel<=650);
   }
   const q=createPresentationQueue();q.enqueue([archived(1)],options);
   const travel=q.take(0).steps.find(s=>s.type==='archive').duration;
-  assert.equal(travel,VFX_TIMING.archiveTravel);assert.ok(travel>=380&&travel<=500);
+  assert.equal(travel,VFX_TIMING.archiveTravel);assert.ok(travel>=550&&travel<=750);
 });
 test('ordinary combat retains full anticipation, impact hold and recovery without catch-up',()=>{
   const q=createPresentationQueue();q.enqueue([attack(1),archived(2),battle(3)],options);
   const item=q.take(0);assert.equal(item.type,'combat');assert.equal(item.catchUp,false);
   const steps=presentationSteps(item);
   const hold=steps.find(s=>s.type==='impactHold');
-  assert.ok(hold.critical && hold.duration>=120 && hold.duration<=180);
+  assert.ok(hold.critical && hold.duration>=220 && hold.duration<=320);
   assert.ok(names(item).indexOf('impact')<names(item).indexOf('impactHold'));
   assert.ok(names(item).indexOf('impactHold')<names(item).indexOf('outcome'));
   assert.ok(total(item)<1600);assert.ok(steps.every(s=>!s.static));
@@ -166,7 +206,7 @@ test('ordinary Action retains a separate stage, resolve hold and physical Archiv
   const item=q.take(0);assert.equal(item.type,'action');assert.equal(item.catchUp,false);
   assert.deepEqual(item.steps.map(s=>s.duration),[VFX_TIMING.actionStage,VFX_TIMING.actionResolve,VFX_TIMING.archiveTravel]);
   assert.ok(item.steps.find(s=>s.type==='resolve').duration>=120);
-  assert.ok(total(item)<900);
+  assert.ok(total(item)<=1300);
 });
 test('direct REP holds signed feedback before a short lethal confirmation, without a second outcome flash',()=>{
   const q=createPresentationQueue();q.enqueue([attack(1,'a',null),{seq:2,type:'REPUTATION_CHANGED',playerId:'P2',data:{reason:'DIRECT_ATTACK',delta:-20}},{seq:3,type:'GAME_ENDED'}],options);

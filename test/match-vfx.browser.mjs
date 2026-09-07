@@ -163,7 +163,8 @@ export async function verifyDestroyedAttacker(page) {
     ],{roomId:'loser',present:true,match});a.remove();window.loserVfx.sync(match);
     window.loserProxy=document.querySelector('.presentation-proxy');window.loserWidth=window.loserProxy.style.width;
   });
-  await page.locator('.battle-resolution-overlay').waitFor();
+  // Sample each rendered frame: locator backoff can skip the complete 320 ms envelope.
+  await page.waitForFunction(()=>document.querySelector('.battle-resolution-overlay')?.getBoundingClientRect().width>0);
   assert.equal(await page.locator('.battle-resolution-overlay').evaluate(n=>getComputedStyle(n).opacity),'1');
   await page.waitForFunction(()=>document.querySelector('.vfx-archive'));
   const result=await page.evaluate(()=>{const n=document.querySelector('.presentation-proxy');return {same:n===window.loserProxy,width:n.style.width,cardWidth:n.firstElementChild.style.width,initialWidth:window.loserWidth};});

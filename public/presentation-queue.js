@@ -5,8 +5,8 @@ export const PRESENTATION_BUDGET_MS = timing.queueBudget;
 export const PRESENTATION_MAX_PENDING = 6;
 const duration = { travel:timing.cardTravel, commit:timing.attackCommit, impact:timing.impact,
   impactHold:timing.impactHold, outcome:timing.outcomeHold, archive:timing.archiveTravel,
-  return:timing.attackerReturn, settle:timing.placementSettle, resolve:timing.actionResolve,
-  result:timing.lethalHold, summary:timing.summary };
+  return:0, settle:timing.placementSettle, resolve:timing.actionResolve,
+  result:timing.resultFallback, summary:timing.summary };
 const critical = new Set(['impact','impactHold','outcome','archive','resolve','result','summary']);
 const step = (type) => ({ type, duration:duration[type], critical:critical.has(type) });
 const isPlay = (e) => e.type === 'CARD_PLAYED' || e.type === 'INCIDENT_SET';
@@ -15,7 +15,8 @@ export function presentationSteps(entry, { reducedMotion = false, catchUp = fals
   return entry.steps.map((s) => ({ ...s, duration:
     catchUp && !s.critical ? 0 : reducedMotion && ['travel','commit','return'].includes(s.type) ? 0 :
     (reducedMotion || catchUp) && s.type === 'archive' ? timing.staticArchive :
-    reducedMotion && s.type === 'outcome' ? timing.staticOutcome :
+    reducedMotion && s.type === 'impactHold' ? Math.min(s.duration,timing.staticImpactHold) :
+    reducedMotion && s.type === 'outcome' ? Math.min(s.duration,timing.staticOutcome) :
     reducedMotion && s.type === 'result' ? timing.staticLethal : s.duration,
     static:reducedMotion || catchUp
   }));
@@ -36,6 +37,7 @@ export function planPresentations(events, attacks = new Map()) {
       if(s.type==='travel') s.duration=type.startsWith('action') ? timing.actionStage :
         anchor.type==='INCIDENT_SET'||anchor.data?.cardType==='SYSTEM' ? timing.supportTravel : timing.cardTravel;
       if(type==='direct' && s.type==='impactHold') s.duration=timing.repHold;
+      if(type==='attack' && s.type==='return') s.duration=timing.attackerReturn;
     }
     entry.maxDuration = entry.steps.reduce((sum,s) => sum+s.duration,0) + timing.lifetimeSlack;
     entries.push(entry);
@@ -98,6 +100,16 @@ export function planPresentations(events, attacks = new Map()) {
   const lethal=lethalOutcome(events);
   if(lethal) for(const entry of entries) {
     if(entry.type==='result' || entry.events.some(e=>e.type==='REPUTATION_CHANGED' && e.playerId===lethal.playerId && e.data?.after===0)) entry.payload.lethal=lethal;
+  }
+  // Reallocate only the complete direct-lethal group. Unrelated/fallback result
+  // presentation keeps its existing duration (including Tutorial completion).
+  const fullDirect=entries.some(e=>e.type==='direct'&&e.payload.lethal&&e.steps.some(s=>s.type==='commit'));
+  for(const entry of entries.filter(e=>e.payload.lethal)) {
+    entry.payload.resultHold=fullDirect?timing.lethalHold:timing.resultFallback;
+    if(entry.type==='result') {
+      entry.steps[0].duration=entry.payload.resultHold;
+      entry.maxDuration=entry.payload.resultHold+timing.lifetimeSlack;
+    }
   }
   while (attacks.size > 18) attacks.delete(attacks.keys().next().value);
   return { entries:entries.sort((a,b)=>a.priority-b.priority || a.seq-b.seq), used };

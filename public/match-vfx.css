@@ -1,5 +1,5 @@
 /* Palette remains CSS-owned; timing/easing is installed by vfx-timing.js. */
-/* Phase 3 signatures inherit the existing cue/step window. No added queue dwell. */
+/* Recognition is immediate; signature evolution may outlive critical queue work. */
 .vfx-signature { overflow:visible; pointer-events:none !important; }
 .vfx-signature * { pointer-events:none !important; }
 .signature-art { position:absolute; inset:0; width:100%; height:100%; overflow:visible; fill:none; stroke:currentColor; stroke-width:2; }
@@ -10,34 +10,36 @@
 .match-vfx.signature-approval { color:var(--vfx-brass); }
 .match-vfx.signature-momentum { color:var(--vfx-green); }
 .match-vfx.signature-throughput { color:var(--vfx-brass); }
-.signature-brackets { stroke-width:3; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; transform-origin:center; }
-.signature-motif { stroke-width:2.5; stroke-dasharray:300; animation:signature-trace calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
+.signature-brackets { stroke-width:3; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; transform-origin:center; }
+.signature-motif { stroke-width:2.5; stroke-dasharray:300; animation:signature-trace calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
 .signature-badge-plate { fill:#0b1924; stroke:currentColor; stroke-width:1; opacity:.9; }
-.signature-propagation { stroke-width:2; stroke-dasharray:10 5; animation:signature-trace calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
-.signature-paper { fill:currentColor; stroke:none; transform-box:fill-box; transform-origin:center; animation:signature-paper calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
+.signature-propagation { stroke-width:2; stroke-dasharray:10 5; animation:signature-trace calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
+.signature-paper { fill:currentColor; stroke:none; transform-box:fill-box; transform-origin:center; animation:signature-paper calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
 .match-vfx.signature-lethal { color:var(--vfx-red); }
 .signature-lethal .signature-brackets { stroke-width:5; }
-.signature-warning { stroke-width:5; stroke-dasharray:12 8; opacity:.65; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
-.signature-kpi { stroke-width:5; stroke-linejoin:bevel; stroke-dasharray:180; animation:signature-crash calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
-.signature-zero { fill:var(--vfx-red); stroke:#fff3da; stroke-width:2; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
+.signature-warning { stroke-width:5; stroke-dasharray:12 8; opacity:.65; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
+.signature-kpi { stroke-width:5; stroke-linejoin:bevel; stroke-dasharray:180; animation:signature-crash calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
+.signature-zero { fill:var(--vfx-red); stroke:#fff3da; stroke-width:2; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
 .signature-lethal .signature-paper { opacity:.8; }
 .match-vfx.signature-executive { color:var(--vfx-brass); }
 .signature-executive .signature-art { inset:-8%; width:116%; height:116%; }
-.signature-prism { stroke:#fff4d8; stroke-width:3; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; transform-origin:center; }
+.signature-prism { stroke:#fff4d8; stroke-width:3; animation:signature-confirm calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; transform-origin:center; }
 .signature-executive .signature-brackets { stroke-width:5; }
-.signature-sweep { stroke:#fff; stroke-width:7; opacity:.65; animation:signature-prism calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; }
+.signature-sweep { stroke:#fff; stroke-width:7; opacity:.65; animation:signature-prism calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; }
 .signature-executive .signature-paper:nth-of-type(3n) { fill:var(--vfx-blue); }
 .match-vfx.signature-negate { color:var(--vfx-red); }
-.signature-reject { stroke-width:6; animation:signature-reject calc(var(--vfx-life) * 1ms) var(--vfx-ease) both; transform-origin:center; }
+.signature-reject { stroke-width:6; animation:signature-reject calc(var(--vfx-life) * 1ms) var(--vfx-signature-ease) both; transform-origin:center; }
 .signature-negate .signature-motif { opacity:.35; }
 .signature-pending { stroke-width:4; stroke-dasharray:5 3; }
 .match-vfx.signature-delay { color:var(--vfx-brass); }
-@keyframes signature-confirm { 0% { opacity:0; transform:scale(.94); } 12%,65% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(1.05); } }
-@keyframes signature-trace { 0% { stroke-dashoffset:200; opacity:.2; } 35%,70% { stroke-dashoffset:0; opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
-@keyframes signature-crash { 0% { stroke-dashoffset:180; opacity:.4; } 38%,84% { stroke-dashoffset:0; opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
-@keyframes signature-paper { 0% { opacity:0; transform:translate(0,0) rotate(0); } 18% { opacity:.9; } 75% { opacity:.7; } 100% { opacity:0; transform:translate(var(--paper-x),var(--paper-y)) rotate(var(--paper-angle)); } }
-@keyframes signature-prism { 0% { opacity:0; transform:translateX(-18%); } 28% { opacity:.75; } 70%,100% { opacity:0; transform:translateX(18%); } }
-@keyframes signature-reject { 0% { opacity:0; transform:scale(1.12); } 16%,70% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(.94); } }
+@keyframes signature-confirm { 0% { opacity:.8; transform:scale(.98); } 12% { opacity:1; transform:scale(1); } 78% { opacity:.85; transform:scale(1.035); } 100% { opacity:0; transform:scale(1.05); } }
+@keyframes signature-trace { 0% { stroke-dashoffset:200; opacity:.7; } 75% { stroke-dashoffset:0; opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
+@keyframes signature-crash { 0% { stroke-dashoffset:180; opacity:1; } 82% { stroke-dashoffset:0; opacity:1; } 100% { stroke-dashoffset:0; opacity:.5; } }
+@keyframes signature-paper { 0% { opacity:.7; transform:translate(0,0) rotate(0); } 18% { opacity:.9; } 75% { opacity:.7; } 100% { opacity:0; transform:translate(var(--paper-x),var(--paper-y)) rotate(var(--paper-angle)); } }
+@keyframes signature-prism { 0% { opacity:.65; transform:translateX(-18%); } 70% { opacity:.75; transform:translateX(10%); } 100% { opacity:0; transform:translateX(18%); } }
+@keyframes signature-reject { 0% { opacity:.8; transform:scale(1.12); } 16%,70% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(.94); } }
+.signature-lethal .signature-kpi, .signature-lethal .signature-zero, .signature-lethal .signature-paper { animation-duration:calc(var(--signature-decay,var(--vfx-life)) * 1ms); }
+.signature-primed .signature-kpi, .signature-primed .signature-zero, .signature-primed .signature-paper { animation:none; opacity:0; }
 .signature-static .signature-art * { animation:none !important; transform:none !important; stroke-dasharray:none; }
 .signature-static .signature-paper { display:none; }
 .signature-static .signature-art { opacity:.9; }
@@ -99,6 +101,8 @@ body.match-mode .game-shell.event-reputation-changed .battlefield-surface::after
   border-top:0;
   animation-name:vfx-land;
 }
+.vfx-ack .vfx-mark { opacity:1; animation:vfx-ack calc(var(--vfx-life) * 1ms) ease-out both; border-style:double; }
+@keyframes vfx-ack { 0% { opacity:1; transform:scale(1); } 15% { opacity:1; transform:scale(1.035); } 100% { opacity:.45; transform:scale(1.035); } }
 .vfx-commit { color:var(--vfx-brass); --vfx-life:var(--vfx-time-commit-cue); }
 .vfx-commit .vfx-mark { border-style:double; border-width:3px; }
 .vfx-travel { color:var(--vfx-brass); --vfx-life:var(--vfx-time-direction-cue); }
@@ -231,25 +235,25 @@ body.match-mode .queued-combat .prevented-stamp { opacity:1; }
 }
 
 @keyframes vfx-land {
-  0% { opacity:0; transform:translateY(-6px) scale(1.04); }
+  0% { opacity:.75; transform:translateY(-6px) scale(1.04); }
   25% { opacity:.95; transform:translateY(2px) scale(.99); }
   55% { opacity:.6; transform:none; }
   100% { opacity:0; transform:none; }
 }
 @keyframes vfx-edge { 0%,100% { opacity:0; } 20%,48% { opacity:.85; } }
 @keyframes vfx-scan {
-  0%,20% { opacity:0; transform:scaleX(.06); }
+  0% { opacity:.7; transform:scaleX(.06); }
   35% { opacity:.9; }
   72% { opacity:.8; transform:scaleX(1); }
   100% { opacity:0; transform:scaleX(1); }
 }
 @keyframes vfx-impact {
-  0% { opacity:0; transform:scale(.94); }
+  0% { opacity:.85; transform:scale(.94); }
   8% { opacity:.95; transform:scale(1.04); }
   15%,40% { opacity:.8; transform:scale(1); }
   100% { opacity:0; transform:scale(1.02); }
 }
-@keyframes vfx-approve { 0% { opacity:0; transform:translateY(3px); } 12%,55% { opacity:.85; transform:none; } 100% { opacity:0; transform:none; } }
+@keyframes vfx-approve { 0% { opacity:.75; transform:translateY(3px); } 12%,55% { opacity:.85; transform:none; } 100% { opacity:0; transform:none; } }
 @keyframes vfx-file-away { 0%,18% { opacity:.7; transform:none; } 100% { opacity:0; transform:translateY(10px) scale(.94); } }
 @keyframes vfx-label { 0% { opacity:0; } 8%,82% { opacity:1; } 100% { opacity:0; } }
 @keyframes vfx-notice { from { opacity:.45; } to { opacity:1; } }

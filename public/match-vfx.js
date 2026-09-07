@@ -259,14 +259,20 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     const p=entry.payload,staticFeedback=s.static||targeting||entry.epoch!==geometryEpoch;
     let preset=signatureForStep(entry,s.type,entry.signatureMetadata,{staticFeedback});
     let rect,origin,targets=[],life;
-    if(p.lethal && ['impact','result','summary'].includes(s.type)) {
+    if(p.lethal && ['commit','impact','result','summary'].includes(s.type)) {
+      // Authority has already confirmed lethal. Ignite the warning during approach;
+      // the KPI/zero/paper response is activated together with the actual impact.
+      if(s.type==='impact') for(const node of active.keys()) if(node.dataset.signature==='lethal') {
+        node.classList.remove('signature-primed');
+        node.style.setProperty('--signature-decay',String(VFX_TIMING.impact+VFX_TIMING.repHold+(p.resultHold??VFX_TIMING.resultFallback)));
+      }
       if(lethalPresented===p.lethal.seq) return;
       lethalPresented=p.lethal.seq;
       preset=signaturePreset('lethal',null,{staticFeedback});
       rect=rectOf(document.querySelector(p.lethal.playerId===currentMatch?.viewerId?'#ownBoard':'#opponentBoard'));
       const steps=presentationSteps(entry,{reducedMotion:media.matches,catchUp:entry.catchUp});
       const index=steps.findIndex(step=>step.type===s.type);
-      life=steps.slice(index).reduce((sum,step)=>sum+step.duration,0)+(s.type==='impact'?(media.matches?VFX_TIMING.staticLethal:VFX_TIMING.lethalHold):0);
+      life=steps.slice(index).reduce((sum,step)=>sum+step.duration,0)+(['commit','impact'].includes(s.type)?(media.matches?VFX_TIMING.staticLethal:p.resultHold??VFX_TIMING.resultFallback):0);
     } else if(preset) {
       origin=entry.travelDestination??destination(entry,p.cardId??p.attackerId);
       targets=(p.archived??[]).filter(e=>e.cardInstanceId!==p.cardId).map(e=>destination(entry,e.cardInstanceId)).filter(Boolean);
@@ -279,14 +285,20 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
         } else rect=rectOf(document.querySelector('.board-phase-divider'));
       }
       // Arrival/resolve accents share the existing V1 cue lifetime, not a queue wait.
-      life=media.matches?VFX_TIMING.reducedCue:VFX_TIMING.cue;
+      life=staticFeedback?VFX_TIMING.reducedCue:preset.kind==='executive'?VFX_TIMING.executiveResidual:VFX_TIMING.engineResidual;
     }
     if(!preset||!rect) return;
-    cueNow({kind:'signature',target:field(`${entry.key}:${preset.kind}`),seq:entry.seq,preset,life,origin,targets},rect);
+    cueNow({kind:'signature',target:field(`${entry.key}:${preset.kind}`),seq:entry.seq,preset,life,origin,targets,primed:s.type==='commit'&&!s.static},rect);
+  }
+  function returnSurvivor(entry) {
+    const id=entry.payload.attackerId;
+    if(!entry.payload.destroyedIds?.includes(id) && fieldNode(id))
+      proxy(entry,id,entry.commitDestination,destination(entry,id),VFX_TIMING.attackerReturn);
   }
   function runStep(entry,s) {
     onStep(entry,s);
     const p=entry.payload, id=p.cardId??p.attackerId;
+    for(const node of active.keys()) if(node.dataset.vfxKey===`ack:field:${id}`) remove(node);
     if(s.static) stopMotion();
     if(s.type==='travel') {
       const from=entry.visuals?.get(id)?.rect;
@@ -313,10 +325,11 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     } else if(s.type==='impact') {
       // Direct REP has no destruction outcome card: its portrait/delta is the
       // impact, and stays visible through the dedicated REP hold.
-      if(entry.type==='direct' && entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
+      if(entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
       eventsCues(entry,['BATTLE_RESOLVED','REPUTATION_CHANGED']);
     } else if(s.type==='impactHold') {
-      // Keep the existing impact frame visible. Do not respawn/restart its cue.
+      // Impact/outcome remains active while a surviving direct attacker recovers.
+      if((entry.type==='direct'||entry.type==='combat'&&!p.archived?.length)&&!s.static) returnSurvivor(entry);
     } else if(s.type==='outcome') {
       if(entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
       else eventsCues(entry,['CARD_ARCHIVED'],{receipt:false});
@@ -340,6 +353,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
         return {e,from,to,index};
       });
       onCombat(null);
+      if(entry.type==='combat'&&!s.static) returnSurvivor(entry);
       for(const {e,from,to} of moves) {
         cueNow({kind:'archive',target:field(e.cardInstanceId),seq:e.seq},from);
         proxy(entry,e.cardInstanceId,from,to,s.duration,{fade:true});
@@ -347,7 +361,8 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       }
     } else if(s.type==='return') {
       onCombat(null);
-      if(!p.destroyedIds?.includes(id) && fieldNode(id)) proxy(entry,id,entry.commitDestination,destination(entry,id),s.duration);
+      // An unresolved declaration has no impact/Archive window to overlap.
+      if(entry.type==='attack'&&!s.static) returnSurvivor(entry);
     } else if(s.type==='summary') showSummary(entry);
     showSignature(entry,s);
   }
@@ -362,6 +377,8 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     const entry=presentation.take();
     if(!entry) return;
     running=entry;
+    if(entry.catchUp||entry.type==='summary') for(const node of active.keys())
+      if(node.classList.contains('vfx-signature')&&node.dataset.signature!=='lethal') remove(node);
     const steps=presentationSteps(entry,{reducedMotion:media.matches,catchUp:entry.catchUp});
     let index=0;
     const next=()=>{
@@ -429,6 +446,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       const particleRoom=Math.max(0,SIGNATURE_LIMITS.particles-document.querySelectorAll('.signature-paper').length);
       if(cue.kind==='signature') mark.remove();
       decorateSignature(node,preset,{rect,origin:cue.origin,targets:cue.targets,particleRoom});
+      if(cue.primed) node.classList.add('signature-primed');
     }
     if (cue.kind === 'archive' || cue.amount) {
       const label = document.createElement('b');
@@ -441,6 +459,14 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   }
 
   return {
+    // Source acknowledgement only: no destination, success, damage or speculative state.
+    acknowledge(intent) {
+      this.clearAcknowledgement();
+      const id=intent.cardId??intent.attackerId;
+      const rect=rectOf(id?cardNode(id):document.querySelector('.board-phase-divider .active'));
+      if(rect) cueNow({kind:'ack',target:field(id??'phase'),seq:-1,life:VFX_TIMING.acknowledgement},rect);
+    },
+    clearAcknowledgement() { for(const node of active.keys()) if(node.classList.contains('vfx-ack')) remove(node); },
     enqueue(events, options) {
       if (room !== options.roomId) { this.reset(); room = options.roomId; }
       const present=options.present && !document.hidden;
