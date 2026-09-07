@@ -1,4 +1,20 @@
 const enCatalog = {
+  consolidation: {"guestSaved": "Deck saved in this browser’s Guest profile.", "legacySave": "Legacy save", "justNow": "Just now", "ownedCeiling": "Owned-copy ceiling: {current} of {limit} format copies.", "reviewShred": "Review shred", "shred": "Shred", "craft": "Craft", "needed": "{count} needed", "findScraps": "Find shred candidates · {count} Scraps short", "collectionFloor": "After shredding: {after} playable copies · minimum {minimum}.", "mayShred": "This card may go to 0 copies.", "keepDeck": "Keep enough cards to build one legal deck.", "affectedDecks": "Shredding leaves these saved decks short of this card:"},
+  eligibility: {
+    card:'Card',
+    label:'Not playable now', capacityBadge:'CAPACITY', inspectHint:'Right-click or long press for details',
+    OPENING_HAND:'Finish the opening-hand decision first.', MATCH_ENDED:'This match has ended.',
+    PENDING_CHOICE:'Resolve the current choice before playing another card.', RESPONSE_WINDOW:'Respond or pass priority before playing another card.',
+    OPPONENT_TURN:'Wait for your own Main phase.', HAND_LIMIT:'Archive {required} hand cards first.', WRONG_PHASE:'Play this card during your Main phase.',
+    PLAY_DELAYED:'This card cannot be played again this turn.', CAPACITY:'Requires {required} Capacity; {available} available.',
+    EMPLOYEE_SLOTS:'No free Employee slot.', SUPPORT_SLOTS:'No free Support slot.',
+    PROMOTION_ONE:'Requires 1 {requirement}.', PROMOTION:'Requires Promotion value {required} from {requirement} materials.',
+    ACTION_LIMIT:'The limit of {required} Actions this turn has been reached.', PLAY_CONDITION:'The play condition in this card’s rules is not met.',
+    NO_TARGET:'No legal target: {requirement}.', OPPONENT:'opposing', SELF:'your',
+    OBSERVER:'This tab is read-only. Take control to play.', BUSY:'Wait for the current action to finish.', TUTORIAL:'Complete the highlighted Tutorial step first.',
+    UNAVAILABLE:'No current legal play is available. Wait for the match to update.',
+    terms:{ CUSTOMER_SERVICE:'Customer Service', IT:'IT', OFFICE:'Office', MARKETING:'Marketing', PRODUCTION:'Production', NEUTRAL:'Neutral', IT_SERVICE:'IT Service', ERP:'ERP', STAFF:'Staff', LEAD:'Lead', EXECUTIVE:'Executive' }
+  },
   vfx: { archived: "ARCHIVED", catchUp: "{battles} battles · {resolved} resolved · {archived} archived · {saved} saved · {denied} negated · P1 REP {p1Rep} · P2 REP {p2Rep}" },
   meta: { title: "Office Card Game — v{version} Alpha Playtest" },
   accessibility: { skipToGame: "Skip to game content" },

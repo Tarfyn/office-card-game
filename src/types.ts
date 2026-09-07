@@ -833,7 +833,14 @@ export interface LegalResponseOption extends LegalAbilityOption {
   sourceType: "INCIDENT" | "IN_PLAY";
 }
 
+export interface HandCardEligibility {
+  allowed: boolean;
+  reasonCode?: "OPENING_HAND" | "MATCH_ENDED" | "PENDING_CHOICE" | "RESPONSE_WINDOW" | "OPPONENT_TURN" | "HAND_LIMIT" | "WRONG_PHASE" | "PLAY_DELAYED" | "CAPACITY" | "EMPLOYEE_SLOTS" | "SUPPORT_SLOTS" | "PROMOTION" | "ACTION_LIMIT" | "PLAY_CONDITION" | "NO_TARGET";
+  reasonParams?: { required?: number; available?: number; filter?: CardFilter; controller?: TargetController; excludeSource?: boolean };
+}
+
 export interface ClientLegalActions {
+  handEligibility?: Record<string, HandCardEligibility>;
   canMulligan: boolean;
   mulliganCardIds: string[];
   archiveExcessHandIds: string[];

@@ -1,4 +1,20 @@
 const deCatalog = {
+  consolidation: {"guestSaved": "Deck im Gastprofil dieses Browsers gespeichert.", "legacySave": "Älterer Speicherstand", "justNow": "Gerade eben", "ownedCeiling": "Besitzlimit: {current} von {limit} im Format erlaubten Exemplaren.", "reviewShred": "Schreddern prüfen", "shred": "Schreddern", "craft": "Herstellen", "needed": "{count} benötigt", "findScraps": "Schredder-Kandidaten finden · {count} Schredderreste fehlen", "collectionFloor": "Nach dem Schreddern: {after} spielbare Exemplare · mindestens {minimum}.", "mayShred": "Diese Karte darf auf 0 Exemplare sinken.", "keepDeck": "Behalte genug Karten für ein gültiges Deck.", "affectedDecks": "Nach dem Schreddern fehlt diese Karte in folgenden gespeicherten Decks:"},
+  eligibility: {
+    card:'Karte',
+    label:'Aktuell nicht spielbar', capacityBadge:'KAPAZITÄT', inspectHint:'Rechtsklick oder langes Drücken für Details',
+    OPENING_HAND:'Schließe zuerst die Starthand-Auswahl ab.', MATCH_ENDED:'Dieses Match ist beendet.',
+    PENDING_CHOICE:'Schließe die aktuelle Auswahl ab, bevor du eine weitere Karte spielst.', RESPONSE_WINDOW:'Reagiere oder passe die Priorität, bevor du eine weitere Karte spielst.',
+    OPPONENT_TURN:'Warte auf deine eigene Hauptphase.', HAND_LIMIT:'Archiviere zuerst {required} Handkarten.', WRONG_PHASE:'Spiele diese Karte in deiner Hauptphase.',
+    PLAY_DELAYED:'Diese Karte kann in diesem Zug nicht erneut gespielt werden.', CAPACITY:'Benötigt {required} Kapazität; {available} verfügbar.',
+    EMPLOYEE_SLOTS:'Kein freier Mitarbeiterplatz.', SUPPORT_SLOTS:'Kein freier Supportplatz.',
+    PROMOTION_ONE:'Benötigt 1 {requirement}.', PROMOTION:'Benötigt Beförderungswert {required} durch {requirement} als Material.',
+    ACTION_LIMIT:'Das Limit von {required} Aktionen in diesem Zug ist erreicht.', PLAY_CONDITION:'Die Spielbedingung im Regeltext dieser Karte ist nicht erfüllt.',
+    NO_TARGET:'Kein gültiges Ziel: {requirement}.', OPPONENT:'gegnerisch ·', SELF:'eigene Seite ·',
+    OBSERVER:'Dieser Tab ist schreibgeschützt. Übernimm die Kontrolle, um zu spielen.', BUSY:'Warte, bis die aktuelle Aktion abgeschlossen ist.', TUTORIAL:'Schließe zuerst den hervorgehobenen Tutorial-Schritt ab.',
+    UNAVAILABLE:'Aktuell wird keine gültige Spielaktion angeboten. Warte auf die Match-Aktualisierung.',
+    terms:{ CUSTOMER_SERVICE:'Kundenservice', IT:'IT', OFFICE:'Büro', MARKETING:'Marketing', PRODUCTION:'Produktion', NEUTRAL:'Neutral', IT_SERVICE:'IT Service', ERP:'ERP', STAFF:'Angestellte', LEAD:'Teamleitung', EXECUTIVE:'Führungskraft' }
+  },
   vfx: { archived: "ARCHIVIERT", catchUp: "{battles} Kämpfe · {resolved} aufgelöst · {archived} archiviert · {saved} gerettet · {denied} negiert · P1 REP {p1Rep} · P2 REP {p2Rep}" },
   meta: { title: "Office Card Game — v{version} Alpha-Playtest" },
   accessibility: { skipToGame: "Zum Spielinhalt springen" },

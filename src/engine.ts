@@ -14,6 +14,7 @@ import type {
   DeckFormat,
   DeckValidationResult,
   ClientLegalActions,
+  HandCardEligibility,
   LegalTargetChoice,
   Effect,
   GameEvent,
@@ -3022,6 +3023,57 @@ function chooseCombinations(ids: string[], count: number): string[][] {
 }
 
 export function getLegalActions(state: GameState, playerId: PlayerId): ClientLegalActions {
+  const legal = collectLegalActions(state, playerId);
+  const allowed = new Set([...legal.playableEmployees, ...legal.playableActions, ...legal.playableSystems, ...legal.settableIncidents].map(option => option.cardId));
+  legal.handEligibility = Object.fromEntries(state.players[playerId].hand.map(id => [id,
+    allowed.has(id) ? { allowed:true } : handPlayBlocker(state, playerId, id)]));
+  return legal;
+}
+
+/** Reasons use the same engine predicates and modified costs as legal move generation.
+ * Only the viewer's hand is projected; no target identities or hidden state are disclosed. */
+function handPlayBlocker(state: GameState, playerId: PlayerId, id: string): HandCardEligibility {
+  const blocked = (reasonCode: HandCardEligibility["reasonCode"], reasonParams?: HandCardEligibility["reasonParams"]): HandCardEligibility => ({ allowed:false, reasonCode, ...(reasonParams ? { reasonParams } : {}) });
+  const player = state.players[playerId];
+  if (state.status === "SETUP") return blocked("OPENING_HAND");
+  if (state.status !== "ACTIVE") return blocked("MATCH_ENDED");
+  if (state.pendingChoice || state.pendingDeckSelection || state.pendingTriggerTargetSelection || state.pendingHandSelection) return blocked("PENDING_CHOICE");
+  if (state.responseWindow) return blocked("RESPONSE_WINDOW");
+  if (state.activePlayerId !== playerId) return blocked("OPPONENT_TURN");
+  if (state.phase === "END" && player.hand.length > HAND_LIMIT) return blocked("HAND_LIMIT", { required:player.hand.length - HAND_LIMIT });
+  if (state.phase !== "MAIN") return blocked("WRONG_PHASE");
+  const card = state.cards[id];
+  const def = state.definitions[card.definitionId];
+  if (card.cannotPlayUntilTurnNumber !== null && card.cannotPlayUntilTurnNumber >= state.turnNumber) return blocked("PLAY_DELAYED");
+  const cost = getCardCost(state, playerId, id, def.cardType === "INCIDENT" ? "SET" : "PLAY").finalCost;
+  if (cost > player.availableCapacity) return blocked("CAPACITY", { required:cost, available:player.availableCapacity });
+  if (def.cardType === "EMPLOYEE") {
+    let promotionCanFreeSlot = false;
+    if (def.promotion) {
+      const required = effectivePromotionRequired(state, playerId, def);
+      const materials = player.employeeField.filter((fieldId): fieldId is string => Boolean(fieldId)).filter(fieldId => cardMatchesFilter(state, fieldId, { cardType:"EMPLOYEE", ...def.promotion!.materials }));
+      promotionCanFreeSlot = choosePromotionMaterialSets(state, materials, required).length > 0;
+      if (!promotionCanFreeSlot) return blocked("PROMOTION", { required, filter:def.promotion.materials });
+    }
+    if (!player.employeeField.includes(null) && !promotionCanFreeSlot) return blocked("EMPLOYEE_SLOTS");
+  }
+  if ((def.cardType === "SYSTEM" || def.cardType === "INCIDENT") && !player.supportField.includes(null)) return blocked("SUPPORT_SLOTS");
+  if (def.cardType === "ACTION") {
+    const limit = getActionPlayLimit(state, playerId);
+    if (limit !== null && player.turnCounters.actionsPlayedTotal >= limit) return blocked("ACTION_LIMIT", { required:limit });
+    const ability = def.abilities?.find(item => item.type === "ACTIVATED");
+    if (ability?.type === "ACTIVATED") {
+      if (!evaluateAllConditions(state, playerId, ability.conditions, { sourceId:id })) return blocked("PLAY_CONDITION");
+      if (!responseTargetsPotentiallyLegal(state, playerId, ability.targets)) {
+        const target = ability.targets?.find(selector => selectorLegalIds(state, playerId, selector).length < selector.min);
+        return blocked("NO_TARGET", target ? { controller:target.controller, filter:{ cardType:target.cardType, department:target.department, team:target.team, rank:target.rank, tag:target.tag }, excludeSource:target.excludeSource } : undefined);
+      }
+    }
+  }
+  return blocked("PLAY_CONDITION");
+}
+
+function collectLegalActions(state: GameState, playerId: PlayerId): ClientLegalActions {
   const empty: ClientLegalActions = {
     canMulligan: false,
     mulliganCardIds: [],

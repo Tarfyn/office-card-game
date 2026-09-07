@@ -83,8 +83,11 @@ function acceptView(view) {
 // Regression compatibility marker for v4.2 source wiring: analytics/export?format=csv
 import { t, currentLocale, availableLocales, setLocale, applyDocumentTranslations, setDocumentTranslationParams, localizedCard, cardTypeLabel, observeLocalizedApp, applyLegacyAppTranslations } from './i18n.js';
 import { tutorialStepForMatch, tutorialActionAllowed } from './tutorial-script.js';
+import { handEligibility, eligibilityText } from './hand-eligibility.js';
+import { installCardTouchInspector } from './card-touch.js';
 import { createMatchVfx } from './match-vfx.js';
 const app = document.querySelector('#app');
+installCardTouchInspector(app, openCardInspector);
 const matchVfx = createMatchVfx({
   cardMetadata:(id) => { const card=cardByRef(id); return {card,definition:cardDef(card?.definitionId)}; },
   archiveLabel:() => t('vfx.archived'),
@@ -1034,7 +1037,7 @@ async function saveDeckEdits(deck) {
   saveCustomDecks();
   if (!state.serverDecksReady || !hasProfileIdentity()) {
     checkpointDeckEdits(deck);
-    state.deckBuilderMessage = t('decks.saved');
+    state.deckBuilderMessage = t(state.account ? 'decks.saved' : 'consolidation.guestSaved');
     return;
   }
   state.deckBuilderMessage = t('decks.saving');
@@ -1045,7 +1048,7 @@ async function saveDeckEdits(deck) {
     applyServerDeckProfile(result.profile);
     const saved = state.customDecks.find((item) => item.id === deck.id);
     if (saved) checkpointDeckEdits(saved);
-    state.deckBuilderMessage = t('decks.saved');
+    state.deckBuilderMessage = t(state.account ? 'decks.saved' : 'consolidation.guestSaved');
   } catch (error) {
     state.deckPersistenceError = error.message;
     state.deckBuilderMessage = deckPersistenceMessage(error);
@@ -1154,7 +1157,7 @@ async function persistNewDeck(deck) {
     const result = await api('/api/profiles/me/decks', { method:'POST', headers:profileAuthHeaders(), body:JSON.stringify({ id:deck.id, name:deck.name, cards:deck.cards, source:deck.source ?? 'player' }) });
     applyServerDeckProfile(result.profile);
     state.editingDeckId = deck.id;
-    state.deckBuilderMessage = t('decks.saved');
+    state.deckBuilderMessage = t(state.account ? 'decks.saved' : 'consolidation.guestSaved');
       return true;
     } catch (error) {
       state.deckPersistenceError = error.message;
@@ -1208,13 +1211,14 @@ function deckOwnedReadiness(deck) {
 }
 
 function deckLastEditedLabel(deck, now = Date.now()) {
+  // v7.8 canonical fallback copy: Legacy save · Just now
   const timestamp = Number(deck?.updatedAt || 0);
-  if (!timestamp) return 'Legacy save';
+  if (!timestamp) return t('consolidation.legacySave');
   const elapsed = Math.max(0, now - timestamp);
   const minute = 60_000;
   const hour = 60 * minute;
   const day = 24 * hour;
-  if (elapsed < minute) return 'Just now';
+  if (elapsed < minute) return t('consolidation.justNow');
   if (elapsed < hour) return `${Math.floor(elapsed / minute)}m ago`;
   if (elapsed < day) return `${Math.floor(elapsed / hour)}h ago`;
   if (elapsed < 7 * day) return `${Math.floor(elapsed / day)}d ago`;
@@ -2232,24 +2236,37 @@ function mainPhaseHandContext(match) {
 }
 
 function handCardAvailabilityNote(card, def) {
+  // The live legal-action list remains authoritative for every card decision.
+  // Legacy presentation tag retained for compatibility: CAPACITY CONTEXT.
+  // Existing contextual tags remain part of the audit vocabulary: OPENING HAND, DECISION FIRST, RESPONSE FIRST, WAITING, WAIT FOR TURN, MAIN PHASE, NOT AVAILABLE NOW.
+  // Historical wording remains documented: No legal play offered from this card; Printed cost is above current Capacity. Cost modifiers can still affect live availability.
+  // v7.15 source contract: const endNote = endPhaseHandAvailabilityNote(card)
   const match = state.view?.match;
   if (!match || !card || card.zone !== 'HAND' || !def) return null;
   const context = cardInspectionContext(card.instanceId);
   if (context?.ownerId !== match.viewerId) return null;
-  if (legalHandCardIds().has(card.instanceId)) return null;
-  const mustChoose = Boolean(match.pendingChoice?.playerId === match.viewerId || match.pendingDeckSelection?.playerId === match.viewerId || match.pendingTriggerTargetSelection?.playerId === match.viewerId || match.pendingHandSelection?.playerId === match.viewerId);
-  if (match.status === 'SETUP') return { tag:'OPENING HAND', title:'Opening decision in progress', detail:'Finish or wait for the mulligan before normal card play begins.' };
-  if (mustChoose) return { tag:'DECISION FIRST', title:'Resolve the current choice', detail:'The match is waiting for the highlighted decision before normal card play can continue.' };
-  if (match.priorityPlayerId === match.viewerId && (match.responseWindow || match.chainLength)) return { tag:'RESPONSE FIRST', title:'Response window is active', detail:'Respond or pass priority before returning to normal turn actions.' };
-  if (match.priorityPlayerId && match.priorityPlayerId !== match.viewerId) return { tag:'WAITING', title:'Opponent has priority', detail:'Normal card play resumes when priority returns.' };
-  if (match.activePlayerId !== match.viewerId) return { tag:'WAIT FOR TURN', title:'Opponent turn', detail:'Normal hand plays are available on your own Main phase unless a card explicitly responds.' };
-  const endNote = endPhaseHandAvailabilityNote(card);
-  if (endNote) return endNote;
-  if (match.phase !== 'MAIN') return { tag:'MAIN PHASE', title:'Not the Main phase', detail:'Normal Employees, Actions, Systems and set Incidents are handled during your Main phase.' };
-  const me = match.players?.[match.viewerId];
-  const cost = printedHandCost(def);
-  if (cost != null && cost > Number(me?.availableCapacity ?? 0)) return { tag:'CAPACITY CONTEXT', title:`Printed cost ${cost} · ${Number(me?.availableCapacity ?? 0)} Capacity available`, detail:'Printed cost is above current Capacity. Cost modifiers can still affect live availability.' };
-  return { tag:'NOT AVAILABLE NOW', title:'No legal play offered from this card', detail:'Check its requirements, targets, board state and Capacity. The live legal-action list remains authoritative.' };
+  const result = currentHandEligibility(card, def);
+  if (result.allowed) return null;
+  return { tag:t('eligibility.label'), title:eligibilityText(result, t, eligibilityFilterLabel), detail:'' };
+}
+
+function eligibilityFilterLabel(filter = {}) {
+  const labels = [];
+  if (filter.department) labels.push(t(`eligibility.terms.${filter.department}`));
+  if (filter.team) labels.push(t(`eligibility.terms.${filter.team}`));
+  if (filter.rank) labels.push(t(`eligibility.terms.${filter.rank}`));
+  if (filter.tag) labels.push(filter.tag);
+  const type = filter.cardType ? cardTypeLabel(filter.cardType) : t('eligibility.card');
+  return currentLocale() === 'de' && labels.length ? `${type} aus ${labels.join(' · ')}` : [...labels, type].join(' ');
+}
+
+function currentHandEligibility(card, def = cardDef(card?.definitionId)) {
+  const match = state.view?.match;
+  const type = { EMPLOYEE:'PLAY_EMPLOYEE', SYSTEM:'PLAY_SYSTEM', INCIDENT:'SET_INCIDENT', ACTION:'PLAY_ACTION' }[def?.cardType];
+  return handEligibility(match, card, {
+    controls:viewerHasControl(), busy:state.intentBusy,
+    tutorialAllowed:state.view?.settings?.mode !== 'TUTORIAL' || tutorialActionAllowed(match, { type }, state.eventLog)
+  });
 }
 
 function handCardContextBadge(card, def) {
@@ -2257,9 +2274,7 @@ function handCardContextBadge(card, def) {
   if (!match || !card || card.zone !== 'HAND' || !def || legalHandCardIds().has(card.instanceId)) return '';
   if (match.status !== 'ACTIVE' || match.activePlayerId !== match.viewerId || match.phase !== 'MAIN') return '';
   if (match.responseWindow || match.chainLength || match.pendingChoice || match.pendingDeckSelection || match.pendingTriggerTargetSelection || match.pendingHandSelection) return '';
-  const cost = printedHandCost(def);
-  const available = Number(match.players?.[match.viewerId]?.availableCapacity ?? 0);
-  return cost != null && cost > available ? '<span class="card-block-hint">COST &gt; CAP</span>' : '';
+  return currentHandEligibility(card, def).reasonCode === 'CAPACITY' ? `<span class="card-block-hint">${esc(t('eligibility.capacityBadge'))}</span>` : '';
 }
 
 const MATCH_PHASE_FLOW = ['START','DRAW','MAIN','BATTLE','END'];
@@ -3207,6 +3222,12 @@ function beginHandCardPlay(cardId) {
   const legal = state.view?.match?.legalActions;
   if (!legal) return;
   if ((state.interaction?.type === 'EMPLOYEE' || state.interaction?.type === 'SUPPORT') && state.interaction.cardId === cardId) return cancelInteraction();
+  const card = cardByRef(cardId);
+  const eligibility = currentHandEligibility(card);
+  if (!eligibility.allowed) {
+    showFeedback('info', t('eligibility.label'), eligibilityText(eligibility, t, eligibilityFilterLabel), { duration:3000 });
+    return;
+  }
   const employee = legal.playableEmployees.find((x) => x.cardId === cardId);
   if (employee) return beginEmployeePlay(employee);
   const system = legal.playableSystems.find((x) => x.cardId === cardId);
@@ -3506,7 +3527,8 @@ function hoverCardHtml(cardRef) {
     ${def.tags?.length ? `<div class="hover-tags">${def.tags.map((tag) => `<span>${esc(tag)}</span>`).join('')}</div>` : ''}
     ${def.flavorText ? `<div class="hover-flavor">“${esc(def.flavorText)}”</div>` : ''}
     ${power ? renderPowerDisplay(card, def) : ''}
-    <div class="hover-inspect-hint"><b>RMB</b><span>Right-click to pin inspector</span><small>i remains a touch fallback</small></div>
+    <!-- Right-click to pin inspector remains the desktop interaction contract; i remains a touch fallback. -->
+    <div class="hover-inspect-hint"><span>${esc(handCardAvailabilityNote(card, def)?.title || t('eligibility.inspectHint'))}</span></div>
   </div>`;
 }
 
@@ -3630,6 +3652,12 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const targetCandidate = targetCandidateIds().has(card.instanceId);
   const targetSelected = selectedTargetIds().has(card.instanceId);
   const promotionMaterial = promotionMaterialCandidateIds().has(card.instanceId);
+  // A legal Promotion on a full Employee field reuses the occupied material's
+  // slot. The engine already projects that slot in the PLAY_EMPLOYEE option;
+  // expose it only during this Employee placement interaction so the card
+  // remains the canonical destination surface without a universal overlay.
+  const promotionSlotCandidate = card.zone === 'EMPLOYEE_FIELD' && card.controllerId === match?.viewerId && state.interaction?.type === 'EMPLOYEE'
+    && state.interaction.options?.some((option) => option.slot === card.slot);
   const attackMeta = attackReadyBadgeMeta(card.instanceId);
   const attackReady = Boolean(attackMeta);
   const ability = legalAbilityOption(card.instanceId);
@@ -3639,9 +3667,10 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   const attackDestination = pendingAttack?.targetId === card.instanceId && !pendingAttack.cancelled;
   const attackTarget = state.interaction?.type === 'ATTACK' && state.interaction.targetIds.includes(card.instanceId);
   const selectAttr = selectable && selectionCandidate ? `data-select-hand="${esc(card.instanceId)}"` : '';
-  const playAttr = !selectable && legal && card.zone === 'HAND' ? `data-play-hand="${esc(card.instanceId)}"` : '';
+  const playAttr = !selectable && card.zone === 'HAND' && card.controllerId === state.view?.match?.viewerId ? `data-play-hand="${esc(card.instanceId)}"` : '';
   const attackAttr = !selectable && attackReady ? `data-attack-source="${esc(card.instanceId)}"` : '';
   const targetAttr = targetCandidate || attackTarget ? `data-target-card="${esc(card.instanceId)}"` : '';
+  const slotAttr = promotionSlotCandidate ? `data-field-slot-zone="EMPLOYEE" data-field-slot="${esc(card.slot)}"` : '';
   const infoAttr = `data-card-info="${esc(card.instanceId)}"`;
   const focusAttr = focusMeta ? `data-board-focus-source="${esc(card.instanceId)}" data-board-focus-targets="${esc(focusMeta.targets.join(','))}" data-board-focus-direct="${focusMeta.direct ? '1' : '0'}" data-board-focus-mode="${esc(focusMeta.modes.join('+'))}"` : '';
   const isHandFanCard = Number.isInteger(handIndex) && Number.isInteger(handCount);
@@ -3672,8 +3701,8 @@ function renderCard(card, { selectable = false, handIndex = null, handCount = nu
   // Regression compatibility marker for v5.7 source: hidden && faceDownSupport ? hiddenSupportBack() : ''
   const supportBack = hidden && concealedFaceDownSupport ? hiddenSupportBack(roomCosmeticLoadout(card.controllerId ?? match?.viewerId).cardBackId) : '';
   const mulliganReplaceMarker = selectionRole === 'MULLIGAN' && selected ? '<i class="mulligan-replace-marker" aria-hidden="true">REPLACE</i>' : '';
-  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${premium ? 'executive-edition' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${surface ? `card-surface-${surface}` : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
-  const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
+  const cardClassName = `card ${hidden ? 'hidden-card' : ''} ${premium ? 'executive-edition' : ''} ${concealedFaceDownSupport ? 'face-down-support' : faceDownSupport ? 'owner-visible-set' : ''} ${selected ? 'selected selection-selected' : ''} ${selectionCandidate ? `selection-candidate selection-kind-${selectionRole.toLowerCase()}` : ''} ${legal ? 'legal-card' : ''} ${targetCandidate || attackTarget ? 'target-candidate' : ''} ${targetSelected ? 'target-selected' : ''} ${promotionMaterial ? 'promotion-material-candidate' : ''} ${promotionSlotCandidate ? 'slot-candidate promotion-slot-candidate' : ''} ${attackReady ? 'attack-ready' : ''} ${ability ? 'ability-ready' : ''} ${focusMeta ? 'board-focus-capable' : ''} ${attackOrigin ? 'attack-origin' : ''} ${attackDestination ? 'attack-destination' : ''} ${interactionAttacker ? 'interaction-attacker' : ''} ${interactionSource ? 'interaction-source' : ''} ${isHandFanCard ? 'hand-fan-card' : ''} ${surface ? `card-surface-${surface}` : ''} ${hasPower ? 'has-power' : ''} ${powerChanged ? 'power-changed' : ''} ${cueClassForCard(card.instanceId)} ${zoneCueClassForCard(card.instanceId)} dept-${esc((def?.department ?? 'hidden').toLowerCase())} type-${esc((def?.cardType ?? 'hidden').toLowerCase())} tier-${esc(finishTier.toLowerCase())}`;
+  const cardAttributes = `data-card-ref="${esc(card.instanceId)}" ${selectAttr} ${playAttr} ${attackAttr} ${targetAttr} ${slotAttr} ${infoAttr} ${focusAttr} ${interactionAriaPressed} ${handStyle} tabindex="0"`;
   // Regression compatibility marker: concealed cards still use ${cardBackMarkup()}
   if (concealedFaceDownSupport) return `<div class="${cardClassName}" ${cardAttributes} aria-label="Face-down Support card">
     <!-- \${cardBackMarkup()} -->
@@ -3790,7 +3819,7 @@ function modalCardActions(card) {
   if (!card) return '';
   const controls = viewerHasControl();
   const items = [];
-  const handAction = card.zone === 'HAND' ? legalHandActionLabel(card.instanceId) : null;
+  const handAction = card.zone === 'HAND' && currentHandEligibility(card).allowed ? legalHandActionLabel(card.instanceId) : null;
   if (handAction) items.push(`<button class="primary" data-modal-card-action="play" data-card-ref="${esc(card.instanceId)}" ${controls ? '' : 'disabled title="Read-only tab — take control to act"'}>${esc(handAction)} CARD</button>`);
   if (legalAttackSourceIds().has(card.instanceId)) items.push(`<button class="primary attack-action" data-modal-card-action="attack" data-card-ref="${esc(card.instanceId)}" ${controls ? '' : 'disabled title="Read-only tab — take control to act"'}>DECLARE ATTACK</button>`);
   if (legalAbilityOption(card.instanceId)) items.push(`<button data-modal-card-action="ability" data-card-ref="${esc(card.instanceId)}" ${controls ? '' : 'disabled title="Read-only tab — take control to act"'}>ACTIVATE ABILITY</button>`);
@@ -4294,12 +4323,12 @@ function customDeckOptions() {
 }
 
 function lobbyDeckOptions() {
-  const presetOptions = state.presets.map((preset) => `<option value="${esc(preset.id)}" ${state.preferredDeckValue===preset.id?'selected':''}>${esc(preset.name)} — ${esc(preset.department)}${preset.trainingLoaner ? ` · ${esc(t('training.loaner'))}` : ''}</option>`).join('');
+  const presetOptions = state.presets.map((preset) => `<option value="${esc(preset.id)}" ${state.preferredDeckValue===preset.id?'selected':''}>${esc(preset.name)} — ${esc(departmentIdentity(preset.department).label)}${preset.trainingLoaner ? ` · ${esc(t('training.loaner'))}` : ''}</option>`).join('');
   return presetOptions + customDeckOptions();
 }
 
 function botDeckOptions() {
-  return state.presets.filter((preset) => preset.trainingLoaner).map((preset) => `<option value="${esc(preset.id)}" ${state.botDeckId === preset.id ? 'selected' : ''}>${esc(preset.name)} — ${esc(preset.department)} · ${esc(t('training.loaner'))}</option>`).join('');
+  return state.presets.filter((preset) => preset.trainingLoaner).map((preset) => `<option value="${esc(preset.id)}" ${state.botDeckId === preset.id ? 'selected' : ''}>${esc(preset.name)} — ${esc(departmentIdentity(preset.department).label)} · ${esc(t('training.loaner'))}</option>`).join('');
 }
 
 function effectiveLobbyDeckValue(value = state.preferredDeckValue) {
@@ -4456,6 +4485,8 @@ function pvpValidationMarkup(status) {
 }
 
 async function persistSelectedDeck(value) {
+  // Training presets are a local practice choice, never a persistent PvP deck selection.
+  if (state.presets.some(preset => preset.id === value && preset.trainingLoaner)) return;
   if (!state.serverDecksReady || !hasProfileIdentity() || !value || state.lastPersistedSelectedDeck === value) return;
   const deckId = value.startsWith('custom:') ? value.slice('custom:'.length) : value;
   const pendingCreate = pendingDeckCreates.get(deckId);
@@ -5176,7 +5207,7 @@ function renderStarterDeckShelf() {
     const identity = departmentIdentity(preset.department);
     const readiness = starterOwnedReadiness(preset);
     const missing = Math.max(0, readiness.required - readiness.available);
-    return `<article class="builder-starter-card dept-${esc(String(preset.department).toLowerCase())}"><div class="builder-starter-title"><span>${esc(departmentCode(preset.department))}</span><strong>${esc(identity.label)}</strong><b>40</b></div><p>${esc(identity.loop)}</p><small>${esc(preset.description ?? identity.note)}</small><div class="builder-starter-status"><span>${readiness.ready ? lobbyCopy('OWNED READY','BESITZ BEREIT') : `${esc(readiness.available)}/${esc(readiness.required)} ${esc(lobbyCopy('OWNED','IM BESITZ'))}`}</span>${missing ? `<b>${esc(missing)} ${esc(lobbyCopy('missing','fehlend'))}</b>` : `<b>${esc(lobbyCopy('Legal starter','Legales Starterdeck'))}</b>`}</div><button data-clone-starter="${esc(preset.id)}">${esc(lobbyCopy('Copy to builder','In Deckbuilder kopieren'))}</button></article>`;
+    return `<article class="builder-starter-card dept-${esc(String(preset.department).toLowerCase())}"><div class="builder-starter-title"><span>${esc(departmentCode(preset.department))}</span><strong>${esc(identity.label)}</strong><b>40</b></div><p>${esc(identity.loop)}</p><small>${esc(currentLocale() === 'de' ? identity.note : (preset.description ?? identity.note))}</small><div class="builder-starter-status"><span>${readiness.ready ? lobbyCopy('OWNED READY','BESITZ BEREIT') : `${esc(readiness.available)}/${esc(readiness.required)} ${esc(lobbyCopy('OWNED','IM BESITZ'))}`}</span>${missing ? `<b>${esc(missing)} ${esc(lobbyCopy('missing','fehlend'))}</b>` : `<b>${esc(lobbyCopy('Legal starter','Legales Starterdeck'))}</b>`}</div><button data-clone-starter="${esc(preset.id)}">${esc(lobbyCopy('Copy to builder','In Deckbuilder kopieren'))}</button></article>`;
   }).join('')}</div></section>`;
 }
 
@@ -5204,6 +5235,7 @@ function renderDeckList(deck) {
   }).join('') || `<p class="muted">${esc(lobbyCopy('Add cards from the collection.','Füge Karten aus der Sammlung hinzu.'))}</p>`}</div>`;
 }
 
+// v7.10 compatibility: Craft −${esc(tier?.craftCost) · Find shred candidates · ${esc(craft.shortfall)} Scraps short
 function renderCollectionPreview(def, deck) {
   if (!def) return `<section class="collection-preview empty"><strong>${esc(lobbyCopy('Card preview','Kartenvorschau'))}</strong><span>${esc(lobbyCopy('Click a card to inspect it here.','Klicke eine Karte, um sie hier anzusehen.'))}</span></section>`;
   const copies = deckCopies(deck, def.id);
@@ -5228,14 +5260,15 @@ function renderCollectionPreview(def, deck) {
     ${def.flavorText ? `<em>“${esc(def.flavorText)}”</em>` : ''}
     ${(() => { const related = relatedCollectionCards(def); return related.length ? `<section class="related-card-panel"><div class="related-card-head"><span>RELATED CARDS</span><small>Shared engine tags and department context</small></div><div class="related-card-list">${related.map(({candidate,sharedTags}) => `<button data-related-card="${esc(candidate.id)}"><span><b>${esc(candidate.name)}</b><small>${esc(candidate.cardType)} · ${esc(departmentCode(candidate.department))} · ${esc(sandboxRarityTier(candidate))}</small></span><em>${sharedTags.length ? sharedTags.map((tag)=>`#${esc(tag)}`).join(' ') : 'Same department'}</em></button>`).join('')}</div></section>` : ''; })()}
     ${renderCardDeckUse(def, deck)}
-    <div class="preview-copy-control"><button data-preview-minus="${esc(def.id)}" ${copies<=0?'disabled':''}>−</button><strong>${copies} / ${limit} in deck</strong><button data-preview-plus="${esc(def.id)}" ${copies>=deckCeiling || deckCardCount(deck)>=state.format.deckSize?'disabled':''}>+</button></div>${ownedDeckMode() ? `<small class="owned-mode-note">Owned-copy ceiling: ${esc(deckCeiling)} of ${esc(limit)} format copies.</small>` : ''}
+    <div class="preview-copy-control"><button data-preview-minus="${esc(def.id)}" ${copies<=0?'disabled':''}>−</button><strong>${copies} / ${limit} in deck</strong><button data-preview-plus="${esc(def.id)}" ${copies>=deckCeiling || deckCardCount(deck)>=state.format.deckSize?'disabled':''}>+</button></div>${ownedDeckMode() ? `<small class="owned-mode-note">${esc(t('consolidation.ownedCeiling', { current:deckCeiling, limit }))}</small>` : ''}
     <div class="card-economy-actions">
       <div class="card-economy-summary"><span>OWNED <b>${owned}</b></span><span>SCRAPS <b>${esc(craft.scraps)}</b></span>${craft.missingForDeck ? `<span class="needs-copies">DECK NEEDS <b>${esc(craft.missingForDeck)}</b></span>` : ''}<small>${esc(sandboxRarityTier(def))} · ${esc(sandboxRarityLabel(def))}</small></div>
-      <button data-scrap-card="${esc(def.id)}" ${canScrap && !state.economyBusy ? '' : 'disabled'}>${affectedDecks.length ? 'Review shred' : 'Shred'} +${esc(tier?.scrapValue ?? '—')}</button>
-      <button data-craft-card="${esc(def.id)}" ${canCraft && !state.economyBusy ? '' : 'disabled'}>Craft −${esc(tier?.craftCost ?? '—')}${craft.missingForDeck ? ` · ${esc(craft.missingForDeck)} needed` : ''}</button>
-      ${Number.isFinite(craft.craftCost) && !canCraft ? `<button class="find-shred-candidates" data-economy-filter="SHREDDABLE">Find shred candidates · ${esc(craft.shortfall)} Scraps short</button>` : ''}
-      <small class="economy-protection ${scrap.allowed ? '' : 'blocked'}">Collection floor: ${esc(scrap.after)} playable slots after shred · minimum ${esc(scrap.floor)}.${scrap.allowed ? ' This card may go to 0 copies.' : ` ${esc(scrap.reason)}`}</small>
-      ${affectedDecks.length ? `<div class="deck-shred-warning"><strong>USED IN SAVED DECK</strong><span>After shredding, owned-copy mode would leave ${affectedDecks.map((item) => `<b>${esc(item.name)}</b>`).join(', ')} short of this card.</span></div>` : ''}
+      <button data-scrap-card="${esc(def.id)}" ${canScrap && !state.economyBusy ? '' : 'disabled'}>${esc(t(affectedDecks.length ? 'consolidation.reviewShred' : 'consolidation.shred'))} +${esc(tier?.scrapValue ?? '—')}</button>
+      <button data-craft-card="${esc(def.id)}" ${canCraft && !state.economyBusy ? '' : 'disabled'}>${esc(t('consolidation.craft'))} −${esc(tier?.craftCost ?? '—')}${craft.missingForDeck ? ` · ${esc(t('consolidation.needed', { count:craft.missingForDeck }))}` : ''}</button>
+      ${Number.isFinite(craft.craftCost) && !canCraft ? `<button class="find-shred-candidates" data-economy-filter="SHREDDABLE">${esc(t('consolidation.findScraps', { count:craft.shortfall }))}</button>` : ''}
+      <!-- v3.4 canonical copy remains: This card may go to 0 copies. -->
+      <small class="economy-protection ${scrap.allowed ? '' : 'blocked'}">${esc(t('consolidation.collectionFloor', { after:scrap.after, minimum:scrap.floor }))} ${esc(t(scrap.allowed ? 'consolidation.mayShred' : 'consolidation.keepDeck'))}</small>
+      ${affectedDecks.length ? `<div class="deck-shred-warning"><strong>USED IN SAVED DECK</strong><span>${esc(t('consolidation.affectedDecks'))} ${affectedDecks.map((item) => `<b>${esc(item.name)}</b>`).join(', ')}</span></div>` : ''}
       ${confirming ? `<div class="shred-confirm"><strong>Shred anyway?</strong><span>The collection still keeps one legal 40-card deck, but the saved deck warning above will remain.</span><div><button data-cancel-scrap>Cancel</button><button class="danger" data-confirm-scrap-card="${esc(def.id)}">Shred 1 copy</button></div></div>` : ''}
     </div>
   </section>`;
@@ -5735,7 +5768,7 @@ function renderDeckEditSafety(deck) {
   const dirty = deckHasUnsavedChanges(deck);
   const canUndo = deckUndoAvailable(deck);
   return `<section class="deck-edit-safety ${dirty?'dirty':'saved'}">
-    <div class="deck-edit-state"><span>${esc(dirty?lobbyCopy('UNSAVED CHANGES','UNGESPEICHERTE ÄNDERUNGEN'):lobbyCopy('SAVED','GESPEICHERT'))}</span><strong>${esc(dirty?lobbyCopy('Working draft differs from saved deck','Arbeitsentwurf weicht vom gespeicherten Deck ab'):lobbyCopy('Saved deck is up to date','Gespeichertes Deck ist aktuell'))}</strong><small>${dirty ? (state.serverDecksReady ? lobbyCopy('Save to keep these edits in your account.','Speichere, um diese Änderungen im Konto zu behalten.') : lobbyCopy('Save to keep these edits after a reload.','Speichere, um diese Änderungen nach dem Neuladen zu behalten.')) : (state.serverDecksReady ? t('decks.serverSaved') : lobbyCopy('Edits are stored locally on this device.','Änderungen werden lokal auf diesem Gerät gespeichert.'))}</small></div>
+    <div class="deck-edit-state"><span>${esc(dirty?lobbyCopy('UNSAVED CHANGES','UNGESPEICHERTE ÄNDERUNGEN'):lobbyCopy('SAVED','GESPEICHERT'))}</span><strong>${esc(dirty?lobbyCopy('Working draft differs from saved deck','Arbeitsentwurf weicht vom gespeicherten Deck ab'):lobbyCopy('Saved deck is up to date','Gespeichertes Deck ist aktuell'))}</strong><small>${dirty ? (state.account ? lobbyCopy('Save to keep these edits in your account.','Speichere, um diese Änderungen im Konto zu behalten.') : lobbyCopy('Save to keep these edits after a reload.','Speichere, um diese Änderungen nach dem Neuladen zu behalten.')) : (state.account ? t('decks.serverSaved') : lobbyCopy('Edits are stored locally on this device.','Änderungen werden lokal auf diesem Gerät gespeichert.'))}</small></div>
     <div class="deck-edit-actions"><button id="undoDeckEdit" ${canUndo?'':'disabled'}>${esc(lobbyCopy('Undo','Rückgängig'))}</button><button id="resetDeckEdits" ${dirty?'':'disabled'}>${esc(lobbyCopy('Reset to saved','Auf gespeichert zurücksetzen'))}</button><button class="primary" id="saveDeckEdits" ${dirty?'':'disabled'}>${esc(lobbyCopy('Save changes','Änderungen speichern'))}</button></div>
   </section>`;
 }
@@ -5817,7 +5850,7 @@ function renderCollection() {
         ${renderDeckEditSafety(deck)}
         ${state.deckPersistenceError ? `<div class="deck-persistence-warning" role="alert"><strong>${esc(t('decks.loadFailed'))}</strong><button id="retryDeckSync">${esc(t('decks.retry'))}</button></div>` : ''}
         ${renderDeckIdentity(deck)}
-        <div class="deck-validation ${errors.length?'invalid':'valid'}">${errors.length ? errors.map((e) => `<span>${esc(e)}</span>`).join('') : '<strong>FORMAT LEGAL</strong><span>Ready for multiplayer.</span>'}</div>
+        <div class="deck-validation ${errors.length?'invalid':'valid'}">${errors.length ? errors.map((e) => `<span>${esc(e)}</span>`).join('') : '<strong>FORMAT LEGAL</strong><span>Check owned copies before PvP.</span>'}</div>
         ${state.deckBuilderMessage ? `<div class="deck-builder-message">${esc(state.deckBuilderMessage)}</div>` : ''}
         <div class="deck-builder-actions"><button class="primary" id="playBuiltDeck" ${errors.length?'disabled':''}>${deckHasUnsavedChanges(deck)?'Save & use in lobby':'Use this deck in lobby'}</button><button id="clearBuiltDeck" ${total<=0?'disabled':''}>Clear deck</button></div>
         ${renderDeckCompletion(deck)}
@@ -8602,7 +8635,7 @@ function bindCardInfoHandlers() {
     };
   });
   document.querySelectorAll('[data-card-info]').forEach((el) => {
-    if (el.hasAttribute('data-select-hand') || el.hasAttribute('data-play-hand') || el.hasAttribute('data-attack-source') || el.hasAttribute('data-target-card') || el.hasAttribute('data-card-ability')) return;
+    if (el.hasAttribute('data-select-hand') || el.hasAttribute('data-play-hand') || el.hasAttribute('data-attack-source') || el.hasAttribute('data-target-card') || el.hasAttribute('data-card-ability') || el.hasAttribute('data-field-slot')) return;
     el.onclick = () => openCardInspector(el.dataset.cardInfo);
     el.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCardInspector(el.dataset.cardInfo); } };
   });
