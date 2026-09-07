@@ -37,7 +37,8 @@ export async function verifyHeroPresentation(page,{reduced=false}={}) {
   const lethal=await page.evaluate(()=>({static:document.querySelector('.signature-lethal').classList.contains('signature-static'),particles:document.querySelectorAll('.signature-paper').length,proxies:document.querySelectorAll('.presentation-proxy').length}));
   assert.equal(lethal.static,reduced);assert.ok(lethal.particles<=24);assert.ok(lethal.proxies<=4);
   await page.waitForFunction(()=>!heroVfx.busy);
-  assert.equal(await page.locator('.signature-lethal').count(),0,'result transition must not retain the Hero overlay');
+  assert.equal(await page.locator('.signature-lethal').count(),1,'finite Hero residue outlives critical result completion');
+  await page.waitForFunction(()=>!document.querySelector('.signature-lethal'),{},{timeout:2000});
   await page.evaluate(()=>{heroVfx.enqueue(lethalEvents,{roomId:'hero-browser',match:heroMatch,present:true});heroVfx.sync(heroMatch);});
   assert.equal(await page.evaluate(()=>heroSeen.filter(x=>x==='lethal').length),1);
   await page.evaluate(()=>heroVfx.reset());

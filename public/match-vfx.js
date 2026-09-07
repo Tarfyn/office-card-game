@@ -19,6 +19,13 @@ export function combatOutcomeDwell(entry, reducedMotion=false) {
     ? VFX_TIMING.drawOutcomeDwell : VFX_TIMING.combatOutcomeDwell;
 }
 
+// Total visible lifetime; never charged to presentationSteps or result gating.
+export function combatOutcomePersistence(entry, reducedMotion=false) {
+  if(entry.payload.lethal) return combatOutcomeDwell(entry,reducedMotion);
+  return entry.type==='direct' ? VFX_TIMING.repOutcomeResidual : !entry.payload.winnerId && entry.payload.destroyedIds?.length===2
+    ? VFX_TIMING.drawOutcomeResidual : VFX_TIMING.combatOutcomeResidual;
+}
+
 export function feedbackForEvent(event, ownerOf = () => null) {
   const data = event.data ?? {};
   const source = field(event.cardInstanceId);
@@ -152,9 +159,10 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     if(!entry.combatHtml || entry.epoch!==geometryEpoch || entry.outcomeShown) return;
     entry.outcomeShown=true;
     clearCombatOutcome();
-    onCombat({key:entry.key,html:entry.combatHtml});
-    const lease={key:entry.key,timer:null};combatOutcome=lease;
-    lease.timer=setTimeout(()=>{if(combatOutcome===lease) clearCombatOutcome();},combatOutcomeDwell(entry,media.matches));
+    const lifetime=combatOutcomePersistence(entry,media.matches);
+    onCombat({key:entry.key,html:entry.combatHtml,lifetime});
+    const lease={key:entry.key,timer:null,criticalUntil:Date.now()+combatOutcomeDwell(entry,media.matches)};combatOutcome=lease;
+    lease.timer=setTimeout(()=>{if(combatOutcome===lease) clearCombatOutcome();},lifetime);
   }
   const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   const remove = (node) => {
@@ -286,7 +294,11 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       // the KPI/zero/paper response is activated together with the actual impact.
       if(s.type==='impact') for(const node of active.keys()) if(node.dataset.signature==='lethal') {
         node.classList.remove('signature-primed');
-        node.style.setProperty('--signature-decay',String(VFX_TIMING.impact+VFX_TIMING.repHold+(p.resultHold??VFX_TIMING.resultFallback)));
+        const residual=entry.catchUp ? combatOutcomeDwell(entry,media.matches) : VFX_TIMING.lethalHeroResidual;
+        node.style.setProperty('--signature-decay',String(residual));
+        node.style.animation=`vfx-outcome-dwell ${residual}ms linear both`;
+        clearTimeout(active.get(node));
+        active.set(node,setTimeout(()=>remove(node),residual));
       }
       if(lethalPresented===p.lethal.seq) return;
       lethalPresented=p.lethal.seq;
@@ -295,6 +307,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       const steps=presentationSteps(entry,{reducedMotion:media.matches,catchUp:entry.catchUp});
       const index=steps.findIndex(step=>step.type===s.type);
       life=steps.slice(index).reduce((sum,step)=>sum+step.duration,0)+(['commit','impact'].includes(s.type)?(media.matches?VFX_TIMING.staticLethal:p.resultHold??VFX_TIMING.resultFallback):0);
+      if(!entry.catchUp && s.type==='commit') life+=Math.max(0,VFX_TIMING.lethalHeroResidual-combatOutcomeDwell(entry,media.matches));
     } else if(preset) {
       origin=entry.travelDestination??destination(entry,p.cardId??p.attackerId);
       targets=(p.archived??[]).filter(e=>e.cardInstanceId!==p.cardId).map(e=>destination(entry,e.cardInstanceId)).filter(Boolean);
@@ -401,7 +414,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   function finishEntry(entry) {
     clearTimeout(timer);timer=null;stopMotion();entry.summaryNode?.remove();
     if(entry.type==='result'||entry.payload.lethal&&entry.type==='summary') clearCombatOutcome();
-    if(entry.type==='result'||entry.payload.lethal&&entry.type==='summary') for(const node of active.keys()) if(node.dataset.signature==='lethal') remove(node);
+    // Critical result can open while the existing bounded Hero layer decays.
     presentation.complete(entry.key);running=null;
     if(presentation.busy) pump(); else onIdle();
   }
@@ -412,6 +425,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     running=entry;
     if(entry.catchUp||entry.type==='summary') for(const node of active.keys())
       if(node.classList.contains('vfx-signature')&&node.dataset.signature!=='lethal') remove(node);
+    if((entry.catchUp||entry.type==='summary') && combatOutcome && Date.now()>=combatOutcome.criticalUntil) clearCombatOutcome();
     const steps=presentationSteps(entry,{reducedMotion:media.matches,catchUp:entry.catchUp});
     let index=0;
     const next=()=>{
@@ -434,10 +448,10 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     };
     next();
   }
-  function finishAll() {
+  function finishAll({preserveResiduals=false}={}) {
     const wasBusy=presentation.busy;
     clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;
-    for(const node of active.keys()) if(node.classList.contains('vfx-signature')) remove(node);
+    for(const node of active.keys()) if(node.classList.contains('vfx-signature') && !(preserveResiduals && node.dataset.signature==='lethal')) remove(node);
     // Preserve the watermark: cancellation must not turn old events into new animations.
     while(presentation.busy) { const entry=presentation.current??presentation.take();if(entry)presentation.complete(entry.key); }
     clearCombatOutcome();if(wasBusy) onIdle();
@@ -513,6 +527,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       currentMatch=match;targeting=isTargeting;
       if(targeting) {
         stopMotion();
+        if(combatOutcome && Date.now()>=combatOutcome.criticalUntil) clearCombatOutcome();
         for(const node of active.keys()) if(node.classList.contains('vfx-signature')&&node.dataset.signature!=='lethal') remove(node);
       }
       if (!match || document.hidden) { clear(); queue.drain(Infinity); return; }

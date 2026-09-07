@@ -61,12 +61,14 @@ export async function verifyLethalEnvelope(page) {
     envelopeVfx.enqueue(envelopeEvents,{roomId:'envelope',present:true,match:envelopeMatch});envelopeVfx.sync(envelopeMatch);
   });
   const initial=await page.evaluate(()=>{const n=document.querySelector('.signature-lethal');return {primed:n.classList.contains('signature-primed'),life:Number(n.style.getPropertyValue('--vfx-life')),warning:Number(getComputedStyle(n.querySelector('.signature-warning')).opacity),kpi:Number(getComputedStyle(n.querySelector('.signature-kpi')).opacity)};});
-  assert.ok(initial.primed&&initial.warning>.5);assert.equal(initial.kpi,0);assert.equal(initial.life,920);
+  assert.ok(initial.primed&&initial.warning>.5);assert.equal(initial.kpi,0);assert.equal(initial.life,1480,'480 ms approach plus 1000 ms non-blocking impact tail');
   await page.waitForFunction(()=>document.querySelector('.signature-lethal')&&!document.querySelector('.signature-lethal').classList.contains('signature-primed'));
   const impact=await page.evaluate(()=>({kpi:Number(getComputedStyle(document.querySelector('.signature-kpi')).opacity),steps:envelopeSteps.map(s=>s.step)}));
   assert.ok(impact.kpi>.5&&impact.steps.includes('impact'));
   await page.waitForFunction(()=>!envelopeVfx.busy);
-  assert.equal(await page.locator('.signature-lethal,.presentation-proxy').count(),0);
+  assert.equal(await page.locator('.presentation-proxy').count(),0);
+  assert.equal(await page.locator('.signature-lethal').count(),1,'critical completion no longer truncates the visual tail');
+  await page.waitForFunction(()=>!document.querySelector('.signature-lethal'),{},{timeout:2000});
   await page.evaluate(()=>{envelopeVfx.enqueue(envelopeEvents,{roomId:'envelope',present:true,match:envelopeMatch});envelopeVfx.sync(envelopeMatch);});
   assert.equal(await page.locator('.signature-lethal').count(),0);
   await page.evaluate(()=>envelopeVfx.reset());

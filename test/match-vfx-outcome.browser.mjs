@@ -5,19 +5,19 @@ import { strict as assert } from 'node:assert';
 export async function verifyOutcomeDwell(page, {events,html,reduced=false,dense=false}) {
   await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
   const expected=await page.evaluate(async({events,html})=>{
-    const {createMatchVfx,combatOutcomeDwell}=await import('/match-vfx.js');
+    const {createMatchVfx,combatOutcomePersistence}=await import('/match-vfx.js');
     window.outcomeRun={steps:[],changes:[],proxyPeak:0};
     window.outcomeMatch={viewerId:'P1',turnNumber:1,activePlayerId:'P1',phase:'BATTLE',status:events.some(e=>e.type==='GAME_ENDED')?'ENDED':'ACTIVE'};
     window.outcomeEvents=events;
     window.outcomeVfx=createMatchVfx({archiveLabel:()=> 'ARCHIVED',captureCombat:()=>html,
       onStep:(entry,s)=>{
         outcomeRun.steps.push({type:s.type,at:performance.now(),key:entry.key});
-        if(s.type==='impact' && ['combat','direct'].includes(entry.type)) outcomeRun.expected=combatOutcomeDwell(entry,matchMedia('(prefers-reduced-motion: reduce)').matches);
+        if(s.type==='impact' && ['combat','direct'].includes(entry.type)) outcomeRun.expected=combatOutcomePersistence(entry,matchMedia('(prefers-reduced-motion: reduce)').matches);
       },onCombat:entry=>{
         const old=document.querySelector('#combatPresentationHost');
         if(entry&&old?.dataset.presentationKey===entry.key || !entry&&!old) return;
         outcomeRun.changes.push({visible:!!entry,at:performance.now()});old?.remove();
-        if(entry) {const n=document.createElement('div');n.id='combatPresentationHost';n.className='combat-presentation-host queued-combat';n.dataset.presentationKey=entry.key;n.innerHTML=entry.html;document.body.appendChild(n);}
+        if(entry) {const n=document.createElement('div');n.id='combatPresentationHost';n.className='combat-presentation-host queued-combat';n.dataset.presentationKey=entry.key;n.style.setProperty('--outcome-residual-life',`${entry.lifetime}ms`);n.innerHTML=entry.html;document.body.appendChild(n);}
       }});
     outcomeVfx.enqueue(events,{roomId:'outcome',present:true,match:outcomeMatch});
     for(const e of events.filter(e=>e.type==='CARD_ARCHIVED'))document.querySelector(`.board-lane [data-card-ref="${CSS.escape(e.cardInstanceId)}"]`)?.remove();
@@ -81,7 +81,7 @@ export async function verifyOutcomeStamps(page) {
     return {duration,opacity:Number(getComputedStyle(n).opacity),travel:document.querySelector('.presentation-proxy')?.getAnimations()[0].effect.getTiming().duration};
   });
   assert.ok(rejection.opacity>.8&&archive.opacity>.8);
-  assert.equal(rejection.duration,600);assert.equal(archive.duration,600);assert.equal(archive.travel,620);
+  assert.equal(rejection.duration,900);assert.equal(archive.duration,900);assert.equal(archive.travel,620);
   await page.waitForFunction(()=>!stampVfx.busy);
   await page.evaluate(()=>stampVfx.reset());
   assert.equal(await page.locator('.match-vfx,.presentation-proxy').count(),0);

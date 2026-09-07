@@ -6,6 +6,7 @@ export const VFX_TIMING = Object.freeze({
   outcomeHold:40, archiveTravel:620, attackerReturn:100, lethalHold:140, resultFallback:220,
   acknowledgement:1200, executiveResidual:850, engineResidual:850,
   combatOutcomeDwell:500, drawOutcomeDwell:560, archiveStampDwell:600, rejectionDwell:600, repOutcomeDwell:550,
+  combatOutcomeResidual:800, drawOutcomeResidual:900, archiveStampResidual:900, rejectionResidual:900, repOutcomeResidual:800, lethalHeroResidual:1000,
   summary:620, lifetimeSlack:300, queueBudget:2900, catchUpAge:1600,
   staticOutcome:240, staticImpactHold:150, staticArchive:180, staticLethal:160, lateCritical:160,
   cue:760, commitCue:420, directionCue:520, archiveCue:940, repCue:950, reducedCue:500,

@@ -1,8 +1,37 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath, combatOutcomeDwell } from '../public/match-vfx.js';
+import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath, combatOutcomeDwell, combatOutcomePersistence } from '../public/match-vfx.js';
+import { summarizeLatency } from './vfx-latency.browser.mjs';
 import { VFX_TIMING, VFX_EASING, installVfxTiming } from '../public/vfx-timing.js';
 import { DEPARTMENT_MODIFIERS, SIGNATURE_LIMITS, signaturePreset, signatureForStep, visibleSignatureMetadata, lethalOutcome } from '../public/vfx-signatures.js';
+
+test('visual tails extend recognition without changing the critical outcome floor',()=>{
+  for(const winnerId of ['a','b']) {
+    const entry={type:'combat',payload:{winnerId,destroyedIds:[winnerId==='a'?'b':'a']}};
+    assert.equal(combatOutcomeDwell(entry),500);
+    assert.equal(combatOutcomePersistence(entry),800);
+    assert.equal(combatOutcomePersistence(entry,true),800);
+  }
+  assert.equal(combatOutcomePersistence({type:'combat',payload:{winnerId:null,destroyedIds:['a','b']}}),900);
+  assert.equal(combatOutcomePersistence({type:'direct',payload:{}}),800);
+  assert.equal(VFX_TIMING.archiveStampResidual,900);assert.equal(VFX_TIMING.rejectionResidual,900);
+});
+test('lethal decoration outlives critical result while Executive already-readable lifetime is preserved',()=>{
+  const entry={type:'direct',payload:{lethal:{seq:3},resultHold:140}};
+  assert.equal(combatOutcomePersistence(entry),440);
+  assert.ok(VFX_TIMING.lethalHeroResidual>combatOutcomePersistence(entry));
+  assert.equal(VFX_TIMING.executiveResidual,850);
+  assert.equal(VFX_TIMING.engineResidual,850);
+});
+test('latency stages distinguish early acknowledgement from authority and queue time',()=>{
+  const trace=[{stage:'input',at:100},{stage:'ack',at:110},{stage:'request',at:120,id:'a'},
+    {stage:'received',transport:'POST',at:350,server:{id:'a',accepted:140,emitted:150,ok:true}},
+    {stage:'consumed',at:351},{stage:'entry',at:352,queue:0},{stage:'step',at:356}, {stage:'motion',at:360}];
+  const r=summarizeLatency(trace,{offset:0,uncertainty:1});
+  assert.equal(r.inputToAck,10);assert.equal(r.requestToAccepted,20);assert.equal(r.acceptedToEmitted,10);
+  assert.equal(r.emittedToReceived,200);assert.equal(r.receivedToAck,-240,'ack safely precedes authority');
+  assert.equal(r.queueWait,4);assert.equal(r.authorityToMotion,10);assert.equal(r.geometryPaint,4);
+});
 
 test('winner and loser share a readable outcome without stretching combat motion',()=>{
   for(const winnerId of ['a','b']) {

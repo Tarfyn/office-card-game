@@ -1570,7 +1570,7 @@ function resolveMatchResultPresentationGate(key) {
   state.matchResultGate.ready = true;
   state.matchResultGate.pending = false;
   state.matchResultGateTimer = null;
-  matchVfx.finish();
+  matchVfx.finish({preserveResiduals:!matchVfx.busy});
   render();
 }
 
@@ -3055,6 +3055,7 @@ function syncCombatPresentationHost() {
   host.dataset.presentationKey = key;
   host.classList.toggle('queued-combat',Boolean(state.presentationCombat));
   host.innerHTML = html;
+  if(state.presentationCombat?.lifetime) host.style.setProperty('--outcome-residual-life',`${state.presentationCombat.lifetime}ms`);
   applyLegacyAppTranslations(host);
 }
 
