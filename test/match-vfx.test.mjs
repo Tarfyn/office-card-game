@@ -1,8 +1,35 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath } from '../public/match-vfx.js';
+import { createFeedbackQueue, feedbackForEvent, createPresentationQueue, presentationSteps, physicalPath, combatOutcomeDwell } from '../public/match-vfx.js';
 import { VFX_TIMING, VFX_EASING, installVfxTiming } from '../public/vfx-timing.js';
 import { DEPARTMENT_MODIFIERS, SIGNATURE_LIMITS, signaturePreset, signatureForStep, visibleSignatureMetadata, lethalOutcome } from '../public/vfx-signatures.js';
+
+test('winner and loser share a readable outcome without stretching combat motion',()=>{
+  for(const winnerId of ['a','b']) {
+    const entry={type:'combat',payload:{winnerId,destroyedIds:[winnerId==='a'?'b':'a']}};
+    assert.equal(combatOutcomeDwell(entry),VFX_TIMING.combatOutcomeDwell);
+    assert.ok(combatOutcomeDwell(entry)>=350 && combatOutcomeDwell(entry)<=550);
+    assert.equal(combatOutcomeDwell(entry,true),combatOutcomeDwell(entry),'static results still need reading time');
+  }
+});
+test('both-archived draw has distinct dwell without inventing a winner',()=>{
+  const entry={type:'combat',payload:{winnerId:null,destroyedIds:['a','b']}};
+  assert.equal(combatOutcomeDwell(entry),VFX_TIMING.drawOutcomeDwell);
+  assert.ok(combatOutcomeDwell(entry)>VFX_TIMING.combatOutcomeDwell && combatOutcomeDwell(entry)<=600);
+  assert.equal(combatOutcomeDwell({...entry,payload:{winnerId:null,destroyedIds:[]}}),VFX_TIMING.combatOutcomeDwell);
+});
+test('direct result residual outlives its queue beat while signed REP timing stays fixed',()=>{
+  assert.ok(combatOutcomeDwell({type:'direct',payload:{}})>VFX_TIMING.impact+VFX_TIMING.repHold);
+  assert.equal(VFX_TIMING.repCue,950);
+  assert.ok(VFX_TIMING.archiveStampDwell>=450 && VFX_TIMING.archiveStampDwell<=650);
+  assert.ok(VFX_TIMING.rejectionDwell>=450 && VFX_TIMING.rejectionDwell<=650);
+});
+test('lethal outcome uses only the existing impact-to-result window, including reduced motion',()=>{
+  const entry={type:'direct',payload:{lethal:{seq:3},resultHold:VFX_TIMING.lethalHold}};
+  assert.equal(VFX_TIMING.attackCommit+combatOutcomeDwell(entry),920);
+  assert.equal(combatOutcomeDwell(entry,true),VFX_TIMING.impact+VFX_TIMING.staticImpactHold+VFX_TIMING.staticLethal);
+  assert.ok(combatOutcomeDwell(entry,true)<combatOutcomeDwell(entry));
+});
 
 test('Phase 3 classification stays unchanged while motion and queue waits have separate timings',()=>{
   assert.equal(signatureForStep({type:'placement',events:[],payload:{}},'settle',null),null);

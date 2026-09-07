@@ -3018,7 +3018,7 @@ function renderCombatEvents(cues) {
     const cardSide = (card, id, label) => `<div class="battle-card-side ${destroyed.has(id) ? 'archived' : ''} ${winnerResolved && winnerId === id ? 'winner' : ''} ${prevented.has(id) ? 'prevented' : ''}"><span class="battle-side-label">${label}</span><div class="battle-card-shell">${renderCard(card)}${destroyed.has(id) ? '<b class="archive-stamp">ARCHIVED</b>' : ''}${prevented.has(id) ? '<b class="prevented-stamp">SAVED</b>' : ''}</div></div>`;
     const breakthrough = [...cues].reverse().find((event) => event.type === 'BREAKTHROUGH_DAMAGE' && event.cardInstanceId === attackerId);
     const repDelta = breakthrough ? -Math.abs(reputationCueDelta(breakthrough)) : 0;
-    return `<div class="battle-resolution-overlay card-battle" role="status" aria-live="polite" aria-atomic="true"><div class="battle-stage">${cardSide(attacker,attackerId,'ATTACKER')}<div class="battle-vs"><span>VS</span>${repDelta ? `<small>${esc(repDelta)} REP</small>` : ''}</div>${cardSide(defender,targetId,'DEFENDER')}</div></div>`;
+    return `<div class="battle-resolution-overlay card-battle" role="status" aria-live="polite" aria-atomic="true"><div class="battle-stage">${cardSide(attacker,attackerId,'ATTACKER')}<div class="battle-vs"><span>${!winnerId && destroyed.size===2 ? esc(t('result.draw')) : 'VS'}</span>${repDelta ? `<small>${esc(repDelta)} REP</small>` : ''}</div>${cardSide(defender,targetId,'DEFENDER')}</div></div>`;
   }
   if (directAttack && directRep) {
     const attackerId = directAttack.cardInstanceId;

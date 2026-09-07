@@ -128,6 +128,7 @@ body.match-mode .game-shell.event-reputation-changed .battlefield-surface::after
 .vfx-warning { color:var(--vfx-brass); }
 .vfx-redirect { color:var(--vfx-blue); }
 .vfx-denied .vfx-mark, .vfx-warning .vfx-mark { border-style:dashed; }
+.vfx-denied .vfx-mark { animation:vfx-outcome-dwell calc(var(--vfx-time-rejection-dwell) * 1ms) ease-out both; }
 .vfx-archive { color:var(--vfx-red); --vfx-life:var(--vfx-time-archive-cue); }
 .vfx-archive .vfx-mark { border-style:dashed; animation-name:vfx-file-away; }
 .vfx-receive { color:var(--vfx-brass); --vfx-life:var(--vfx-time-archive-cue); }
@@ -149,6 +150,7 @@ body.match-mode .game-shell.event-reputation-changed .battlefield-surface::after
   font-size:clamp(8px,.6vw,13px);
   border:3px double currentColor;
   transform:translateX(-50%) rotate(-6deg);
+  animation:vfx-outcome-dwell calc(var(--vfx-time-archive-stamp-dwell) * 1ms) ease-out both;
 }
 
 /* Extend the existing event-keyed combat host: a directional commit, then a readable stamp. */
@@ -256,6 +258,8 @@ body.match-mode .queued-combat .prevented-stamp { opacity:1; }
 @keyframes vfx-approve { 0% { opacity:.75; transform:translateY(3px); } 12%,55% { opacity:.85; transform:none; } 100% { opacity:0; transform:none; } }
 @keyframes vfx-file-away { 0%,18% { opacity:.7; transform:none; } 100% { opacity:0; transform:translateY(10px) scale(.94); } }
 @keyframes vfx-label { 0% { opacity:0; } 8%,82% { opacity:1; } 100% { opacity:0; } }
+@keyframes vfx-outcome-dwell { 0%,85% { opacity:1; } 100% { opacity:0; } }
+.signature-lethal:not(.signature-primed) .signature-zero { animation-name:vfx-outcome-dwell; }
 @keyframes vfx-notice { from { opacity:.45; } to { opacity:1; } }
 @keyframes vfx-stamp { from { opacity:.4; scale:1.06; } to { opacity:1; scale:1; } }
 @keyframes vfx-clash {

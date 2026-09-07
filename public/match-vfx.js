@@ -11,6 +11,14 @@ const player = (id) => ({ type:'player', id });
 const archive = (id) => ({ type:'archive', id });
 const opposite = (id) => id === 'P1' ? 'P2' : id === 'P2' ? 'P1' : null;
 
+// Visible result lifetime, independent of serialized motion/impact durations.
+export function combatOutcomeDwell(entry, reducedMotion=false) {
+  if(entry.payload.lethal) return VFX_TIMING.impact + (reducedMotion ? VFX_TIMING.staticImpactHold : VFX_TIMING.repHold)
+    + (reducedMotion ? VFX_TIMING.staticLethal : entry.payload.resultHold??VFX_TIMING.resultFallback);
+  return entry.type==='direct' ? VFX_TIMING.repOutcomeDwell : !entry.payload.winnerId && entry.payload.destroyedIds?.length===2
+    ? VFX_TIMING.drawOutcomeDwell : VFX_TIMING.combatOutcomeDwell;
+}
+
 export function feedbackForEvent(event, ownerOf = () => null) {
   const data = event.data ?? {};
   const source = field(event.cardInstanceId);
@@ -134,6 +142,20 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   let phase = null;
   let previousRects = new Map();
   let lethalPresented=-1;
+  let combatOutcome=null;
+  function clearCombatOutcome() {
+    for(const node of active.keys()) if(combatOutcome && node.dataset.outcomeOwner===combatOutcome.key)
+      node.querySelector('b')?.style.removeProperty('visibility');
+    clearTimeout(combatOutcome?.timer);combatOutcome=null;onCombat(null);
+  }
+  function showCombatOutcome(entry) {
+    if(!entry.combatHtml || entry.epoch!==geometryEpoch || entry.outcomeShown) return;
+    entry.outcomeShown=true;
+    clearCombatOutcome();
+    onCombat({key:entry.key,html:entry.combatHtml});
+    const lease={key:entry.key,timer:null};combatOutcome=lease;
+    lease.timer=setTimeout(()=>{if(combatOutcome===lease) clearCombatOutcome();},combatOutcomeDwell(entry,media.matches));
+  }
   const media = window.matchMedia('(prefers-reduced-motion: reduce)');
   const remove = (node) => {
     clearTimeout(active.get(node));
@@ -142,11 +164,11 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
   };
   const clear = () => { for (const node of active.keys()) remove(node); };
   // One set of listeners per application; never installed from render().
-  const invalidateGeometry=()=>{ clear(); previousRects.clear(); geometryEpoch++; stopMotion(); actionOrigins.clear(); };
+  const invalidateGeometry=()=>{ clear(); clearCombatOutcome(); previousRects.clear(); geometryEpoch++; stopMotion(); actionOrigins.clear(); };
   window.addEventListener('resize', invalidateGeometry, { passive:true });
   window.addEventListener('scroll', invalidateGeometry, { passive:true, capture:true });
   document.addEventListener('visibilitychange', () => { clear(); queue.drain(Infinity); stopMotion(); if(document.hidden) finishAll(); });
-  media.addEventListener('change', () => { clear(); stopMotion(); });
+  media.addEventListener('change', () => { clear(); clearCombatOutcome(); stopMotion(); });
 
   function targetNode(target, viewerId) {
     if (!target?.id) return null;
@@ -325,13 +347,13 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     } else if(s.type==='impact') {
       // Direct REP has no destruction outcome card: its portrait/delta is the
       // impact, and stays visible through the dedicated REP hold.
-      if(entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
+      showCombatOutcome(entry);
       eventsCues(entry,['BATTLE_RESOLVED','REPUTATION_CHANGED']);
     } else if(s.type==='impactHold') {
       // Impact/outcome remains active while a surviving direct attacker recovers.
       if((entry.type==='direct'||entry.type==='combat'&&!p.archived?.length)&&!s.static) returnSurvivor(entry);
     } else if(s.type==='outcome') {
-      if(entry.combatHtml) onCombat({key:entry.key,html:entry.combatHtml});
+      if(entry.combatHtml) showCombatOutcome(entry);
       else eventsCues(entry,['CARD_ARCHIVED'],{receipt:false});
     } else if(s.type==='resolve') {
       // Retain a staged Action through its resolve beat, then reuse that same
@@ -352,22 +374,33 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
         const to=archiveDestination(e.playerId);
         return {e,from,to,index};
       });
-      onCombat(null);
+      // Archive starts on time. Keep the result frame/stamps, but hide each
+      // departing face so its travelling proxy is the only visible card copy.
+      if(entry.combatHtml) {
+        if(!s.static) document.querySelectorAll('#combatPresentationHost .archived .battle-card-shell > .card')
+          .forEach(node=>node.style.setProperty('visibility','hidden'));
+      }
       if(entry.type==='combat'&&!s.static) returnSurvivor(entry);
       for(const {e,from,to} of moves) {
         cueNow({kind:'archive',target:field(e.cardInstanceId),seq:e.seq},from);
+        // Hand the same readable stamp from the result host to the V1 receipt,
+        // without two overlapping labels or a blank frame during departure.
+        if(combatOutcome?.key===entry.key) for(const node of active.keys())
+          if(node.dataset.vfxKey===`archive:field:${e.cardInstanceId}`) {
+            node.dataset.outcomeOwner=entry.key;node.querySelector('b')?.style.setProperty('visibility','hidden');
+          }
         proxy(entry,e.cardInstanceId,from,to,s.duration,{fade:true});
         actionOrigins.delete(e.cardInstanceId);
       }
     } else if(s.type==='return') {
-      onCombat(null);
       // An unresolved declaration has no impact/Archive window to overlap.
       if(entry.type==='attack'&&!s.static) returnSurvivor(entry);
     } else if(s.type==='summary') showSummary(entry);
     showSignature(entry,s);
   }
   function finishEntry(entry) {
-    clearTimeout(timer);timer=null;stopMotion();onCombat(null);entry.summaryNode?.remove();
+    clearTimeout(timer);timer=null;stopMotion();entry.summaryNode?.remove();
+    if(entry.type==='result'||entry.payload.lethal&&entry.type==='summary') clearCombatOutcome();
     if(entry.type==='result'||entry.payload.lethal&&entry.type==='summary') for(const node of active.keys()) if(node.dataset.signature==='lethal') remove(node);
     presentation.complete(entry.key);running=null;
     if(presentation.busy) pump(); else onIdle();
@@ -407,7 +440,7 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
     for(const node of active.keys()) if(node.classList.contains('vfx-signature')) remove(node);
     // Preserve the watermark: cancellation must not turn old events into new animations.
     while(presentation.busy) { const entry=presentation.current??presentation.take();if(entry)presentation.complete(entry.key); }
-    onCombat(null);if(wasBusy) onIdle();
+    clearCombatOutcome();if(wasBusy) onIdle();
   }
   function spawn(cue, rect, sourceRect) {
     if (!rect || (cue.kind === 'travel' && (!sourceRect || media.matches))) return;
@@ -513,8 +546,8 @@ export function createMatchVfx({ archiveLabel, summaryLabel=()=>'', captureComba
       pump();
     },
     get busy() { return presentation.busy; },
-    get diagnostics() { return {size:presentation.size,proxies:proxies.size,key:running?.key??null}; },
+    get diagnostics() { return {size:presentation.size,proxies:proxies.size,key:running?.key??null,outcome:Boolean(combatOutcome)}; },
     finish:finishAll,
-    reset() { clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;presentation.reset();onCombat(null);actionOrigins.clear();clear(); queue.reset(); previousRects.clear(); phase = null; room = null; lethalPresented=-1;host?.remove(); host = null;currentMatch=null; }
+    reset() { clearTimeout(timer);timer=null;stopMotion();running?.summaryNode?.remove();running=null;presentation.reset();clearCombatOutcome();actionOrigins.clear();clear(); queue.reset(); previousRects.clear(); phase = null; room = null; lethalPresented=-1;host?.remove(); host = null;currentMatch=null; }
   };
 }
