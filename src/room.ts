@@ -775,7 +775,7 @@ export class RoomService {
     };
   }
 
-  abandonRoom(roomId: string, token: string): { roomId: string; matchEnded: boolean; view: RoomClientView | null } {
+  abandonRoom(roomId: string, token: string, clientId?: string): { roomId: string; matchEnded: boolean; view: RoomClientView | null } {
     const room = this.getRoom(roomId);
     const seat = this.resolveSeat(room, token);
     if (!room.state) {
@@ -797,11 +797,13 @@ export class RoomService {
       return { roomId: room.id, matchEnded: false, view: null };
     }
     if (room.state.status !== "ENDED") {
-      const result = this.submitIntent(room.id, token, {
+      const abandonRequest: RoomIntentRequest = {
         intentId: `server-abandon-${this.nowFactory()}`,
         expectedStateVersion: room.state.stateVersion,
         intent: { type: "RESIGN" }
-      });
+      };
+      if (typeof clientId === "string") abandonRequest.clientId = clientId;
+      const result = this.submitIntent(room.id, token, abandonRequest);
       return { roomId: room.id, matchEnded: result.response.accepted, view: result.view };
     }
     return { roomId: room.id, matchEnded: false, view: this.projectRoom(room, token, room.state.eventSeq) };
@@ -829,7 +831,7 @@ export class RoomService {
     }
     const clientId = String(request.clientId ?? "").trim();
     const activeClientId = room.activeClientIds[seat.playerId];
-    if (clientId && activeClientId && clientId !== activeClientId) throw new RoomError("SESSION_SUPERSEDED", "This match is active in another tab or browser. Take control here before making a move.");
+    if (activeClientId && clientId !== activeClientId) throw new RoomError("SESSION_SUPERSEDED", "This match is active in another tab or browser. Take control here before making a move.");
     if (clientId && !activeClientId) room.activeClientIds[seat.playerId] = clientId;
 
     const cacheKey = `${seat.playerId}:${request.intentId}`;

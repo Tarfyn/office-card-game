@@ -1,0 +1,10 @@
+import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const app = readFileSync(fileURLToPath(new URL('../../public/app.js', import.meta.url)), 'utf8');
+assert.match(app, /data-play-hand/);
+assert.match(app, /event\.key === 'Enter' \|\| event\.key === ' '/);
+assert.match(app, /archiveOpen/);
+assert.match(app, /data-archive-player/);
+assert.match(app, /QUEUE_LEASE_EXPIRED|EXPIRED/);
+console.log('F13/F14 UI contracts: PASS');

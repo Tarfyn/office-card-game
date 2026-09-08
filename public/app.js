@@ -143,6 +143,8 @@ const state = {
   eventLog: [],
   lastError: null,
   focusedCardRef: null,
+  archiveOpen: { P1:false, P2:false },
+  archiveRoomId: null,
   returnFocusCardRef: null,
   intentBusy: false,
   intentCommit: null,
@@ -2005,7 +2007,7 @@ async function resumeRecentSession() {
 async function abandonRecentWaitingRoom() {
   if (!state.recentSession || state.recentSessionView?.status !== 'WAITING') return;
   try {
-    await api(`/api/rooms/${state.recentSession.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(state.recentSession.token), body:'{}' });
+    await api(`/api/rooms/${state.recentSession.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(state.recentSession.token), body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID }) });
     saveRecentSession(null);
     state.matchmakingMessage = 'Waiting room abandoned.';
   } catch (error) { state.lastError = error.message; }
@@ -7150,7 +7152,7 @@ function renderWaiting() {
   document.querySelector('#backLobbyWaiting').onclick = rematchWaiting ? cancelPendingRematchToLobby : parkSession;
   document.querySelector('#abandonWaitingRoom')?.addEventListener('click', async () => {
     if (!confirm('Abandon this waiting room? The room code will stop working.')) return;
-    try { await api(`/api/rooms/${state.session.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(), body:'{}' }); saveRecentSession(null); resetLiveSessionState(); render(); }
+    try { await api(`/api/rooms/${state.session.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(), body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID }) }); saveRecentSession(null); resetLiveSessionState(); render(); }
     catch (error) { state.lastError = error.message; render(); }
   });
   if (rematchWaiting && state.view?.rematchExpiresAt) {
@@ -7168,7 +7170,7 @@ function renderWaiting() {
 
 async function cancelPendingRematchToLobby() {
   if (!state.session) return;
-  try { await api(`/api/rooms/${state.session.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(), body:'{}' }); }
+  try { await api(`/api/rooms/${state.session.roomId}/abandon`, { method:'POST', headers:roomAuthHeaders(), body:JSON.stringify({ clientId:CLIENT_INSTANCE_ID }) }); }
   catch (error) { if (error.code !== 'ROOM_NOT_FOUND') showFeedback('error','Could not cancel rematch',error.message); }
   saveRecentSession(null);
   resetLiveSessionState();
@@ -7358,8 +7360,8 @@ function renderArchive(player, own = false) {
   const last = player.archive.at(-1);
   const impacted = archiveImpactForPlayer(player.id) || Boolean(zoneCueEventsForPlayer(player.id, 'ARCHIVE').length);
   const transitionChip = zoneTransitionChip(player.id, 'ARCHIVE');
-  const targetVisible = player.archive.some((card) => targetCandidateIds().has(card.instanceId));
-  return `<details class="archive-compact ${own ? 'archive-own' : 'archive-opponent'} ${player.archive.length ? '' : 'is-empty'} ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}"${targetVisible ? ' open' : ''}><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
+  const open = Boolean(state.archiveOpen?.[player.id]);
+  return `<details class="archive-compact ${own ? 'archive-own' : 'archive-opponent'} ${player.archive.length ? '' : 'is-empty'} ${impacted ? 'archive-impact' : ''} ${zonePulseClass(player.id, 'ARCHIVE')}" data-archive-player="${esc(player.id)}"${open ? ' open' : ''}><summary>${renderArchiveStackVisual(last)}<span class="archive-summary-copy"><span>Archive</span><strong>${player.archive.length}</strong></span>${transitionChip || (impacted ? '<b class="archive-impact-chip">+ CARD</b>' : '')}${last ? `<small>Last: ${esc(cardLabel(last.instanceId))}</small>` : '<small>empty</small>'}</summary>
     <div class="archive-grid">${player.archive.length ? player.archive.slice().reverse().map((c) => renderCard(c, { surface:'archive' })).join('') : '<div class="zone-empty-state archive-empty"><span>ARCHIVE CLEAR</span><small>Destroyed, resolved and archived cards will collect here.</small></div>'}</div>
   </details>`;
 }
@@ -8120,6 +8122,11 @@ function render() {
   const personnelMode = Boolean(!state.session && state.mode === 'PERSONNEL');
   const shopMode = Boolean(!state.session && state.mode === 'SHOP');
   const achievementMode = Boolean(!state.session && state.mode === 'ACHIEVEMENTS');
+  const currentArchiveRoomId = state.session?.roomId ?? null;
+  if (state.archiveRoomId !== currentArchiveRoomId) {
+    state.archiveRoomId = currentArchiveRoomId;
+    state.archiveOpen = { P1:false, P2:false };
+  }
   document.body.classList.toggle('match-mode', liveMatch);
   document.body.classList.toggle('match-ended', endedMatch);
   document.body.classList.toggle('match-viewport-locked', liveMatch && !endedMatch);
@@ -8493,6 +8500,9 @@ function commitDirectAttackFromBoard(event) {
 }
 
 function bindInteractionHandlers() {
+  document.querySelectorAll('[data-archive-player]').forEach((el) => {
+    el.addEventListener('toggle', () => { state.archiveOpen[el.dataset.archivePlayer] = el.open; });
+  });
   document.querySelectorAll('[data-field-slot]').forEach((el) => {
     el.onclick = (event) => {
       event.stopPropagation();
@@ -8521,7 +8531,9 @@ function bindInteractionHandlers() {
     };
   });
   document.querySelectorAll('[data-play-hand]').forEach((el) => {
-    el.onclick = (event) => { event.stopPropagation(); if (state.intentBusy) return; beginHandCardPlay(el.dataset.playHand); };
+    const activate = (event) => { event.stopPropagation(); if (state.intentBusy) return; beginHandCardPlay(el.dataset.playHand); };
+    el.onclick = activate;
+    el.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); } };
   });
   document.querySelectorAll('[data-attack-source]').forEach((el) => {
     if (el.hasAttribute('data-target-card') || el.hasAttribute('data-card-ability')) return;

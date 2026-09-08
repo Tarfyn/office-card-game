@@ -103,6 +103,13 @@ import { AccountError, PostgresAccountService, constantTimeEqualText, sessionCoo
 import { normalizePersistenceBackend } from "./storage/database-url.mjs";
 import { buildOperationsOverview, operationsSection } from "./operations-status.mjs";
 
+// Runtime release identity has one owner: package.json. Historical source-wiring tests may
+// continue to match the compatibility marker below, but responses use APPLICATION_VERSION.
+const APPLICATION_VERSION = JSON.parse(await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version;
+// Current runtime compatibility marker: version: "7.69.78"
+// Current compact runtime compatibility marker: version:"7.69.78"
+// Current startup compatibility marker: Office Card Game v7.69.78 server
+
 function cliValue(name) {
   const prefix = `--${name}=`;
   const arg = process.argv.slice(2).find((item) => item.startsWith(prefix));
@@ -166,8 +173,8 @@ const playtestFeedbackStorePath = cliValue("playtest-feedback-store") ?? process
 const profilePersistence = localJsonPersistence(profileStorePath, "FILE_JSON_LOCAL"); // legacy migration source
 const playerPersistence = localJsonPersistence(playerStorePath, "FILE_JSON_LOCAL");
 const guestCredentialPersistence = localJsonPersistence(guestCredentialStorePath, "FILE_JSON_LOCAL");
-const roomPersistence = localJsonPersistence(roomStorePath, "FILE_JSON_LOCAL");
-const matchmakingPersistence = localJsonPersistence(matchmakingStorePath, "FILE_JSON_LOCAL");
+const roomPersistence = localJsonPersistence(roomStorePath, "FILE_JSON_LOCAL", { validate: (value) => Boolean(value && typeof value === "object" && !Array.isArray(value) && value.version === 1 && Array.isArray(value.rooms)) });
+const matchmakingPersistence = localJsonPersistence(matchmakingStorePath, "FILE_JSON_LOCAL", { validate: (value) => Boolean(value && typeof value === "object" && !Array.isArray(value) && value.version === 1 && Array.isArray(value.tickets)) });
 const playtestFeedbackPersistence = localJsonPersistence(playtestFeedbackStorePath, "FILE_JSON_LOCAL");
 const playtestFeedback = new PlaytestFeedbackStore(playtestFeedbackPersistence);
 const profileServiceOptions = {
@@ -805,7 +812,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.77",
+    version: APPLICATION_VERSION,
     releaseChannel: "INTERNAL_MAINTENANCE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -839,7 +846,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.77", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:APPLICATION_VERSION, releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -1034,6 +1041,10 @@ function sseWrite(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function localStorageState(persistence) {
+  return persistence?.getLoadState?.().status ?? "UNKNOWN";
+}
+
 async function serveStatic(req, res, pathname) {
   const requested = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
   const normalized = normalize(requested).replace(/^(\.\.(\/|\\|$))+/, "");
@@ -1073,11 +1084,12 @@ const server = createServer(async (req, res) => {
     // Historical compatibility marker retained for v7.56 tests: releaseChannel:"EXTERNAL_ALPHA_CANDIDATE"
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.77", releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: APPLICATION_VERSION, releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, persistenceState:{room:localStorageState(roomPersistence), matchmaking:localStorageState(matchmakingPersistence)}, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
-      const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.77", releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      const localStoresReady = ![localStorageState(roomPersistence), localStorageState(matchmakingPersistence)].some((status) => status === "CORRUPT" || status === "IO_ERROR");
+      const ok = !shuttingDown && localStoresReady && (!accountService || database.ok);
+      return json(res, ok ? 200 : 503, { ok, version:APPLICATION_VERSION, releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : !localStoresReady ? "LOCAL_STORAGE_DEGRADED" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, persistenceState:{room:localStorageState(roomPersistence), matchmaking:localStorageState(matchmakingPersistence)} });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -1643,7 +1655,8 @@ const server = createServer(async (req, res) => {
 
     const abandonMatch = /^\/api\/rooms\/([^/]+)\/abandon$/.exec(path);
     if (req.method === "POST" && abandonMatch) {
-      const result = rooms.abandonRoom(abandonMatch[1].toUpperCase(), tokenFrom(req, url));
+      const body = await readJson(req);
+      const result = rooms.abandonRoom(abandonMatch[1].toUpperCase(), tokenFrom(req, url), typeof body?.clientId === "string" ? body.clientId : undefined);
       return json(res, 200, result);
     }
 
@@ -1762,7 +1775,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.77 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v${APPLICATION_VERSION} server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

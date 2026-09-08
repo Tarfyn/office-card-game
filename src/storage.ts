@@ -10,4 +10,5 @@ export interface SnapshotPersistence<TSnapshot> {
   storageLabel: string;
   load(): TSnapshot | null;
   save(snapshot: TSnapshot): void;
+  getLoadState?(): { status: "OK" | "MISSING" | "CORRUPT" | "IO_ERROR"; reason?: string | null };
 }

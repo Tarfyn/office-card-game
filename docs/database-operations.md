@@ -2,9 +2,10 @@
 
 ## Status and scope
 
-Production release `v7.69.51-146b1671` is the first live PostgreSQL Account/Profile baseline. The
-approved cutover is complete: `persistenceBackend` is `POSTGRES`, PostgreSQL 18.6 is active and
-reachable, `/api/ready` is `READY`, and `/api/health` reports the required database as `READY`.
+Production release/version and readiness are runtime facts. Discover them from `/api/ready`,
+`/api/health`, and the `/srv/office-card-game/current` symlink; this document is not a release
+record. The approved PostgreSQL Account/Profile cutover remains complete and must be verified from
+those live signals before an operational action.
 Merely having `DATABASE_URL` present still never activates the backend; production was switched
 through the explicit reviewed cutover gate.
 The server fixes mutable state beneath `/srv/office-card-game/runtime` while releases beneath
@@ -37,8 +38,9 @@ The intentional live storage split is:
 - Matchmaking storage: `FILE_JSON_LOCAL`
 
 Do not describe production as fully PostgreSQL-backed. The recorded VPS baseline is Ubuntu 26.04
-with PostgreSQL 18.6, loopback-only listeners on `127.0.0.1` and `::1`, no public 5432 exposure, a
-working backup timer, and 30-day dump retention.
+with PostgreSQL 18.6, loopback-only listeners on `127.0.0.1` and `::1`, and no public 5432
+exposure. The scheduled backup service and restore drill are an open F04 finding; a successful
+manual helper invocation does not prove scheduled-backup health.
 
 ## Repository workflow after cutover
 
@@ -55,7 +57,7 @@ rollback source for authenticated Account/Profile data.
 The fixed resources are:
 
 - PostgreSQL major version: 18
-- Active production release: `v7.69.51-146b1671`
+- Active production release: discover with `readlink -f /srv/office-card-game/current` (never hard-code a version here)
 - Database: `office_card_game`
 - Login role: `office_card_game_app`
 - Network endpoint: `127.0.0.1:5432`, `[::1]:5432`, and the local PostgreSQL Unix socket
@@ -123,8 +125,8 @@ OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1
 
 The marker is present only in a release that has passed the real PostgreSQL integration suite and
 whose readiness endpoint requires the database whenever PostgreSQL is selected. It remains a
-capability gate rather than standalone evidence of live state; the recorded v7.69.51 production
-checks separately establish that migration and cutover completed.
+capability gate rather than standalone evidence of live state; current production release and
+migration state must be discovered from `/api/ready`, `/api/health`, and the active symlink.
 
 The generated database password is 32 random bytes represented as 64 lowercase hexadecimal
 characters. It is written directly into `DATABASE_URL` in the root-owned environment file. The
@@ -319,7 +321,7 @@ These are one-time human-root commands, not sudoers grants. `/opt/office-card-ga
 separate `ocgadmin`-managed checkout. Do not grant passwordless access to `install`, `mv`, `chown`,
 `chmod`, a shell, or the deployment artifact.
 
-## Completed production cutover record
+## Historical production cutover record
 
 The first Account/Profile cutover completed successfully on `v7.69.51-146b1671`. The recorded
 production state is:
