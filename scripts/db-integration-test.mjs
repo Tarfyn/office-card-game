@@ -40,7 +40,7 @@ try {
     runMigrations({ databaseUrl, testDatabase:true }),
     runMigrations({ databaseUrl, testDatabase:true })
   ]);
-  assert.equal(lockedMigrations.reduce((sum, result) => sum + result.applied, 0), 1);
+  assert.equal(lockedMigrations.reduce((sum, result) => sum + result.applied, 0), discoverMigrations(migrationDir).length);
   const repeatedMigration = await runMigrations({ databaseUrl, testDatabase:true });
   assert.equal(repeatedMigration.applied, 0);
 
@@ -480,7 +480,7 @@ try {
       const allowedText = await allowed.text();
       for (const secret of [databaseUrl, first.sessionToken, hashOpaqueToken(first.sessionToken), "password_hash", "token_hash"]) assert.equal(allowedText.includes(secret), false);
       const allowedOps = JSON.parse(allowedText).ops;
-assert.equal(allowedOps.system.version, "7.69.73");
+assert.equal(allowedOps.system.version, "7.69.74");
       assert.equal(allowedOps.system.readiness, "READY");
       assert.equal(allowedOps.persistence.backend, "POSTGRES");
       assert.equal(allowedOps.persistence.sourceOfTruth, "AUTHENTICATED_ACCOUNT_POSTGRES");

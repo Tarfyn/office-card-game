@@ -164,6 +164,15 @@ export interface PersistedCachedIntent {
   response: MatchCommandResponse;
 }
 
+export interface PersistedProfileCompletion {
+  settlementId: string;
+  status: "PENDING" | "SETTLED";
+  attemptCount: number;
+  nextAttemptAt: number;
+  lastError: string | null;
+  completion: MatchCompletionResult;
+}
+
 interface RoomRecord {
   id: string;
   roomVersion: number;
@@ -183,6 +192,7 @@ interface RoomRecord {
   rematchConfirmedSeats?: Partial<Record<PlayerId, boolean>>;
   rematchAlternateFirstPlayer?: boolean;
   rematchExpiresAt?: number | null;
+  profileCompletion?: PersistedProfileCompletion;
 }
 
 export interface PersistedRoomRecord {
@@ -201,6 +211,7 @@ export interface PersistedRoomRecord {
   rematchConfirmedSeats?: Partial<Record<PlayerId, boolean>>;
   rematchAlternateFirstPlayer?: boolean;
   rematchExpiresAt?: number | null;
+  profileCompletion?: PersistedProfileCompletion;
 }
 
 export interface RoomStoreSnapshot {
@@ -411,6 +422,37 @@ export class RoomService {
       });
     }
     return results;
+  }
+
+  listPendingProfileCompletions(now = this.nowFactory()): Array<PersistedProfileCompletion & { roomId:string }> {
+    const pending: Array<PersistedProfileCompletion & { roomId:string }> = [];
+    for (const room of this.rooms.values()) {
+      const completion = room.profileCompletion;
+      if (!completion || completion.status !== "PENDING" || completion.nextAttemptAt > now) continue;
+      pending.push({ roomId:room.id, ...structuredClone(completion) });
+    }
+    return pending;
+  }
+
+  markProfileCompletionAttempt(roomId: string, settlementId: string, nextAttemptAt: number, errorCode: string | null): void {
+    const room = this.rooms.get(String(roomId).toUpperCase());
+    const completion = room?.profileCompletion;
+    if (!room || !completion || completion.settlementId !== settlementId || completion.status !== "PENDING") return;
+    completion.attemptCount = Math.max(0, Number(completion.attemptCount) || 0) + 1;
+    completion.nextAttemptAt = Math.max(0, Number(nextAttemptAt) || 0);
+    completion.lastError = errorCode ? String(errorCode).slice(0, 80) : null;
+    this.persist();
+  }
+
+  markProfileCompletionSettled(roomId: string, settlementId: string): void {
+    const room = this.rooms.get(String(roomId).toUpperCase());
+    const completion = room?.profileCompletion;
+    if (!room || !completion || completion.settlementId !== settlementId || completion.status === "SETTLED") return;
+    completion.status = "SETTLED";
+    completion.nextAttemptAt = Number.MAX_SAFE_INTEGER;
+    completion.lastError = null;
+    this.persist();
+    this.notify(room);
   }
 
   private playtestCardActivity(state: GameState | null): PlaytestCardActivity[] {
@@ -854,7 +896,8 @@ export class RoomService {
         rematchSourceRoomId: room.rematchSourceRoomId ?? null,
         rematchConfirmedSeats: structuredClone(room.rematchConfirmedSeats ?? {}),
         rematchAlternateFirstPlayer: Boolean(room.rematchAlternateFirstPlayer),
-        rematchExpiresAt: room.rematchExpiresAt ?? null
+        rematchExpiresAt: room.rematchExpiresAt ?? null,
+        profileCompletion: room.profileCompletion ? structuredClone(room.profileCompletion) : undefined
       }))
     };
   }
@@ -882,7 +925,8 @@ export class RoomService {
         rematchSourceRoomId: saved.rematchSourceRoomId ?? null,
         rematchConfirmedSeats: structuredClone(saved.rematchConfirmedSeats ?? {}),
         rematchAlternateFirstPlayer: Boolean(saved.rematchAlternateFirstPlayer),
-        rematchExpiresAt: saved.rematchExpiresAt ?? null
+        rematchExpiresAt: saved.rematchExpiresAt ?? null,
+        profileCompletion: saved.profileCompletion ? structuredClone(saved.profileCompletion) : undefined
       };
       room.timer = restoreTimerRuntime(saved.timer, this.effectiveTimerProfile(room.settings), room.state, snapshot.savedAt ?? null, this.nowFactory());
       room.telemetry = restoreRoomTelemetry(saved.telemetry, room.state, snapshot.savedAt ?? null, this.nowFactory());
@@ -1190,8 +1234,8 @@ export class RoomService {
   }
 
   private emitMatchCompleted(room: RoomRecord, previousState: GameState): void {
-    if (!this.onMatchCompleted || previousState.status === "ENDED" || !room.state || room.state.status !== "ENDED" || !room.guest) return;
-    this.onMatchCompleted({
+    if (previousState.status === "ENDED" || !room.state || room.state.status !== "ENDED" || !room.guest) return;
+    const completion: MatchCompletionResult = {
       roomId: room.id,
       matchId: room.state.matchId,
       mode: room.settings.mode,
@@ -1203,7 +1247,11 @@ export class RoomService {
         P1: { profileId: room.host.profileId, displayName: room.host.displayName, deckId: room.host.deckId, deckName: room.host.deckName, department: room.host.department, finalRep: room.state.players.P1?.reputation ?? null },
         P2: { profileId: room.guest.profileId, displayName: room.guest.displayName, deckId: room.guest.deckId, deckName: room.guest.deckName, department: room.guest.department, finalRep: room.state.players.P2?.reputation ?? null }
       }
-    });
+    };
+    if (!room.profileCompletion || room.profileCompletion.settlementId !== completion.matchId) {
+      room.profileCompletion = { settlementId:completion.matchId, status:"PENDING", attemptCount:0, nextAttemptAt:0, lastError:null, completion:structuredClone(completion) };
+    }
+    this.onMatchCompleted?.(completion);
   }
 
   private notify(room: RoomRecord): void {

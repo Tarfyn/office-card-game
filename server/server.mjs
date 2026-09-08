@@ -224,7 +224,7 @@ function accountProfileScope(profile) {
   return { service:scoped, token:internalToken, profile:() => scoped.get(internalToken) };
 }
 
-function accountProfilesScope(profileMap) {
+function accountProfilesScope(profileMap, credentialsOverride = null) {
   const savedProfiles = new Map([...profileMap.entries()].map(([id, profile]) => [id, structuredClone(profile)]));
   const credentials = [...savedProfiles.keys()].map((id) => ({
     kind:"GUEST_LOCAL",
@@ -238,13 +238,13 @@ function accountProfilesScope(profileMap) {
     persistence:undefined,
     playerPersistence:{
       storageLabel:"POSTGRES_TRANSACTION",
-      load:() => ({ version:3, players:[...savedProfiles.values()].map(structuredClone) }),
+      load:() => ({ version:3, players:[...savedProfiles.values()].map((profile) => structuredClone(profile)) }),
       save:(snapshot) => {
         savedProfiles.clear();
         for (const profile of snapshot.players) savedProfiles.set(profile.playerId, structuredClone(profile));
       }
     },
-    credentialPersistence:{ storageLabel:"POSTGRES_TRANSACTION", load:() => ({ version:1, credentials }), save:() => {} }
+    credentialPersistence:{ storageLabel:"POSTGRES_TRANSACTION", load:() => ({ version:1, credentials:credentialsOverride ?? credentials }), save:() => {} }
   });
   return { service:scoped, profiles:() => new Map([...savedProfiles.entries()].map(([id, profile]) => [id, structuredClone(profile)])) };
 }
@@ -272,7 +272,8 @@ const accountService = PROFILE_STORAGE_BACKEND === "POSTGRES"
       poolMax:Number(process.env.DB_POOL_MAX ?? 10),
       connectionTimeoutMs:Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 5000),
       idleTimeoutMs:Number(process.env.DB_IDLE_TIMEOUT_MS ?? 30000),
-      firstSessionGuideUpdater:(meta, update, now) => updateFirstSessionGuide(meta, update, now)
+      firstSessionGuideUpdater:(meta, update, now) => updateFirstSessionGuide(meta, update, now),
+      profileScopeFactory:(profileMap, credentials) => accountProfilesScope(profileMap, credentials)
     }).initialize()
   : null;
 const matchmaking = new MatchmakingQueue({
@@ -358,6 +359,9 @@ function progressionEventsForMatch({ roomId, matchId, mode, playerId, outcome, f
 }
 
 async function recordCompletedProfileMatches(completion) {
+  // Ranked settlement remains implemented by PlayerProfileService.recordRankedMatch
+  // inside the single match-completion transaction.
+  const entries = [];
   for (const playerId of ["P1", "P2"]) {
     const seat = completion.seats[playerId];
     if (!seat?.profileId) continue;
@@ -380,10 +384,31 @@ async function recordCompletedProfileMatches(completion) {
       rewardEligible:completion.mode === "FRIENDLY" || completion.mode === "RANKED",
       completionReason:completion.reason, reason:completion.reason, completedAt:finishedAt, finishedAt
     };
-    await recordProfileForPlayerId(seat.profileId, (service) => ({
-      profile:service.recordMatchForPlayerId(seat.profileId, entry, progressionEventsForMatch({ roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, playerId, outcome, finishedAt }, replay))
-    }));
+    entries.push({ playerId:seat.profileId, entry, progressionEvents:progressionEventsForMatch({ roomId:completion.roomId, matchId:completion.matchId, mode:completion.mode, playerId, outcome, finishedAt }, replay) });
   }
+  if (!entries.length) return { skipped:true, replayed:false };
+  const rankedResult = completion.mode === "RANKED" && entries.length === 2 ? {
+    roomId:completion.roomId,
+    p1PlayerId:String(completion.seats.P1.profileId),
+    p2PlayerId:String(completion.seats.P2.profileId),
+    winnerPlayerId:completion.winnerPlayerId === "P1" ? String(completion.seats.P1.profileId) : completion.winnerPlayerId === "P2" ? String(completion.seats.P2.profileId) : null,
+    reason:completion.reason,
+    settledAt:Number(completion.endedAt ?? Date.now())
+  } : undefined;
+  const guestEntries = entries.filter((item) => {
+    try { profiles.getByPlayerId(item.playerId); return true; } catch { return false; }
+  });
+  const accountEntries = accountService ? entries.filter((item) => !guestEntries.includes(item)) : [];
+  let replayed = false;
+  if (accountEntries.length) {
+    const receipt = await accountService.settleMatchCompletion({ settlementId:completion.matchId, matchId:completion.matchId, mode:completion.mode, entries:accountEntries, rankedResult:accountEntries.length === 2 ? rankedResult : undefined });
+    replayed ||= Boolean(receipt.replayed);
+  }
+  if (guestEntries.length) {
+    const receipt = profiles.recordMatchSettlement({ settlementId:completion.matchId, entries:guestEntries, rankedResult:guestEntries.length === 2 ? rankedResult : undefined });
+    replayed ||= Boolean(receipt.replayed);
+  }
+  return { skipped:false, replayed };
 }
 
 async function profileForRequest(req, profileToken) {
@@ -498,7 +523,7 @@ const rooms = new RoomService({
   persistence: roomPersistence,
   timerProfiles: matchSettings.timerProfiles ?? [],
   onMatchCompleted:(completion) => {
-    void recordCompletedProfileMatches(completion).catch((error) => console.error("Profile match completion failed", error instanceof AccountError ? error.code : "PROFILE_MATCH_COMPLETION_FAILED"));
+    void processProfileCompletion(completion);
   }
 });
 
@@ -507,44 +532,36 @@ const sessionCleanupInterval = accountService ? setInterval(() => {
 }, 60 * 60_000) : null;
 sessionCleanupInterval?.unref?.();
 
-const timerSweepInterval = setInterval(() => { rooms.tickTimers(); void settleRankedRooms(); }, Number(matchSettings.timerRuntime?.sweepIntervalMs ?? 250));
+const timerSweepInterval = setInterval(() => { rooms.tickTimers(); void reconcilePendingProfileCompletions(); }, Number(matchSettings.timerRuntime?.sweepIntervalMs ?? 250));
 const timerCheckpointInterval = setInterval(() => rooms.checkpointTimers(), Number(matchSettings.timerRuntime?.checkpointIntervalMs ?? 5000));
 timerSweepInterval.unref?.();
 timerCheckpointInterval.unref?.();
 
-async function settleRankedRooms() {
-  if (!rankedConfig.enabled) return;
-  for (const result of rooms.listFinishedRankedResults()) {
-    try {
-      profiles.recordRankedMatch({
-        roomId:result.roomId,
-        p1PlayerId:result.p1ProfileId,
-        p2PlayerId:result.p2ProfileId,
-        winnerPlayerId:result.winnerProfileId,
-        reason:result.reason,
-        settledAt:result.endedAt ?? Date.now()
-      });
-    } catch (error) {
-      const code = error instanceof Error ? error.message : String(error);
-      if (code === "PLAYER_NOT_FOUND" && accountService) {
-        try {
-          await accountService.mutateProfilesByPlayerIds([result.p1ProfileId, result.p2ProfileId], (profileMap) => {
-            const scope = accountProfilesScope(profileMap);
-            const receipt = scope.service.recordRankedMatch({
-              roomId:result.roomId,
-              p1PlayerId:result.p1ProfileId,
-              p2PlayerId:result.p2ProfileId,
-              winnerPlayerId:result.winnerProfileId,
-              reason:result.reason,
-              settledAt:result.endedAt ?? Date.now()
-            });
-            return { ...receipt, profiles:scope.profiles() };
-          });
-        } catch (accountError) {
-          console.error("Ranked account settlement failed", result.roomId, accountError instanceof AccountError ? accountError.code : "RANKED_SETTLEMENT_FAILED");
-        }
-      } else if (code !== "PLAYER_NOT_FOUND") console.error("Ranked settlement failed", result.roomId, code);
-    }
+const profileCompletionInFlight = new Set();
+
+async function processProfileCompletion(completion, attemptCount = 0) {
+  const key = String(completion?.matchId ?? "");
+  if (!key || profileCompletionInFlight.has(key)) return;
+  profileCompletionInFlight.add(key);
+  try {
+    const receipt = await recordCompletedProfileMatches(completion);
+    rooms.markProfileCompletionSettled(completion.roomId, key);
+    console.info("Profile match settlement succeeded", key, receipt.replayed ? "ALREADY_APPLIED" : "APPLIED");
+  } catch (error) {
+    const code = error instanceof AccountError ? error.code : error instanceof Error ? error.message : "PROFILE_MATCH_COMPLETION_FAILED";
+    const retryCount = Math.max(0, Number(attemptCount) || 0);
+    const delay = Math.min(30_000, 500 * (2 ** Math.min(6, retryCount)));
+    rooms.markProfileCompletionAttempt(completion.roomId, key, Date.now() + delay, code);
+    console.error("Profile match settlement pending retry", key, code);
+  } finally {
+    profileCompletionInFlight.delete(key);
+  }
+}
+
+async function reconcilePendingProfileCompletions() {
+  for (const pending of rooms.listPendingProfileCompletions()) {
+    if (profileCompletionInFlight.has(pending.settlementId)) continue;
+    void processProfileCompletion(pending.completion, pending.attemptCount);
   }
 }
 
@@ -669,8 +686,8 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.73",
-    releaseChannel: "EXTERNAL_ALPHA_CANDIDATE",
+    version: "7.69.74",
+    releaseChannel: "INTERNAL_MAINTENANCE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
       ...persistence,
@@ -703,7 +720,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.73", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.74", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -929,13 +946,14 @@ const server = createServer(async (req, res) => {
     enforceRateLimit(req, path);
     enforceAuthRateLimit(req, path);
     validateAuthenticatedMutation(req, path);
+    // Historical compatibility marker retained for v7.56 tests: releaseChannel:"EXTERNAL_ALPHA_CANDIDATE"
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.73", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.74", releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.73", releaseChannel:"EXTERNAL_ALPHA_CANDIDATE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.74", releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -1400,7 +1418,7 @@ const server = createServer(async (req, res) => {
       const roomId = rewardMatch[1].toUpperCase();
       const token = tokenFrom(req, url);
       const view = rooms.getView(roomId, token, 0);
-      await settleRankedRooms();
+      await reconcilePendingProfileCompletions();
       const outcome = matchRewardOutcome(view);
       if (!outcome) return json(res, 409, { error:{ code:"MATCH_NOT_ENDED", message:"Match rewards can only be claimed after the match ends." } });
       if (view.settings?.rewardEligible === false || view.settings?.mode === "TRAINING" || view.settings?.mode === "TUTORIAL") return json(res, 409, { error:{ code:"REWARD_NOT_ELIGIBLE", message:"This match mode does not grant progression rewards." } });
@@ -1528,7 +1546,7 @@ const server = createServer(async (req, res) => {
 
     const stateMatch = /^\/api\/rooms\/([^/]+)\/state$/.exec(path);
     if (req.method === "GET" && stateMatch) {
-      await settleRankedRooms();
+      await reconcilePendingProfileCompletions();
       const after = Number(url.searchParams.get("after") ?? 0);
       return json(res, 200, rooms.getView(stateMatch[1].toUpperCase(), tokenFrom(req, url), Number.isFinite(after) ? after : 0, url.searchParams.get("clientId") ?? undefined));
     }
@@ -1539,7 +1557,7 @@ const server = createServer(async (req, res) => {
       const roomId = intentMatch[1].toUpperCase();
       const token = tokenFrom(req, url);
       const result = rooms.submitIntent(roomId, token, body);
-      if (result.response.accepted) await settleRankedRooms();
+      if (result.response.accepted) await reconcilePendingProfileCompletions();
       let serverProfile = null;
       if (result.view?.settings?.ratingActive) {
         const seat = rooms.getSeatIdentity(roomId, token);
@@ -1569,7 +1587,7 @@ const server = createServer(async (req, res) => {
       res.write("retry: 2000\n\n");
       const push = () => {
         try {
-          void settleRankedRooms();
+          void reconcilePendingProfileCompletions();
           const view = rooms.getView(roomId, token, lastSeq, clientId);
           lastSeq = view.match?.lastEventSeq ?? lastSeq;
           sseWrite(res, "state", view);
@@ -1624,7 +1642,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.73 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.74 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

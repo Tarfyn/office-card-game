@@ -89,6 +89,16 @@ try {
   });
   if (test.error) throw test.error;
   if (test.status !== 0) process.exitCode = test.status ?? 1;
+  if (process.exitCode == null || process.exitCode === 0) {
+    const settlement = spawnSync(process.execPath, [join(repositoryRoot, "scripts", "ranked-settlement-integration.mjs")], {
+      cwd:repositoryRoot,
+      env:testEnvironment,
+      stdio:"inherit",
+      shell:false
+    });
+    if (settlement.error) throw settlement.error;
+    if (settlement.status !== 0) process.exitCode = settlement.status ?? 1;
+  }
 } finally {
   cleanup();
 }

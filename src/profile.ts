@@ -97,6 +97,12 @@ export interface PlayerProfileServiceOptions {
   levelMilestones?: LevelMilestoneDefinition[];
 }
 
+export interface MatchSettlementInput {
+  settlementId: string;
+  entries: Array<{ playerId: string; entry: MatchHistoryInput; progressionEvents?: ProgressionEvent[] }>;
+  rankedResult?: { roomId: string; p1PlayerId: string; p2PlayerId: string; winnerPlayerId: string | null; reason: string; settledAt?: number };
+}
+
 function defaultId(): string {
   return `player-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -169,6 +175,8 @@ export class PlayerProfileService {
   private readonly progressionConfig: ProgressionConfig;
   private readonly rankedContentConfig: RankedContentConfig;
   private readonly levelMilestones: LevelMilestoneDefinition[];
+  /** Process-local guard for memory-backed profiles. PostgreSQL uses the durable ledger. */
+  private readonly processedSettlementIds = new Set<string>();
   private migratedLegacyStore = false;
 
   constructor(options: PlayerProfileServiceOptions = {}) {
@@ -517,17 +525,37 @@ export class PlayerProfileService {
   }
 
   recordMatch(profileToken: string, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
-    return this.recordMatchForProfile(this.requireByToken(profileToken), entry, progressionEvents);
+    return this.recordMatchForProfile(this.requireByToken(profileToken), entry, progressionEvents, true);
   }
 
   recordMatchForPlayerId(playerId: string, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[] = []): ServerPlayerProfile {
     const profile = this.playersById.get(String(playerId));
     if (!profile) throw new Error("PLAYER_NOT_FOUND");
-    return this.recordMatchForProfile(profile, entry, progressionEvents);
+    return this.recordMatchForProfile(profile, entry, progressionEvents, true);
   }
 
-  private recordMatchForProfile(profile: ServerPlayerProfile, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[]): ServerPlayerProfile {
+  recordMatchSettlement(input: MatchSettlementInput): { replayed:boolean; profiles:Map<string, ServerPlayerProfile> } {
+    const settlementId = String(input.settlementId ?? "");
+    if (!settlementId) throw new Error("SETTLEMENT_ID_REQUIRED");
+    if (this.processedSettlementIds.has(settlementId)) {
+      return { replayed:true, profiles:new Map(input.entries.map(({ playerId }) => [String(playerId), this.getByPlayerId(String(playerId))])) };
+    }
+    for (const item of input.entries) {
+      const profile = this.playersById.get(String(item.playerId));
+      if (!profile) throw new Error("PLAYER_NOT_FOUND");
+      this.recordMatchForProfile(profile, item.entry, item.progressionEvents ?? [], false);
+    }
+    if (input.rankedResult) this.recordRankedMatchInternal(input.rankedResult, false);
+    this.processedSettlementIds.add(settlementId);
+    this.persist();
+    return { replayed:false, profiles:new Map(input.entries.map(({ playerId }) => [String(playerId), this.getByPlayerId(String(playerId))])) };
+  }
+
+  private recordMatchForProfile(profile: ServerPlayerProfile, entry: MatchHistoryInput, progressionEvents: ProgressionEvent[], trackSettlement = true): ServerPlayerProfile {
     const record = normalizeMatchHistoryRecord(entry);
+    const settlementId = String(record.matchId || record.roomId);
+    const profileSettlementKey = `${profile.playerId}:${settlementId}`;
+    if (trackSettlement && this.processedSettlementIds.has(profileSettlementKey)) return structuredClone(profile);
     if (profile.matchHistory.some((existing) => existing.matchId === record.matchId || existing.roomId === record.roomId)) return structuredClone(profile);
     profile.matchHistory.unshift(structuredClone(record));
     profile.matchHistory = profile.matchHistory.slice(0, this.maxHistoryEntries);
@@ -552,6 +580,7 @@ export class PlayerProfileService {
     else deckTally.losses += 1;
     if (record.mode === "TRAINING" || record.mode === "TUTORIAL") {
       profile.updatedAt = this.nowFactory();
+      if (trackSettlement) this.processedSettlementIds.add(profileSettlementKey);
       this.persist();
       return structuredClone(profile);
     }
@@ -568,14 +597,20 @@ export class PlayerProfileService {
     profile.stats.pvp.losses = profile.stats.losses;
     profile.stats.pvp.draws = profile.stats.draws;
     profile.updatedAt = this.nowFactory();
+    if (trackSettlement) this.processedSettlementIds.add(profileSettlementKey);
     this.persist();
     return structuredClone(profile);
   }
 
   recordRankedMatch(result: { roomId:string; p1PlayerId:string; p2PlayerId:string; winnerPlayerId:string | null; reason:string; settledAt?:number }): { replayed:boolean; p1:PlayerRankedProfile; p2:PlayerRankedProfile } {
+    return this.recordRankedMatchInternal(result, true);
+  }
+
+  private recordRankedMatchInternal(result: { roomId:string; p1PlayerId:string; p2PlayerId:string; winnerPlayerId:string | null; reason:string; settledAt?:number }, trackSettlement = true): { replayed:boolean; p1:PlayerRankedProfile; p2:PlayerRankedProfile } {
     const p1 = this.playersById.get(result.p1PlayerId);
     const p2 = this.playersById.get(result.p2PlayerId);
     if (!p1 || !p2) throw new Error("PLAYER_NOT_FOUND");
+    if (trackSettlement && this.processedSettlementIds.has(String(result.roomId))) return { replayed:true, p1:structuredClone(p1.ranked), p2:structuredClone(p2.ranked) };
     if (!this.progressionEnabled) return { replayed:false, p1:structuredClone(p1.ranked), p2:structuredClone(p2.ranked) };
     const existing1 = p1.ranked.recentResults.find((item) => item.roomId === result.roomId);
     const existing2 = p2.ranked.recentResults.find((item) => item.roomId === result.roomId);
@@ -659,6 +694,7 @@ export class PlayerProfileService {
     };
     apply(p1, p2Before, p1Before, p1After, p1Outcome);
     apply(p2, p1Before, p2Before, p2After, p2Outcome);
+    if (trackSettlement) this.processedSettlementIds.add(String(result.roomId));
     this.persist();
     return { replayed:false, p1:structuredClone(p1.ranked), p2:structuredClone(p2.ranked) };
   }

@@ -13,3 +13,7 @@ The reconciled release candidate includes the additive Account/profile foundatio
 browser QA. The marker causes the reviewed deployment wrapper and DB helper to require successful
 migrations before release activation. It does not authorize production migration, backend
 enablement, tagging, deployment, or any destructive schema operation.
+
+`0002_match_settlements.sql` adds the normalized durable identity ledger for one authoritative
+profile completion per match. It is intentionally separate from bounded visible match history and
+does not backfill or replay pre-ledger ended rooms.

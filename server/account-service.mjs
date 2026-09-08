@@ -122,6 +122,7 @@ export class PostgresAccountService {
   constructor(options) {
     parseOfficeCardGameDatabaseUrl(options.databaseUrl, { test:options.testDatabase === true });
     this.profileFactory = options.profileFactory;
+    this.profileScopeFactory = options.profileScopeFactory ?? null;
     this.firstSessionGuideUpdater = options.firstSessionGuideUpdater ?? ((meta) => meta);
     this.preserveMutationError = options.preserveMutationError ?? (() => false);
     this.migrations = discoverMigrations(options.migrationDir);
@@ -409,6 +410,61 @@ export class PostgresAccountService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Atomically applies every profile side effect for one authoritative match.
+   * The ledger row is inserted in the same transaction as the profile writes,
+   * so a retry is a cheap no-op after a successful commit.
+   */
+  async settleMatchCompletion({ settlementId, matchId, mode, entries, rankedResult }) {
+    this.requireReady();
+    const normalizedEntries = (Array.isArray(entries) ? entries : []).filter((item) => item?.playerId && item?.entry);
+    const ids = [...new Set(normalizedEntries.map((item) => String(item.playerId)))].sort();
+    if (!ids.length) return { replayed:false, skipped:true, profiles:new Map() };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query("SELECT user_id, profile_data, revision FROM public.player_profiles WHERE user_id = ANY($1::uuid[]) ORDER BY user_id FOR UPDATE", [ids]);
+      if (result.rows.length !== ids.length) throw new AccountError("PLAYER_NOT_FOUND");
+      const ledger = await client.query(`INSERT INTO public.match_settlements(settlement_id, match_id, settlement_kind, mode, profile_ids)
+        VALUES ($1, $2, 'PROFILE_COMPLETION', $3, $4::jsonb)
+        ON CONFLICT (settlement_id) DO NOTHING
+        RETURNING settlement_id`, [String(settlementId), String(matchId), String(mode), JSON.stringify(ids)]);
+      if (!ledger.rowCount) {
+        await client.query("COMMIT");
+        return { replayed:true, profiles:new Map(result.rows.map((row) => [String(row.user_id), structuredClone(row.profile_data)])) };
+      }
+      const profileMap = new Map(result.rows.map((row) => [String(row.user_id), structuredClone(row.profile_data)]));
+      const scope = this.profileScope(profileMap);
+      const receipt = scope.service.recordMatchSettlement({ settlementId:String(settlementId), entries:normalizedEntries, rankedResult:rankedResult ?? undefined });
+      const profiles = receipt.profiles;
+      for (const id of ids) {
+        const profile = profiles.get(id);
+        if (!profile) throw new AccountError("PROFILE_MUTATION_FAILED");
+        await client.query("UPDATE public.player_profiles SET profile_data = $2::jsonb, revision = revision + 1, updated_at = now() WHERE user_id = $1", [id, JSON.stringify(profile)]);
+        await this.syncProfileProjections(client, id, profile);
+      }
+      await client.query("UPDATE public.match_settlements SET settled_at = now() WHERE settlement_id = $1", [String(settlementId)]);
+      await client.query("COMMIT");
+      return { replayed:false, profiles };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (error instanceof AccountError || this.preserveMutationError(error)) throw error;
+      console.error("PostgreSQL match settlement failed", safeDbError(error));
+      throw new AccountError("PROFILE_MUTATION_FAILED");
+    } finally {
+      client.release();
+    }
+  }
+
+  profileScope(profileMap) {
+    const savedProfiles = new Map([...profileMap.entries()].map(([id, profile]) => [id, structuredClone(profile)]));
+    const credentials = [...savedProfiles.keys()].map((id) => ({ kind:"GUEST_LOCAL", profileToken:`account-transaction-${id}`, playerId:id, createdAt:savedProfiles.get(id).createdAt, lastUsedAt:savedProfiles.get(id).updatedAt }));
+    // The server injects the profile service factory to avoid making this
+    // persistence layer depend on application module initialization order.
+    if (!this.profileScopeFactory) throw new AccountError("PROFILE_MUTATION_FAILED");
+    return this.profileScopeFactory(savedProfiles, credentials);
   }
 
   async syncProfileProjections(client, userId, profile) {
