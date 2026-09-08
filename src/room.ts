@@ -3,7 +3,7 @@ import { alphaDeckPresets, type DeckPreset } from "./decks.js";
 import { createMatch, resign, validateDeck, type MatchQaSetup } from "./engine.js";
 import { ALPHA_FORMAT } from "./formats.js";
 import { defaultCosmeticLoadout, normalizeCosmeticLoadout, type CosmeticLoadout } from "./cosmetics.js";
-import { executeHostedMatchIntent, executeMatchIntent } from "./intents.js";
+import { executeHostedMatchIntent, executeMatchIntent, validateMatchIntent } from "./intents.js";
 import { chooseAuthoritativeBotIntent, chooseTutorialCoachIntent } from "./bot.js";
 import { projectEventsSince, projectStateForViewer } from "./projection.js";
 import {
@@ -811,6 +811,22 @@ export class RoomService {
     const room = this.getRoom(roomId);
     const seat = this.resolveSeat(room, token);
     if (!room.state) throw new RoomError("MATCH_NOT_READY", "Match has not started yet.");
+    const rawRequest = request as unknown;
+    const requestObject = rawRequest !== null && typeof rawRequest === "object" && !Array.isArray(rawRequest) ? rawRequest as Record<string, unknown> : {};
+    const intentValidation = validateMatchIntent(requestObject.intent);
+    const envelopeValid = typeof requestObject.intentId === "string" && requestObject.intentId.length > 0
+      && typeof requestObject.expectedStateVersion === "number" && Number.isInteger(requestObject.expectedStateVersion) && requestObject.expectedStateVersion >= 0
+      && (!Object.prototype.hasOwnProperty.call(requestObject, "clientId") || typeof requestObject.clientId === "string");
+    if (!intentValidation.ok || !envelopeValid) {
+      const invalidExecution = executeMatchIntent(room.state, {
+        intentId: typeof requestObject.intentId === "string" ? requestObject.intentId : "",
+        matchId: room.state.matchId,
+        playerId: seat.playerId,
+        expectedStateVersion: room.state.stateVersion,
+        intent: (intentValidation.ok ? null : requestObject.intent) as MatchIntent
+      });
+      return { response:invalidExecution.response, view:this.projectRoom(room, token, room.state.eventSeq), replayed:false };
+    }
     const clientId = String(request.clientId ?? "").trim();
     const activeClientId = room.activeClientIds[seat.playerId];
     if (clientId && activeClientId && clientId !== activeClientId) throw new RoomError("SESSION_SUPERSEDED", "This match is active in another tab or browser. Take control here before making a move.");

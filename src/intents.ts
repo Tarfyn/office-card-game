@@ -31,6 +31,108 @@ import type {
 
 const HAND_LIMIT = 8;
 
+export interface IntentValidationFailure { code: "INVALID_INTENT"; message: string; detail?: string; }
+export type IntentValidationResult = { ok:true; intent: MatchIntent } | { ok:false; error:IntentValidationFailure };
+
+const hasOwn = (value:object, key:string):boolean => Object.prototype.hasOwnProperty.call(value, key);
+/** Protocol records are decoded-JSON objects only. Class instances and other
+ * host objects (Map, Set, Date, etc.) must never cross the authority boundary. */
+const isPlainRecord = (value:unknown): value is Record<string, unknown> => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.getPrototypeOf(value) === Object.prototype;
+};
+const isNonEmptyString = (value:unknown): value is string => typeof value === "string" && value.length > 0;
+const isIntegerInRange = (value:unknown, min:number, max:number): value is number => typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= min && value <= max;
+const isStringArray = (value:unknown): value is string[] => {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!hasOwn(value, String(index)) || !isNonEmptyString(value[index])) return false;
+  }
+  return true;
+};
+const unsafeRecordKeys = new Set(["__proto__", "prototype", "constructor"]);
+const reconstructTargetMap = (value:unknown): Record<string, string[]> | null => {
+  if (!isPlainRecord(value)) return null;
+  if (Object.getOwnPropertySymbols(value).some((symbol) => Object.prototype.propertyIsEnumerable.call(value, symbol))) return null;
+  const result: Record<string, string[]> = {};
+  for (const key of Object.keys(value)) {
+    if (!isNonEmptyString(key) || unsafeRecordKeys.has(key) || !isStringArray(value[key])) return null;
+    Object.defineProperty(result, key, { value:[...(value[key] as string[])], enumerable:true, writable:true, configurable:true });
+  }
+  return result;
+};
+const isTargetMap = (value:unknown): value is Record<string, string[]> => reconstructTargetMap(value) !== null;
+
+function invalid(detail:string): IntentValidationResult { return { ok:false, error:{ code:"INVALID_INTENT", message:"Intent payload is malformed.", detail } }; }
+
+/**
+ * Runtime boundary for untrusted JSON and internal callers. This validates
+ * protocol shape only; card existence, phase, capacity, targets and other
+ * gameplay legality remain authoritative engine checks.
+ * Unknown extra properties are ignored deliberately for compatibility, while
+ * all known fields are strict and never coerced.
+ */
+export function validateMatchIntent(input: unknown): IntentValidationResult {
+  if (!isPlainRecord(input)) return invalid("intent must be a plain object");
+  const type = input.type;
+  if (!hasOwn(input, "type") || !isNonEmptyString(type)) return invalid("intent.type must be a non-empty string");
+  switch (type) {
+    case "MULLIGAN":
+      return isStringArray(input.returnIds) ? { ok:true, intent:{ type, returnIds:[...input.returnIds] } } : invalid("returnIds must be an array of non-empty strings");
+    case "ADVANCE_PHASE":
+      return { ok:true, intent:{ type } };
+    case "ARCHIVE_EXCESS_HAND":
+      return isStringArray(input.cardIds) ? { ok:true, intent:{ type, cardIds:[...input.cardIds] } } : invalid("cardIds must be an array of non-empty strings");
+    case "PLAY_EMPLOYEE":
+      if (!isNonEmptyString(input.cardId)) return invalid("cardId must be a non-empty string");
+      if (!isIntegerInRange(input.slot, 0, 4)) return invalid("slot must be an integer from 0 through 4");
+      if (hasOwn(input, "promotionMaterialIds") && !isStringArray(input.promotionMaterialIds)) return invalid("promotionMaterialIds must be an array of non-empty strings");
+      return { ok:true, intent:{ type, cardId:input.cardId, slot:input.slot, ...(hasOwn(input, "promotionMaterialIds") ? { promotionMaterialIds:[...(input.promotionMaterialIds as string[])] } : {}) } };
+    case "PLAY_SYSTEM":
+    case "SET_INCIDENT":
+      if (!isNonEmptyString(input.cardId)) return invalid("cardId must be a non-empty string");
+      if (!isIntegerInRange(input.slot, 0, 3)) return invalid("slot must be an integer from 0 through 3");
+      return { ok:true, intent:{ type, cardId:input.cardId, slot:input.slot } };
+    case "PLAY_ACTION":
+      if (!isNonEmptyString(input.cardId)) return invalid("cardId must be a non-empty string");
+      if (hasOwn(input, "targets") && !isTargetMap(input.targets)) return invalid("targets must map strings to string arrays");
+      return { ok:true, intent:{ type, cardId:input.cardId, ...(hasOwn(input, "targets") ? { targets:reconstructTargetMap(input.targets)! } : {}) } };
+    case "ACTIVATE_ABILITY":
+    case "ACTIVATE_RESPONSE":
+      if (!isNonEmptyString(input.sourceId) || !isNonEmptyString(input.abilityId)) return invalid("sourceId and abilityId must be non-empty strings");
+      if (hasOwn(input, "targets") && !isTargetMap(input.targets)) return invalid("targets must map strings to string arrays");
+      return { ok:true, intent:{ type, sourceId:input.sourceId, abilityId:input.abilityId, ...(hasOwn(input, "targets") ? { targets:reconstructTargetMap(input.targets)! } : {}) } };
+    case "DECLARE_ATTACK":
+      if (!isNonEmptyString(input.attackerId)) return invalid("attackerId must be a non-empty string");
+      if (!(input.targetId === null || isNonEmptyString(input.targetId))) return invalid("targetId must be null or a non-empty string");
+      return { ok:true, intent:{ type, attackerId:input.attackerId, targetId:input.targetId as string|null } };
+    case "PASS_PRIORITY":
+      return { ok:true, intent:{ type } };
+    case "RESOLVE_CHOICE":
+      return isNonEmptyString(input.choiceId) && isNonEmptyString(input.optionId)
+        ? { ok:true, intent:{ type, choiceId:input.choiceId, optionId:input.optionId } }
+        : invalid("choiceId and optionId must be non-empty strings");
+    case "RESOLVE_DECK_SELECTION":
+      if (!isNonEmptyString(input.selectionId) || !isStringArray(input.selectedIds)) return invalid("selectionId and selectedIds are required");
+      if (hasOwn(input, "orderedUnselectedIds") && !isStringArray(input.orderedUnselectedIds)) return invalid("orderedUnselectedIds must be an array of non-empty strings");
+      return { ok:true, intent:{ type, selectionId:input.selectionId, selectedIds:[...input.selectedIds], ...(hasOwn(input, "orderedUnselectedIds") ? { orderedUnselectedIds:[...(input.orderedUnselectedIds as string[])] } : {}) } };
+    case "RESOLVE_TRIGGER_TARGET_SELECTION":
+      return isNonEmptyString(input.selectionId) && isTargetMap(input.targets)
+        ? { ok:true, intent:{ type, selectionId:input.selectionId, targets:reconstructTargetMap(input.targets)! } }
+        : invalid("selectionId and targets are required");
+    case "RESOLVE_HAND_SELECTION":
+      return isNonEmptyString(input.selectionId) && isStringArray(input.selectedIds)
+        ? { ok:true, intent:{ type, selectionId:input.selectionId, selectedIds:[...input.selectedIds] } }
+        : invalid("selectionId and selectedIds are required");
+    case "COMPLETE_TUTORIAL":
+      return { ok:true, intent:{ type } };
+    case "RESIGN":
+      return { ok:true, intent:{ type } };
+    default:
+      return invalid("unknown intent type");
+  }
+}
+
 function resolveClientCardRef(state: GameState, playerId: PlayerId, ref: string): string {
   if (state.cards[ref]) return ref;
   const match = /^hidden-support:(P1|P2):(-?\d+):(\d+)$/.exec(ref);
@@ -113,6 +215,10 @@ function executeIntentOnDraft(state: GameState, playerId: PlayerId, intent: Matc
     case "RESIGN":
       resign(state, playerId);
       return;
+    default: {
+      const unreachable: never = intent;
+      return unreachable;
+    }
   }
 }
 
@@ -127,7 +233,7 @@ function rejected(
     accepted: false,
     stateVersion: state.stateVersion,
     lastEventSeq: state.eventSeq,
-    error: { code: code as "STALE_STATE" | "RULES_ERROR" | "MATCH_MISMATCH" | "INTERNAL_ERROR", message },
+    error: { code: code as "INVALID_INTENT" | "STALE_STATE" | "RULES_ERROR" | "MATCH_MISMATCH" | "INTERNAL_ERROR", message },
     events: [],
     view: projectStateForViewer(state, command.playerId)
   };
@@ -181,6 +287,8 @@ export function autoAdvanceSafePhases(state: GameState): number {
 }
 
 export function executeMatchIntent(state: GameState, command: MatchIntentCommand, options: ExecuteIntentOptions = {}): MatchCommandExecution {
+  const validation = validateMatchIntent(command.intent);
+  if (!validation.ok) return rejected(state, command, "INVALID_INTENT", validation.error.message);
   if (command.matchId !== state.matchId) return rejected(state, command, "MATCH_MISMATCH", "Intent belongs to a different match.");
   if (command.expectedStateVersion !== state.stateVersion) {
     return rejected(state, command, "STALE_STATE", `Expected stateVersion ${command.expectedStateVersion}, current version is ${state.stateVersion}.`);
@@ -189,7 +297,7 @@ export function executeMatchIntent(state: GameState, command: MatchIntentCommand
   const beforeEventSeq = state.eventSeq;
   const draft = structuredClone(state);
   try {
-    executeIntentOnDraft(draft, command.playerId, command.intent, options);
+    executeIntentOnDraft(draft, command.playerId, validation.intent, options);
     draft.stateVersion = state.stateVersion + 1;
     return {
       state: draft,

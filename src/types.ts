@@ -891,7 +891,7 @@ export interface MatchCommandResponse {
   accepted: boolean;
   stateVersion: number;
   lastEventSeq: number;
-  error?: { code: "STALE_STATE" | "RULES_ERROR" | "MATCH_MISMATCH" | "INTERNAL_ERROR"; message: string };
+  error?: { code: "INVALID_INTENT" | "STALE_STATE" | "RULES_ERROR" | "MATCH_MISMATCH" | "INTERNAL_ERROR"; message: string };
   events: ClientEvent[];
   view: ClientGameState;
 }
