@@ -213,11 +213,10 @@ assert.match(migrationRunner, /checksum_sha256/);
 assert.match(backupService, /^ExecStart=\/usr\/local\/sbin\/ocg-db-helper backup-now$/m);
 assert.match(backupService, /^Type=oneshot$/m);
 assert.match(backupService, /^NoNewPrivileges=true$/m);
-assert.doesNotMatch(
-  backupService,
-  /^RestrictSUIDSGID=true$/m,
-  "backup helper must permit its intentional root-to-postgres UID transition"
-);
+assert.match(backupService, /^AmbientCapabilities=CAP_SETUID$/m);
+assert.match(backupService, /^RestrictSUIDSGID=true$/m);
+assert.doesNotMatch(backupService, /^AmbientCapabilities=.*CAP_SETGID/m);
+assert.doesNotMatch(backupService, /^NoNewPrivileges=false$/m);
 assert.match(backupService, /^ProtectSystem=strict$/m);
 assert.match(backupTimer, /^Persistent=true$/m);
 assert.match(backupTimer, /^Unit=office-card-game-db-backup\.service$/m);
