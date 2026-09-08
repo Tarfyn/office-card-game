@@ -39,8 +39,11 @@ remain visible and require a separately reviewed dependency change.
 
 ## Safety sequence
 
-The wrapper validates an explicit release tag or full commit, verifies the checked-out commit and
-package/version surfaces, acquires a kernel-managed `flock`, checks disk/registry/service
+The wrapper parses and syntactically validates an explicit release tag or full commit, then
+acquires a kernel-managed `flock` before entering the shared deployment checkout. Both normal
+deployments and `deploy.sh --check <tag>` use this same lock because target preparation performs
+`git fetch`, checkout, and reset mutations. Once locked, the wrapper resolves the tag identity
+once, verifies the checked-out commit and package/version surfaces, checks disk/registry/service
 preconditions, then runs install, build and tests with visible stage logging. A fresh helper-owned
 release is prepared from the validated tree. The active symlink is never modified in place. Once
 the release is finalized, the wrapper validates the exact `deploy/postgres-persistence-ready`
@@ -57,12 +60,28 @@ at most one helper-mediated rollback and rechecks the previous release. A pre-cu
 discards only the release prepared by that attempt. An already-existing immutable target is never
 overwritten.
 
-The lock is an OS file lock, so it releases automatically when the process exits. The current
+The lock covers target resolution, checkout/reset, build/test, release preparation, migration,
+activation, readiness/health verification, and any rollback attempt. A contending invocation
+fails immediately with no checkout or release mutation. The lock is an OS file lock, so it releases automatically when the process exits. The current
 helper-managed release layout retains the active release and prior release directories; no
 automatic pruning is performed by this wrapper, so rollback targets are not silently deleted.
 
-`deploy.sh --check <tag>` performs target, version, lock, disk, registry, Node/npm and service
-preflight without installing, preparing or activating a release.
+`deploy.sh --check <tag>` performs locked target, version, disk, registry, Node/npm and service
+preflight without installing, preparing or activating a release. The resolved tag commit is
+bound to `HEAD` and the package application version; a local/remote tag identity mismatch or
+tag/package version mismatch fails before release preparation.
+
+## Wrapper parity and installation
+
+`ops/deploy.sh` is the reviewed authoritative source. The installed `/opt/office-card-game/deploy.sh`
+must be an exact copy of a reviewed repository revision; compare its SHA-256 before each
+operations change. Installing or replacing it is a separate root-authorized maintenance action,
+never part of an application deployment. The reviewed source preserves the production umask
+(`0022`) and normalizes the PostgreSQL migration runner and cutover marker to mode `0644` after
+validating fixed, non-symlink paths. A future installation should back up the root-owned wrapper,
+install atomically as `root:root` mode `0755`, read back and compare the checksum, run static and
+non-mutating `--check` smoke, and only then make it the deployment entry point. F04 scheduled
+backup diagnosis and restore testing remain separate unresolved operational work.
 
 ## Known diagnosis
 

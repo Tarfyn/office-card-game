@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 0022
 
 REPO="${OCG_DEPLOY_REPO:-/opt/office-card-game/repo}"
 RELEASES="${OCG_RELEASES_DIR:-/srv/office-card-game/releases}"
@@ -16,8 +17,11 @@ REGISTRY_TIMEOUT_SECONDS="${REGISTRY_TIMEOUT_SECONDS:-30}"
 MIN_FREE_KB="${MIN_FREE_KB:-1048576}"
 CUTOVER_MARKER_REL="deploy/postgres-persistence-ready"
 CUTOVER_MARKER_VALUE="OFFICE_CARD_GAME_POSTGRES_PERSISTENCE_READY=1"
+MIGRATION_RUNNER_REL="scripts/db-migrate.mjs"
 
 TARGET=""
+TARGET_COMMIT=""
+TARGET_VERSION=""
 CHECK_ONLY=0
 STAGE="bootstrap"
 PREPARED=0
@@ -68,13 +72,18 @@ parse_target() {
 }
 
 validate_target() {
-  STAGE="1 validate release"
+  STAGE="2 validate release"
   cd "$REPO"
   git fetch --tags origin
-  local target_commit
+  local target_commit remote_commit remote_refs
   if [[ "$TARGET" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     git show-ref --verify --quiet "refs/tags/$TARGET" || die "tag does not exist: $TARGET"
     target_commit="$(git rev-list -n 1 "$TARGET^{commit}")"
+    TARGET_VERSION="${TARGET#v}"
+    remote_refs="$(git ls-remote --tags origin "refs/tags/$TARGET" "refs/tags/$TARGET^{}")" || die "could not verify remote tag: $TARGET"
+    remote_commit="$(awk -v tag="$TARGET" '$2 == "refs/tags/" tag "^{}" { print $1; exit }' <<< "$remote_refs")"
+    [[ -n "$remote_commit" ]] || remote_commit="$(awk -v tag="$TARGET" '$2 == "refs/tags/" tag { print $1; exit }' <<< "$remote_refs")"
+    [[ "$remote_commit" == "$target_commit" ]] || die "local and remote tag identities differ: local=$target_commit remote=${remote_commit:-missing}"
   else
     git cat-file -e "$TARGET^{commit}" || die "commit does not exist: $TARGET"
     target_commit="$(git rev-parse "$TARGET^{commit}")"
@@ -84,15 +93,19 @@ validate_target() {
   local checked_out
   checked_out="$(git rev-parse HEAD)"
   [[ "$checked_out" == "$target_commit" ]] || die "checked out commit does not match requested target"
-  log "1" "validated target=$TARGET commit=$checked_out"
+  TARGET_COMMIT="$target_commit"
+  [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || die "target commit changed after checkout"
+  log "2" "validated target=$TARGET commit=$checked_out"
 }
 
 acquire_lock() {
-  STAGE="2 acquire deploy lock"
+  STAGE="1 acquire deploy lock"
   mkdir -p "$(dirname "$LOCK_FILE")"
   exec 9>"$LOCK_FILE"
-  flock -n 9 || die "another deployment is active (lock=$LOCK_FILE)"
-  log "2" "lock acquired: $LOCK_FILE"
+  if ! flock -n 9; then
+    die "another deployment is active; no shared checkout mutation performed (lock=$LOCK_FILE)"
+  fi
+  log "1" "lock acquired: $LOCK_FILE; shared checkout mutation is now protected"
 }
 
 read_active_release() {
@@ -113,6 +126,10 @@ validate_project() {
   local lock_version server_source
   [[ -f package.json && -f package-lock.json && -f server/server.mjs ]] || die "required release files are missing"
   VERSION="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("package.json","utf8")).version)')"
+  if [[ -n "$TARGET_VERSION" && "$VERSION" != "$TARGET_VERSION" ]]; then
+    die "tag/package version mismatch: tag=$TARGET_VERSION package=$VERSION"
+  fi
+  [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || die "checked out target changed before project validation"
   lock_version="$(node -e 'const p=require("./package-lock.json"); console.log(`${p.version}|${p.packages[""].version}`)')"
   [[ "$lock_version" == "$VERSION|$VERSION" ]] || die "package.json/package-lock.json versions disagree"
   server_source="$(cat server/server.mjs)"
@@ -130,7 +147,7 @@ validate_project() {
   if [[ "$CHECK_ONLY" -eq 0 ]] && sudo -n "$RELEASE_HELPER" exists "$RELEASE_NAME" >/dev/null 2>&1; then
     die "refusing to overwrite existing immutable release: $RELEASE_NAME"
   fi
-  log "3" "version surfaces agree: $VERSION; release=$RELEASE_NAME"
+  log "4" "version surfaces agree: $VERSION; release=$RELEASE_NAME commit=$TARGET_COMMIT"
 }
 
 preflight() {
@@ -175,6 +192,7 @@ prepare_release() {
   tar --exclude="./.git" --exclude="./runtime" --exclude="./reports" -cf - . | tar -xf - -C "$RELEASE_DIR"
   [[ -f "$RELEASE_DIR/package.json" && -f "$RELEASE_DIR/server/server.mjs" ]] || die "prepared release is missing runtime files"
   [[ -f "$RELEASE_DIR/node_modules/argon2/package.json" && -f "$RELEASE_DIR/node_modules/pg/package.json" ]] || die "prepared release is missing required production dependencies"
+  normalize_postgres_release_modes
   sudo -n "$RELEASE_HELPER" finalize "$RELEASE_NAME"
   local owner
   owner="$(stat -c '%U:%G' "$RELEASE_DIR")"
@@ -191,6 +209,30 @@ validate_cutover_marker() {
   [[ "$marker_value" == "$CUTOVER_MARKER_VALUE" ]] || die "PostgreSQL cutover marker content is invalid"
 }
 
+normalize_postgres_release_modes() {
+  local runner="$RELEASE_DIR/$MIGRATION_RUNNER_REL"
+  local marker="$RELEASE_DIR/$CUTOVER_MARKER_REL"
+  local runner_mode marker_mode
+
+  if [[ ! -e "$marker" && ! -L "$marker" ]]; then
+    return 0
+  fi
+
+  [[ -d "$RELEASE_DIR/scripts" && ! -L "$RELEASE_DIR/scripts" ]] || die "prepared release scripts path must be a regular directory"
+  [[ -d "$RELEASE_DIR/deploy" && ! -L "$RELEASE_DIR/deploy" ]] || die "prepared release deploy path must be a regular directory"
+  [[ -f "$runner" && ! -L "$runner" ]] || die "prepared release is missing a regular non-symlink migration runner"
+  [[ -f "$marker" && ! -L "$marker" ]] || die "prepared release cutover marker must be a regular non-symlink file"
+  [[ "$(readlink -f -- "$runner")" == "$runner" ]] || die "prepared release migration runner escaped its fixed path"
+  [[ "$(readlink -f -- "$marker")" == "$marker" ]] || die "prepared release cutover marker escaped its fixed path"
+
+  validate_cutover_marker
+  chmod 0644 -- "$runner" "$marker"
+  runner_mode="$(stat -c '%a' "$runner")"
+  marker_mode="$(stat -c '%a' "$marker")"
+  [[ "$runner_mode" == "644" && "$marker_mode" == "644" ]] || die "could not normalize PostgreSQL release security modes"
+  log "10" "normalized PostgreSQL release contract files to mode 0644"
+}
+
 migrate_if_required() {
   STAGE="10 database migration gate"
   if [[ -e "$CUTOVER_MARKER" || -L "$CUTOVER_MARKER" ]]; then
@@ -200,6 +242,11 @@ migrate_if_required() {
   else
     log "10" "no PostgreSQL cutover marker; migration gate skipped"
   fi
+}
+
+assert_target_identity() {
+  [[ "$(git rev-parse HEAD)" == "$TARGET_COMMIT" ]] || die "target commit changed before activation"
+  [[ "$RELEASE_NAME" == "v${VERSION}-$(git rev-parse --short=8 "$TARGET_COMMIT")" ]] || die "release directory identity does not match resolved target"
 }
 
 check_endpoint() {
@@ -270,8 +317,8 @@ smoke() {
 
 main() {
   parse_target "$@"
-  validate_target
   acquire_lock
+  validate_target
   read_active_release
   validate_project
   preflight
@@ -281,6 +328,7 @@ main() {
   fi
   install_build_test
   prepare_release
+  assert_target_identity
   migrate_if_required
   STAGE="11 atomic cutover"
   sudo -n "$RELEASE_HELPER" activate "$RELEASE_NAME" || abort_after_cutover "release activation failed"

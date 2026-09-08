@@ -146,6 +146,8 @@ const rankedRanksConfig = JSON.parse(await readFile(join(dataDir, "ranked", "ran
 const rankedSeasonsConfig = JSON.parse(await readFile(join(dataDir, "ranked", "seasons.json"), "utf8"));
 const rankedContentConfig = { ranks:rankedRanksConfig.ranks ?? [], seasons:rankedSeasonsConfig.seasons ?? [] };
 const rankedConfig = normalizeRankedConfig(matchSettings.ranked ?? {});
+const matchmakingLeaseMs = Number(process.env.MATCHMAKING_LEASE_MS ?? 300_000);
+if (!Number.isFinite(matchmakingLeaseMs) || matchmakingLeaseMs <= 0) throw new Error("MATCHMAKING_LEASE_MS must be a positive finite number");
 const alphaScrapRules = {
   deckSize: Number(ALPHA_FORMAT.deckSize),
   defaultCopyLimit: Number(ALPHA_FORMAT.defaultCopyLimit),
@@ -279,6 +281,7 @@ const accountService = PROFILE_STORAGE_BACKEND === "POSTGRES"
 const matchmaking = new MatchmakingQueue({
   ticketIdFactory: () => `mm-${randomBytes(6).toString("hex")}`,
   persistence: matchmakingPersistence,
+  leaseDurationMs: matchmakingLeaseMs,
   candidateScore: (ticket, candidate, now) => {
     if (ticket.mode !== "RANKED") return 0;
     if (ticket.payload?.storageKind !== candidate.payload?.storageKind) return null;
@@ -661,6 +664,13 @@ async function pairQueuedTickets(currentTicketId) {
             if (isDeckStaleError(error)) return { stale: { error, ticketId:current.ticketId } };
             throw error;
           }
+          // Lease expiry is independent from profile/deck validity. Recheck both
+          // tickets after any PostgreSQL row-lock wait and immediately before
+          // exposing the room so an expired candidate cannot be committed.
+          const liveOpponent = matchmaking.get(opponent.ticketId, opponent.profileId);
+          const liveCurrent = matchmaking.get(current.ticketId, current.profileId);
+          if (liveOpponent.status !== "WAITING") return { expired: { ticketId:opponent.ticketId } };
+          if (liveCurrent.status !== "WAITING") return { expired: { ticketId:current.ticketId } };
           // Both validated payloads are passed directly into room creation;
           // no cached or newly selected deck is consulted after this point.
           const created = rooms.createRoom(opponentDeck, { mode:current.mode, ratingActive:current.mode === "RANKED" && rankedConfig.enabled }, profileIdentityForProfile(opponentProfile));
@@ -676,6 +686,12 @@ async function pairQueuedTickets(currentTicketId) {
         throw error;
       }
       if (outcome?.matched) return outcome.matched.second;
+      if (outcome?.expired) {
+        const expiredTicketId = outcome.expired.ticketId;
+        if (expiredTicketId === current.ticketId) return matchmaking.get(current.ticketId, current.profileId);
+        current = matchmaking.get(current.ticketId, current.profileId);
+        continue;
+      }
       if (outcome?.stale) {
         // Validate both tickets together, then invalidate the exact stale one
         // and continue searching without poisoning the queue.
@@ -789,7 +805,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.76",
+    version: "7.69.77",
     releaseChannel: "INTERNAL_MAINTENANCE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -823,7 +839,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.76", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.77", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -1057,11 +1073,11 @@ const server = createServer(async (req, res) => {
     // Historical compatibility marker retained for v7.56 tests: releaseChannel:"EXTERNAL_ALPHA_CANDIDATE"
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.76", releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.77", releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.76", releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.77", releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -1570,7 +1586,7 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && path === "/api/matchmaking/status") {
       const profile = await profileForRequest(req, profileTokenFrom(req, url));
-      let ticket = matchmaking.get(String(url.searchParams.get("ticketId") ?? ""), profile.playerId);
+      let ticket = matchmaking.touch(String(url.searchParams.get("ticketId") ?? ""), profile.playerId);
       if (ticket.status === "WAITING") {
         ticket = await pairQueuedTickets(ticket.ticketId);
       }
@@ -1746,7 +1762,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.76 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.77 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

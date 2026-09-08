@@ -6525,6 +6525,10 @@ function matchmakingInvalidMessage() {
   return lobbyCopy('Your queued deck is no longer valid. Review it and join the queue again.','Dein ausgewähltes Deck ist nicht mehr gültig. Prüfe es und starte die Suche erneut.');
 }
 
+function matchmakingExpiredMessage() {
+  return lobbyCopy('Your matchmaking search expired because it was inactive. Join the queue again.','Deine Spielersuche ist wegen Inaktivität abgelaufen. Starte die Suche erneut.');
+}
+
 async function restoreMatchmakingTicket() {
   if (!hasProfileIdentity() || state.session) return;
   try {
@@ -6539,6 +6543,7 @@ async function restoreMatchmakingTicket() {
       scheduleMatchmakingPoll();
     } else {
       if (result.ticket.status === 'INVALID') state.matchmakingMessage = matchmakingInvalidMessage();
+      if (result.ticket.status === 'EXPIRED') state.matchmakingMessage = matchmakingExpiredMessage();
       saveMatchmakingTicket(null);
     }
   } catch {
@@ -6582,6 +6587,7 @@ async function pollMatchmaking() {
     if (result.ticket.status === 'MATCHED' && enterMatchedSession(result.ticket)) return;
     if (result.ticket.status === 'WAITING') { if (result.ticket.mode === 'RANKED') state.matchmakingMessage = rankedQueueMessage(result.ranked, result.ticket); scheduleMatchmakingPoll(); }
     else if (result.ticket.status === 'INVALID') { state.matchmakingMessage = matchmakingInvalidMessage(); state.matchmakingTicket = null; saveMatchmakingTicket(null); }
+    else if (result.ticket.status === 'EXPIRED') { state.matchmakingMessage = matchmakingExpiredMessage(); state.matchmakingTicket = null; saveMatchmakingTicket(null); }
   } catch (error) {
     state.matchmakingMessage = error.message;
     state.matchmakingTicket = null;
@@ -6618,6 +6624,7 @@ async function beginQuickMatch() {
     saveMatchmakingTicket(result.ticket);
     if (result.ticket.status === 'MATCHED' && enterMatchedSession(result.ticket)) return;
     if (result.ticket.status === 'INVALID') { state.matchmakingMessage = matchmakingInvalidMessage(); state.matchmakingTicket = null; saveMatchmakingTicket(null); }
+    else if (result.ticket.status === 'EXPIRED') { state.matchmakingMessage = matchmakingExpiredMessage(); state.matchmakingTicket = null; saveMatchmakingTicket(null); }
     else { state.matchmakingMessage = mode === 'RANKED' ? rankedQueueMessage(result.ranked, result.ticket) : 'Searching for another player on this server…'; scheduleMatchmakingPoll(); }
   } catch (error) { state.matchmakingMessage = error.message; }
   finally { state.matchmakingBusy = false; if (!state.session) renderLobby(); }

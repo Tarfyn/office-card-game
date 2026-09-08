@@ -109,6 +109,16 @@ try {
     if (matchmaking.error) throw matchmaking.error;
     if (matchmaking.status !== 0) process.exitCode = matchmaking.status ?? 1;
   }
+  if (process.exitCode == null || process.exitCode === 0) {
+    const lease = spawnSync(process.execPath, [join(repositoryRoot, "scripts", "matchmaking-lease-regression.mjs")], {
+      cwd:repositoryRoot,
+      env:testEnvironment,
+      stdio:"inherit",
+      shell:false
+    });
+    if (lease.error) throw lease.error;
+    if (lease.status !== 0) process.exitCode = lease.status ?? 1;
+  }
 } finally {
   cleanup();
 }
