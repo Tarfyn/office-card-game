@@ -291,6 +291,22 @@ const matchmaking = new MatchmakingQueue({
   }
 });
 
+class AsyncMutex {
+  #tail = Promise.resolve();
+  async run(work) {
+    let release;
+    const previous = this.#tail;
+    this.#tail = new Promise((resolve) => { release = resolve; });
+    await previous;
+    try { return await work(); }
+    finally { release(); }
+  }
+}
+
+// Serializes FILE_JSON matchmaking commits and guest-local profile mutations.
+// PostgreSQL account commits additionally use row locks in withProfilesLocked.
+const matchmakingCommitMutex = new AsyncMutex();
+
 function matchRewardOutcome(view) {
   const match = view?.match;
   if (!match || match.status !== "ENDED") return null;
@@ -448,7 +464,7 @@ async function mutateProfileForRequest(req, profileToken, mutation) {
       return { ...result, profile:scope.profile() };
     });
   }
-  return mutation(profiles, String(profileToken ?? ""));
+  return matchmakingCommitMutex.run(() => mutation(profiles, String(profileToken ?? "")));
 }
 
 async function recordProfileForPlayerId(playerId, mutation) {
@@ -580,12 +596,99 @@ function matchmakingPayload(profile, deckSelection, mode, storageKind) {
   };
 }
 
-function pairQueuedTickets(opponent, currentTicket, currentProfile, currentDeckSelection, mode) {
-  const created = rooms.createRoom(opponent.payload.deckSelection, { mode, ratingActive:mode === "RANKED" && rankedConfig.enabled }, { profileId:opponent.profileId, displayName:opponent.payload.displayName, cosmeticLoadout:opponent.payload.cosmeticLoadout });
-  const joined = rooms.joinRoom(created.roomId, currentDeckSelection, profileIdentityForProfile(currentProfile));
-  const hostSession = { roomId:created.roomId, token:created.token, playerId:"P1", view:rooms.getView(created.roomId, created.token, 0) };
-  const guestSession = { roomId:joined.roomId, token:joined.token, playerId:"P2", view:joined.view };
-  return matchmaking.markPairMatched(opponent.ticketId, hostSession, currentTicket.ticketId, guestSession);
+function isDeckStaleError(error) {
+  const code = error instanceof RoomError ? error.code : error instanceof Error ? error.message : "";
+  return ["INVALID_DECK", "DECK_NOT_OWNED", "DECK_COPY_LIMIT", "DECK_UNKNOWN_CARD", "DECK_UNKNOWN_VARIANT", "DECK_MALFORMED"].includes(code);
+}
+
+function profileForQueuedTicket(profileMap, ticket) {
+  const profile = profileMap?.get(ticket.profileId);
+  if (!profile) throw new AccountError("PLAYER_NOT_FOUND", "Player profile not found.");
+  return profile;
+}
+
+function validateQueuedTicketProfile(profile, ticket) {
+  const selection = ticket.payload?.deckSelection;
+  const validated = validateQueuedDeck(selection);
+  validateOwnedDeck(profile, validated, ticket.mode);
+  return validated;
+}
+
+async function withQueuedProfilesLocked(tickets, work) {
+  const storageKind = tickets[0]?.payload?.storageKind;
+  if (accountService && storageKind === "POSTGRES" && tickets.every((ticket) => ticket.payload?.storageKind === "POSTGRES")) {
+    return accountService.withProfilesLocked(tickets.map((ticket) => ticket.profileId), (profileMap) => work(profileMap));
+  }
+  // Guest profiles are process-local by design. The surrounding commit mutex
+  // fences their memory mutation against this validation/room exposure.
+  const profileMap = new Map(tickets.map((ticket) => [ticket.profileId, profiles.getByPlayerId(ticket.profileId)]));
+  return work(profileMap);
+}
+
+async function pairQueuedTickets(currentTicketId) {
+  // Regression compatibility marker: ratingActive:mode === "RANKED"
+  return matchmakingCommitMutex.run(async () => {
+    let current;
+    try {
+      const snapshot = matchmaking.snapshot().tickets.find((ticket) => ticket.ticketId === currentTicketId);
+      if (!snapshot) throw new Error("MATCHMAKING_TICKET_NOT_FOUND");
+      current = matchmaking.get(currentTicketId, snapshot.profileId);
+    } catch (error) {
+      throw error;
+    }
+    if (current.status !== "WAITING") return current;
+
+    const maxCandidates = Math.max(1, matchmaking.snapshot().tickets.length);
+    for (let attempt = 0; attempt < maxCandidates; attempt += 1) {
+      const opponent = matchmaking.findOpponent(current.ticketId, current.profileId);
+      if (!opponent) return matchmaking.get(current.ticketId, current.profileId);
+      let outcome;
+      try {
+        outcome = await withQueuedProfilesLocked([opponent, current], (profileMap) => {
+          const opponentProfile = profileForQueuedTicket(profileMap, opponent);
+          const currentProfile = profileForQueuedTicket(profileMap, current);
+          let opponentDeck;
+          let currentDeck;
+          try {
+            opponentDeck = validateQueuedTicketProfile(opponentProfile, opponent);
+          } catch (error) {
+            if (isDeckStaleError(error)) return { stale: { error, ticketId:opponent.ticketId } };
+            throw error;
+          }
+          try {
+            currentDeck = validateQueuedTicketProfile(currentProfile, current);
+          } catch (error) {
+            if (isDeckStaleError(error)) return { stale: { error, ticketId:current.ticketId } };
+            throw error;
+          }
+          // Both validated payloads are passed directly into room creation;
+          // no cached or newly selected deck is consulted after this point.
+          const created = rooms.createRoom(opponentDeck, { mode:current.mode, ratingActive:current.mode === "RANKED" && rankedConfig.enabled }, profileIdentityForProfile(opponentProfile));
+          const joined = rooms.joinRoom(created.roomId, currentDeck, profileIdentityForProfile(currentProfile));
+          const hostSession = { roomId:created.roomId, token:created.token, playerId:"P1", view:rooms.getView(created.roomId, created.token, 0) };
+          const guestSession = { roomId:joined.roomId, token:joined.token, playerId:"P2", view:joined.view };
+          return { matched: matchmaking.markPairMatched(opponent.ticketId, hostSession, current.ticketId, guestSession) };
+        });
+      } catch (error) {
+        // A database/profile read failure is retryable; never match from the
+        // stale cached queue payload in that case.
+        if (error instanceof AccountError) throw error;
+        throw error;
+      }
+      if (outcome?.matched) return outcome.matched.second;
+      if (outcome?.stale) {
+        // Validate both tickets together, then invalidate the exact stale one
+        // and continue searching without poisoning the queue.
+        const staleTicketId = outcome.stale.ticketId ?? opponent.ticketId;
+        matchmaking.markInvalid(staleTicketId, "DECK_STALE");
+        console.info("Matchmaking commit rejected stale deck", staleTicketId);
+        if (staleTicketId === current.ticketId) return matchmaking.get(current.ticketId, current.profileId);
+        current = matchmaking.get(current.ticketId, current.profileId);
+        continue;
+      }
+    }
+    return matchmaking.get(current.ticketId, current.profileId);
+  });
 }
 
 function securityHeaders() {
@@ -686,7 +789,7 @@ async function adminOpsSnapshot() {
       };
   return {
     generatedAt: now,
-    version: "7.69.75",
+    version: "7.69.76",
     releaseChannel: "INTERNAL_MAINTENANCE",
     server: { mode:SERVER_MODE, uptimeSeconds:Math.round(process.uptime()), shuttingDown },
     persistence:{
@@ -720,7 +823,7 @@ async function operationsOverview() {
         diagnostics:[]
       };
   return buildOperationsOverview({
-    generatedAt:Date.now(), version:"7.69.75", releaseIdentifier:process.env.OCG_RELEASE_ID,
+    generatedAt:Date.now(), version:"7.69.76", releaseIdentifier:process.env.OCG_RELEASE_ID,
     environment:SERVER_MODE === "NETWORK" ? "Production" : "Local", uptimeSeconds:process.uptime(), nodeVersion:process.version,
     shuttingDown, backend:PROFILE_STORAGE_BACKEND, databaseRequired:DATABASE_REQUIRED, persistence,
     legacyStorePresent:existsSync(playerStorePath) || existsSync(profileStorePath),
@@ -888,7 +991,8 @@ function validateQueuedDeck(selection) {
 
 function validateOwnedDeck(profile, selection, mode = "FRIENDLY") {
   const trainingMode = mode === "TRAINING" || mode === "TUTORIAL";
-  if (!trainingMode && typeof selection === "string" && isTrainingLoanerDeck(selection)) throw new RoomError("INVALID_DECK", "Training loaner decks are only available in Training.");
+  const selectionId = typeof selection === "string" ? selection : selection?.id;
+  if (!trainingMode && isTrainingLoanerDeck(selectionId)) throw new RoomError("INVALID_DECK", "Training loaner decks are only available in Training.");
   if (!profile || profile.meta?.collectionMode !== "OWNED_COPIES") return;
   if (trainingMode && (profile.meta?.alphaPlaytestAccess?.enabled || trainingLoanerAllowed(mode, typeof selection === "string" ? selection : null))) return;
   const deck = typeof selection === "string" ? alphaDeckPresets[selection] : selection;
@@ -953,11 +1057,11 @@ const server = createServer(async (req, res) => {
     // Historical compatibility marker retained for v7.56 tests: releaseChannel:"EXTERNAL_ALPHA_CANDIDATE"
     // Regression compatibility marker: version: "5.9.0"
     // v7.10 regression compatibility marker: version: "7.10.0"
-    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.75", releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
+    if (req.method === "GET" && path === "/api/health") return json(res, 200, { ok: true, version: "7.69.76", releaseChannel:"INTERNAL_MAINTENANCE", persistenceBackend:PROFILE_STORAGE_BACKEND, accountPersistence:accountService ? "POSTGRES" : "UNAVAILABLE", guestPersistence:profiles.playerStorageLabel, roomPersistence:rooms.storageLabel, matchmakingPersistence:matchmaking.storageLabel, database:{ required:PROFILE_STORAGE_BACKEND === "POSTGRES", status:accountService?.readyState?.status ?? "NOT_REQUIRED" }, ranked:{ enabled:rankedConfig.enabled, seasonId:rankedConfig.currentSeasonId, phase:rankedConfig.phase, timerActive:false }, profileStorage:profiles.storageLabel, playerStorage:profiles.playerStorageLabel, credentialStorage:profiles.credentialStorageLabel, authMode:profiles.authMode, migratedLegacyProfileStore:profiles.migratedLegacyProfileStore, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel, serverMode:SERVER_MODE, publicBaseUrl:PUBLIC_BASE_URL || null, security:{ rateLimit:SERVER_MODE === "NETWORK", analyticsAdminOnly:SERVER_MODE === "NETWORK" || Boolean(ADMIN_TOKEN), requestBodyLimit:REQUEST_BODY_LIMIT, trustProxy:TRUST_PROXY, requireHttps:REQUIRE_HTTPS, sseHeartbeatMs:SSE_HEARTBEAT_MS } });
     if (req.method === "GET" && path === "/api/ready") {
       const database = accountService ? await accountService.checkReadiness() : null;
       const ok = !shuttingDown && (!accountService || database.ok);
-      return json(res, ok ? 200 : 503, { ok, version:"7.69.75", releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
+      return json(res, ok ? 200 : 503, { ok, version:"7.69.76", releaseChannel:"INTERNAL_MAINTENANCE", status:shuttingDown ? "SHUTTING_DOWN" : database && !database.ok ? database.status : "READY", persistenceBackend:PROFILE_STORAGE_BACKEND, database:database ? { reachable:database.database.reachable, migrations:database.migrations, schemaReady:database.schemaReady } : null, roomStorage:rooms.storageLabel, matchmakingStorage:matchmaking.storageLabel });
     }
     if (req.method === "GET" && path === "/api/admin/ops") {
       requireAdmin(req);
@@ -1460,20 +1564,15 @@ const server = createServer(async (req, res) => {
       const storageKind = accountService && sessionTokenFromRequest(req) ? "POSTGRES" : "FILE_JSON_LOCAL";
       const enqueued = matchmaking.enqueue(profile.playerId, mode, matchmakingPayload(profile, deckSelection, mode, storageKind));
       if (!enqueued.opponent) return json(res, 202, { ticket:enqueued.ticket, ranked:mode === "RANKED" ? profile.ranked : null });
-      const matched = pairQueuedTickets(enqueued.opponent, enqueued.ticket, profile, deckSelection, mode);
-      return json(res, 200, { ticket:matched.second, ranked:mode === "RANKED" ? profile.ranked : null });
+      const matched = await pairQueuedTickets(enqueued.ticket.ticketId);
+      return json(res, 200, { ticket:matched, ranked:mode === "RANKED" ? profile.ranked : null });
     }
 
     if (req.method === "GET" && path === "/api/matchmaking/status") {
       const profile = await profileForRequest(req, profileTokenFrom(req, url));
       let ticket = matchmaking.get(String(url.searchParams.get("ticketId") ?? ""), profile.playerId);
       if (ticket.status === "WAITING") {
-        const opponent = matchmaking.findOpponent(ticket.ticketId, profile.playerId);
-        if (opponent) {
-          const deckSelection = ticket.payload.deckSelection;
-          const matched = pairQueuedTickets(opponent, ticket, profile, deckSelection, ticket.mode);
-          ticket = matched.second;
-        }
+        ticket = await pairQueuedTickets(ticket.ticketId);
       }
       return json(res, 200, { ticket, ranked:ticket.mode === "RANKED" ? profile.ranked : null });
     }
@@ -1647,7 +1746,7 @@ process.once("SIGINT", () => gracefulShutdown("SIGINT"));
 
 server.listen(PORT, HOST, () => {
   const displayHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
-  console.log(`Office Card Game v7.69.75 server running at http://${displayHost}:${PORT}`);
+  console.log(`Office Card Game v7.69.76 server running at http://${displayHost}:${PORT}`);
   console.log(`Server mode: ${SERVER_MODE} · Runtime: ${RUNTIME_DIR}`);
   if (PUBLIC_BASE_URL) console.log(`Public URL: ${PUBLIC_BASE_URL}`);
   if (SERVER_MODE === "NETWORK") console.log(`Proxy: ${TRUST_PROXY ? "trusted" : "direct"} · HTTPS required: ${REQUIRE_HTTPS ? "yes" : "no"}`);

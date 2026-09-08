@@ -26,7 +26,7 @@ for (const loanerId of trainingLoanerIds()) {
 const serverSource = readFileSync(fileURLToPath(new URL("../../server/server.mjs", import.meta.url)), "utf8");
 const appSource = readFileSync(fileURLToPath(new URL("../../public/app.js", import.meta.url)), "utf8");
 const stylesSource = readFileSync(fileURLToPath(new URL("../../public/styles.css", import.meta.url)), "utf8");
-assert.match(serverSource, /!trainingMode[\s\S]*isTrainingLoanerDeck\(selection\)[\s\S]*Training loaner decks are only available in Training/);
+assert.match(serverSource, /!trainingMode[\s\S]*isTrainingLoanerDeck\((?:selection|selectionId)\)[\s\S]*Training loaner decks are only available in Training/);
 assert.match(serverSource, /validateOwnedDeck\(profile, deckSelection, mode\)/);
 assert.match(serverSource, /function projectAccountProfile\(profile\)/);
 assert.match(serverSource, /starterOnboardingRequired\(profile\)/);

@@ -413,6 +413,36 @@ export class PostgresAccountService {
   }
 
   /**
+   * Runs work while the authoritative profile rows are held with deterministic
+   * FOR UPDATE locks. The callback is intentionally read/prepare oriented;
+   * callers use the lock to fence ownership/deck mutations while exposing a
+   * validated cross-store operation such as matchmaking room creation.
+   */
+  async withProfilesLocked(playerIds, callback) {
+    this.requireReady();
+    const ids = [...new Set((Array.isArray(playerIds) ? playerIds : []).map(String))].sort();
+    if (!ids.length) throw new AccountError("PLAYER_NOT_FOUND");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query("SELECT user_id, profile_data, revision FROM public.player_profiles WHERE user_id = ANY($1::uuid[]) ORDER BY user_id FOR UPDATE", [ids]);
+      if (result.rows.length !== ids.length) throw new AccountError("PLAYER_NOT_FOUND");
+      const profileMap = new Map(result.rows.map((row) => [String(row.user_id), structuredClone(row.profile_data)]));
+      const value = await callback(profileMap);
+      await client.query("COMMIT");
+      return value;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (error instanceof AccountError || error?.code?.startsWith?.("MATCHMAKING_")) throw error;
+      if (error?.name === "RoomError") throw error;
+      console.error("PostgreSQL profile lock operation failed", safeDbError(error));
+      throw new AccountError("PROFILE_VALIDATION_UNAVAILABLE", "Profile validation is temporarily unavailable.");
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Atomically applies every profile side effect for one authoritative match.
    * The ledger row is inserted in the same transaction as the profile writes,
    * so a retry is a cheap no-op after a successful commit.

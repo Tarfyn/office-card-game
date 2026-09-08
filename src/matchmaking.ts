@@ -1,5 +1,6 @@
 import type { SnapshotPersistence } from "./storage.js";
-export type MatchmakingStatus = "WAITING" | "MATCHED" | "CANCELLED";
+export type MatchmakingStatus = "WAITING" | "MATCHED" | "CANCELLED" | "INVALID";
+export type MatchmakingInvalidReason = "DECK_STALE" | "PROFILE_UNAVAILABLE";
 export type MatchmakingMode = "FRIENDLY" | "RANKED";
 
 export interface MatchmakingTicket<TPayload = unknown, TSession = unknown> {
@@ -11,6 +12,7 @@ export interface MatchmakingTicket<TPayload = unknown, TSession = unknown> {
   createdAt: number;
   matchedTicketId: string | null;
   session: TSession | null;
+  invalidReason?: MatchmakingInvalidReason | null;
 }
 
 export interface MatchmakingStoreSnapshot<TPayload = unknown, TSession = unknown> {
@@ -60,7 +62,8 @@ export class MatchmakingQueue<TPayload = unknown, TSession = unknown> {
       payload: structuredClone(payload),
       createdAt: this.nowFactory(),
       matchedTicketId: null,
-      session: null
+      session: null,
+      invalidReason: null
     };
     const opponent = this.findCompatibleOpponent(ticket);
     this.tickets.set(ticketId, ticket);
@@ -98,6 +101,18 @@ export class MatchmakingQueue<TPayload = unknown, TSession = unknown> {
     return { first: structuredClone(first), second: structuredClone(second) };
   }
 
+  markInvalid(ticketId: string, reason: MatchmakingInvalidReason = "DECK_STALE"): MatchmakingTicket<TPayload, TSession> {
+    const ticket = this.require(ticketId);
+    if (ticket.status === "WAITING") {
+      ticket.status = "INVALID";
+      ticket.invalidReason = reason;
+      ticket.matchedTicketId = null;
+      ticket.session = null;
+      this.persist();
+    }
+    return structuredClone(ticket);
+  }
+
   get(ticketId: string, profileId: string): MatchmakingTicket<TPayload, TSession> {
     const ticket = this.require(ticketId);
     if (ticket.profileId !== profileId) throw new Error("MATCHMAKING_TICKET_FORBIDDEN");
@@ -129,7 +144,7 @@ export class MatchmakingQueue<TPayload = unknown, TSession = unknown> {
     const snapshot = this.persistence?.load();
     if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.tickets)) return;
     for (const ticket of snapshot.tickets) {
-      if (!ticket?.ticketId || !ticket.profileId || !["WAITING", "MATCHED", "CANCELLED"].includes(ticket.status)) continue;
+      if (!ticket?.ticketId || !ticket.profileId || !["WAITING", "MATCHED", "CANCELLED", "INVALID"].includes(ticket.status)) continue;
       this.tickets.set(ticket.ticketId, structuredClone(ticket));
     }
   }

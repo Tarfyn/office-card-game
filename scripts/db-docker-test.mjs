@@ -99,6 +99,16 @@ try {
     if (settlement.error) throw settlement.error;
     if (settlement.status !== 0) process.exitCode = settlement.status ?? 1;
   }
+  if (process.exitCode == null || process.exitCode === 0) {
+    const matchmaking = spawnSync(process.execPath, [join(repositoryRoot, "scripts", "matchmaking-commit-regression.mjs")], {
+      cwd:repositoryRoot,
+      env:testEnvironment,
+      stdio:"inherit",
+      shell:false
+    });
+    if (matchmaking.error) throw matchmaking.error;
+    if (matchmaking.status !== 0) process.exitCode = matchmaking.status ?? 1;
+  }
 } finally {
   cleanup();
 }
