@@ -253,6 +253,9 @@ The service unit uses the supported `ConditionPathExists=/usr/local/sbin/ocg-db-
 It deliberately has only `After=postgresql.service`; the helper itself checks that PostgreSQL is
 active and ready before taking a backup. This lets the service template be parsed before PostgreSQL
 is installed without weakening runtime safety.
+The unit keeps `NoNewPrivileges=true` and the filesystem/device hardening in place. It does not set
+`RestrictSUIDSGID=true`, because the fixed root-owned helper intentionally drops to the `postgres`
+OS user for `pg_dump` and `pg_restore`; that systemd restriction blocks the required transition.
 
 ## Provisioning and backup flow
 

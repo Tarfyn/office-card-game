@@ -18,5 +18,7 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 LockPersonality=true
-RestrictSUIDSGID=true
+# The helper intentionally drops from root to the fixed postgres OS user for
+# pg_dump/pg_restore. RestrictSUIDSGID blocks that controlled UID transition;
+# all other privilege and filesystem restrictions remain enabled.
 ReadWritePaths=/srv/office-card-game/backups/postgresql /var/lib/office-card-game-db-helper /run/lock
