@@ -106,9 +106,9 @@ import { buildOperationsOverview, operationsSection } from "./operations-status.
 // Runtime release identity has one owner: package.json. Historical source-wiring tests may
 // continue to match the compatibility marker below, but responses use APPLICATION_VERSION.
 const APPLICATION_VERSION = JSON.parse(await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version;
-// Current runtime compatibility marker: version: "7.69.78"
-// Current compact runtime compatibility marker: version:"7.69.78"
-// Current startup compatibility marker: Office Card Game v7.69.78 server
+// Current runtime compatibility marker: version: "7.69.79"
+// Current compact runtime compatibility marker: version:"7.69.79"
+// Current startup compatibility marker: Office Card Game v7.69.79 server
 
 function cliValue(name) {
   const prefix = `--${name}=`;

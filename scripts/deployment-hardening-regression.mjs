@@ -36,12 +36,16 @@ assert.equal(validateIdentity({ tag: "v7.69.77", packageVersion: "7.69.77", head
 assert.equal(validateIdentity({ tag: "unknown", packageVersion: "7.69.77", head: "A", resolved: "A" }), false);
 assert.equal(validateIdentity({ tag: "v7.69.77;rm", packageVersion: "7.69.77", head: "A", resolved: "A" }), false);
 
-const fixture = String.raw`import { open, appendFile, rm } from "node:fs/promises";
+const fixture = String.raw`import { open, appendFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 const lock = process.env.LOCK_FILE;
 const log = process.env.EVENT_LOG;
+const ready = process.env.READY_FILE;
+const release = process.env.RELEASE_FILE;
 const mode = process.argv[2];
 const role = process.argv[3];
 const hold = Number(process.env.HOLD_MS || 0);
+const holdUntilRelease = process.env.HOLD_UNTIL_RELEASE === "1";
 const fail = process.env.FAIL_OWNER === "1";
 let handle;
 try {
@@ -52,7 +56,10 @@ try {
 }
 try {
   await appendFile(log, mode + ":" + role + ":locked\\n");
-  if (hold) await new Promise((resolve) => setTimeout(resolve, hold));
+  if (ready) await writeFile(ready, mode + ":" + role + ":ready\\n");
+  if (holdUntilRelease) {
+    while (!existsSync(release)) await new Promise((resolve) => setTimeout(resolve, 10));
+  } else if (hold) await new Promise((resolve) => setTimeout(resolve, hold));
   if (fail) throw new Error("fixture failure");
   await appendFile(log, mode + ":" + role + ":mutated\\n");
 } finally {
@@ -61,13 +68,32 @@ try {
 }
 `;
 
-async function runFixture(dir, mode, role, holdMs) {
+async function runFixture(dir, mode, role, { holdMs = 0, holdUntilRelease = false } = {}) {
   const script = join(dir, "fixture.mjs");
   const lock = join(dir, "deploy.lock");
   const log = join(dir, "events.log");
+  const ready = join(dir, `${mode}-${role}.ready`);
+  const release = join(dir, `${mode}-${role}.release`);
   await writeFile(script, fixture);
-  const child = spawn(process.execPath, [script, mode, role], { env: { ...process.env, LOCK_FILE: lock, EVENT_LOG: log, HOLD_MS: String(holdMs) }, stdio: "ignore" });
-  return child;
+  await rm(ready, { force:true });
+  await rm(release, { force:true });
+  const child = spawn(process.execPath, [script, mode, role], { env: { ...process.env, LOCK_FILE: lock, EVENT_LOG: log, READY_FILE: ready, RELEASE_FILE: release, HOLD_MS: String(holdMs), HOLD_UNTIL_RELEASE: holdUntilRelease ? "1" : "0" }, shell:false, stdio: "ignore" });
+  return { child, ready, release };
+}
+
+async function waitForReady(owner, label) {
+  const deadline = Date.now() + 5000;
+  while (!existsSync(owner.ready)) {
+    assert.equal(owner.child.exitCode, null, `${label} owner exited before READY`);
+    if (Date.now() >= deadline) throw new Error(`${label} owner READY timeout`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(owner.child.exitCode, null, `${label} owner exited after READY`);
+}
+
+async function waitForExit(child) {
+  if (child.exitCode !== null) return child.exitCode;
+  return new Promise((resolve) => child.once("exit", (code) => resolve(code)));
 }
 
 async function runFailingOwner(dir) {
@@ -75,11 +101,11 @@ async function runFailingOwner(dir) {
   const lock = join(dir, "deploy-failure.lock");
   const log = join(dir, "failure-events.log");
   await writeFile(script, fixture);
-  const owner = spawn(process.execPath, [script, "deploy", "FAIL"], { env: { ...process.env, LOCK_FILE: lock, EVENT_LOG: log, FAIL_OWNER: "1" }, stdio: "ignore" });
-  const ownerExit = await new Promise((resolve) => owner.once("exit", (code) => resolve(code)));
+  const owner = spawn(process.execPath, [script, "deploy", "FAIL"], { env: { ...process.env, LOCK_FILE: lock, EVENT_LOG: log, FAIL_OWNER: "1" }, shell:false, stdio: "ignore" });
+  const ownerExit = await waitForExit(owner);
   assert.notEqual(ownerExit, 0, "failing owner must exit non-zero");
-  const next = spawn(process.execPath, [script, "deploy", "NEXT"], { env: { ...process.env, LOCK_FILE: lock, EVENT_LOG: log }, stdio: "ignore" });
-  const nextExit = await new Promise((resolve) => next.once("exit", (code) => resolve(code)));
+  const next = spawn(process.execPath, [script, "deploy", "NEXT"], { env: { ...process.env, LOCK_FILE: lock, EVENT_LOG: log }, shell:false, stdio: "ignore" });
+  const nextExit = await waitForExit(next);
   assert.equal(nextExit, 0, "lock must be released after owner failure");
   const events = readFileSync(log, "utf8");
   assert.match(events, /deploy:FAIL:locked/);
@@ -89,23 +115,30 @@ async function runFailingOwner(dir) {
 const dir = await mkdtemp(join((process.env.TEMP || process.env.TMP || "."), "ocg-deploy-regression-"));
 try {
   await runFailingOwner(dir);
-  for (const [first, second] of [["check", "check"], ["check", "deploy"], ["deploy", "check"], ["deploy", "deploy"]]) {
-    const a = await runFixture(dir, first, "A", 250);
-    for (let i = 0; i < 50; i += 1) {
-      if (existsSync(join(dir, "events.log")) && readFileSync(join(dir, "events.log"), "utf8").includes(`${first}:A:locked`)) break;
-      await new Promise((resolve) => setTimeout(resolve, 10));
+  for (let iteration = 1; iteration <= 25; iteration += 1) {
+    for (const [first, second] of [["check", "check"], ["check", "deploy"], ["deploy", "check"], ["deploy", "deploy"]]) {
+      const owner = await runFixture(dir, first, "A", { holdUntilRelease:true });
+      let b;
+      try {
+        await waitForReady(owner, `${first}:A iteration=${iteration}`);
+        assert.equal(owner.child.exitCode, null, `${first} owner must remain alive while contender starts`);
+        b = await runFixture(dir, second, "B");
+        const exitB = await waitForExit(b.child);
+        assert.equal(exitB, 75, `${second} must lose lock contention`);
+        const events = readFileSync(join(dir, "events.log"), "utf8");
+        assert.match(events, new RegExp(`${first}:A:locked`));
+        assert.match(events, new RegExp(`${second}:B:blocked`));
+        assert.doesNotMatch(events, new RegExp(`${second}:B:mutated`));
+      } finally {
+        await writeFile(owner.release, "release\n");
+        const exitA = await waitForExit(owner.child);
+        assert.equal(exitA, 0, `${first} lock owner must complete`);
+        if (b && b.child.exitCode === null) b.child.kill();
+      }
+      const events = readFileSync(join(dir, "events.log"), "utf8");
+      assert.match(events, new RegExp(`${first}:A:mutated`));
+      await writeFile(join(dir, "events.log"), "");
     }
-    const b = await runFixture(dir, second, "B", 0);
-    const exitB = await new Promise((resolve) => b.once("exit", (code) => resolve(code)));
-    assert.equal(exitB, 75, `${second} must lose lock contention`);
-    const exitA = await new Promise((resolve) => a.once("exit", (code) => resolve(code)));
-    assert.equal(exitA, 0, `${first} lock owner must complete`);
-    const events = readFileSync(join(dir, "events.log"), "utf8");
-    assert.match(events, new RegExp(`${first}:A:locked`));
-    assert.match(events, new RegExp(`${first}:A:mutated`));
-    assert.match(events, new RegExp(`${second}:B:blocked`));
-    assert.doesNotMatch(events, new RegExp(`${second}:B:mutated`));
-    await writeFile(join(dir, "events.log"), "");
   }
 } finally {
   await rm(dir, { recursive: true, force: true });
