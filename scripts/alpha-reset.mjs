@@ -189,8 +189,9 @@ function verifyArchive(archive) {
   if (!archive?.directory || !Array.isArray(archive.artifacts) || archive.artifacts.length !== 2) abort("reset state archive evidence is incomplete");
   secureExisting(archive.directory, { rootPath:runtimeDir, type:"directory", label:"runtime archive" });
   for (const artifact of archive.artifacts) {
+    if (!artifact || typeof artifact !== "object" || typeof artifact.archivePath !== "string" || !/^\d+$/.test(String(artifact.bytes)) || !/^[a-f0-9]{64}$/i.test(String(artifact.sha256))) abort("reset state archive evidence is malformed");
     const file = secureExisting(artifact.archivePath, { rootPath:archive.directory, type:"file", label:"runtime archive artifact" });
-    if (hashFile(file) !== artifact.sha256 || statSync(file).size !== artifact.bytes) abort("runtime archive integrity check failed");
+    if (hashFile(file) !== String(artifact.sha256).toLowerCase() || statSync(file).size !== Number(artifact.bytes)) abort("runtime archive integrity check failed");
   }
 }
 function restoreRuntimeStores(archive) {
@@ -226,18 +227,38 @@ async function main() {
   if (Object.values(runtime).includes("CORRUPT")) abort("runtime snapshot is corrupt; refusing reset");
   if (!dryRun) { secureExisting(runtimeDir, { type:"directory", label:"runtime directory" }); validateRuntimeStore(join(runtimeDir, "rooms.local.json"), "rooms.local.json"); validateRuntimeStore(join(runtimeDir, "matchmaking.local.json"), "matchmaking.local.json"); }
   const state = loadState();
+  if (state?.phase === "DB_COMMITTED") {
+    try { verifyArchive(state.archive); } catch (error) {
+      const failedState = { ...state, phase:"RECOVERY_REQUIRED", recoveryFrom:"DB_COMMITTED", lastCompletedState:"DB_COMMITTED", dbAlreadyCommitted:true, failureCode:"ARCHIVE_INTEGRITY_FAILED", failureMessage:error instanceof Error ? error.message : "archive integrity failed" };
+      writeState(failedState);
+      throw error;
+    }
+  }
   if (state?.phase === "COMPLETED") { console.log(JSON.stringify({ status:"ALREADY_APPLIED", epochId, recoveryState:state }, null, 2)); return; }
   if (state && !has("resume")) abort(`RECOVERY_REQUIRED phase=${state.phase}; rerun with --resume after reviewing the durable state`);
   if (dryRun) { console.log(JSON.stringify({ status:"DRY_RUN", runtime, epochId, cutoffAt:cutoff.toISOString(), state:state?.phase ?? null }, null, 2)); return; }
   const service = await new PostgresAccountService({ databaseUrl, testDatabase:Boolean(process.env.OCG_TEST_DATABASE_URL), migrationDir:join(root, "db", "migrations"), profileFactory:() => ({}) }).initialize();
   let current = state; let dbCommitted = state?.phase === "DB_COMMITTED";
   try {
+    if (current?.phase === "RECOVERY_REQUIRED") {
+      const checkpoint = String(current.recoveryFrom ?? current.lastCompletedState ?? "");
+      if (!["PREPARED", "RUNTIME_ARCHIVED", "RUNTIME_REINITIALIZED", "DB_COMMITTED"].includes(checkpoint)) abort("recovery checkpoint is invalid");
+      if (checkpoint === "DB_COMMITTED") {
+        const marker = await service.getAlphaResetMetadata();
+        if (marker?.epochId !== epochId || marker?.completionState !== "APPLIED") abort("DB_COMMITTED recovery marker is missing or mismatched");
+        verifyArchive(current.archive);
+        current = { ...current, phase:"DB_COMMITTED" }; dbCommitted = true;
+      } else {
+        if (checkpoint !== "PREPARED") verifyArchive(current.archive);
+        current = { ...current, phase:checkpoint === "RUNTIME_REINITIALIZED" ? "RUNTIME_ARCHIVED" : checkpoint };
+      }
+    }
     if (dbCommitted) {
       const marker = await service.getAlphaResetMetadata();
       if (marker?.epochId !== epochId || marker?.completionState !== "APPLIED") abort("DB_COMMITTED state does not match the durable epoch marker");
       current = { ...current, phase:"COMPLETED", completedAt:new Date().toISOString() }; writeState(current); console.log(JSON.stringify({ status:"APPLIED", epochId, recoveryState:current }, null, 2)); return;
     }
-    if (!current || current.phase === "RECOVERY_REQUIRED") { current = { version:1, epochId, cutoffAt:cutoff.toISOString(), phase:"PREPARED", preparedAt:new Date().toISOString(), backup, legacySnapshot:legacy, runtimeDir:resolve(realpathSync.native(runtimeDir)), policyVersion:"alpha-reset-v1" }; writeState(current); maybeInject("PREPARED"); }
+    if (!current) { current = { version:1, epochId, cutoffAt:cutoff.toISOString(), phase:"PREPARED", preparedAt:new Date().toISOString(), backup, legacySnapshot:legacy, runtimeDir:resolve(realpathSync.native(runtimeDir)), policyVersion:"alpha-reset-v1" }; writeState(current); maybeInject("PREPARED"); }
     let archive = current.archive;
     if (phaseRank(current.phase) < phaseRank("RUNTIME_ARCHIVED")) { archive = archiveRuntimeStores(); current = { ...current, phase:"RUNTIME_ARCHIVED", archive, archivedAt:new Date().toISOString() }; writeState(current); maybeInject("RUNTIME_ARCHIVED"); } else verifyArchive(archive);
     if (phaseRank(current.phase) < phaseRank("RUNTIME_REINITIALIZED")) { reinitializeRuntimeStores(); current = { ...current, phase:"RUNTIME_REINITIALIZED", reinitializedAt:new Date().toISOString() }; writeState(current); maybeInject("RUNTIME_REINITIALIZED"); }
@@ -247,7 +268,12 @@ async function main() {
     current = { ...current, phase:"COMPLETED", completedAt:new Date().toISOString() }; writeState(current);
     console.log(JSON.stringify({ ...result, runtime, recoveryState:current, mode:"APPLY" }, null, 2));
   } catch (error) {
-    if (!dbCommitted && current?.archive) { try { restoreRuntimeStores(current.archive); current = { ...current, phase:"RECOVERY_REQUIRED", recoveryAction:"RUNTIME_RESTORED_BEFORE_DB_COMMIT", recoveredAt:new Date().toISOString() }; writeState(current); } catch (recoveryError) { throw new ResetFailure(`recovery failed: ${recoveryError instanceof Error ? recoveryError.message : "unknown error"}`); } }
+    if (!dbCommitted && current?.archive && current.phase !== "RECOVERY_REQUIRED") { try {
+      const checkpoint = current.phase;
+      if (checkpoint !== "RUNTIME_ARCHIVED") restoreRuntimeStores(current.archive);
+      current = { ...current, phase:"RECOVERY_REQUIRED", recoveryFrom:checkpoint, lastCompletedState:checkpoint, recoveryAction:checkpoint === "RUNTIME_ARCHIVED" ? "RUNTIME_UNCHANGED" : "RUNTIME_RESTORED_BEFORE_DB_COMMIT", recoveredAt:new Date().toISOString(), failureCode:error instanceof Error ? error.name : "RESET_FAILURE", failureMessage:error instanceof Error ? error.message : "reset failed" };
+      writeState(current);
+    } catch (recoveryError) { throw new ResetFailure(`recovery failed: ${recoveryError instanceof Error ? recoveryError.message : "unknown error"}`); } }
     throw error;
   } finally { await service.close?.(); }
 }
