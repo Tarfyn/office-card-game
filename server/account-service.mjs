@@ -509,7 +509,7 @@ export class PostgresAccountService {
    * profile builder; this service owns row locking, projections, sessions,
    * privileged-role preservation, and the epoch marker.
    */
-  async alphaReset({ epochId, cutoffAt, policyVersion = "alpha-reset-v1", backupReference = null, legacySnapshotReference = null, dryRun = false, resetProfile }) {
+  async alphaReset({ epochId, cutoffAt, policyVersion = "alpha-reset-v1", backupReference = null, legacySnapshotReference = null, runtimeArchive = null, dryRun = false, resetProfile }) {
     this.requireReady();
     if (typeof resetProfile !== "function") throw new AccountError("ALPHA_RESET_PROFILE_BUILDER", "A canonical profile reset builder is required.");
     const id = String(epochId ?? "").trim();
@@ -563,7 +563,8 @@ export class PostgresAccountService {
         appliedAt:new Date().toISOString(),
         completionState:"APPLIED",
         backupReference:backupReference ? String(backupReference) : null,
-        legacySnapshotReference:legacySnapshotReference ? String(legacySnapshotReference) : null
+        legacySnapshotReference:legacySnapshotReference ? String(legacySnapshotReference) : null,
+        runtimeArchive:runtimeArchive && typeof runtimeArchive === "object" ? structuredClone(runtimeArchive) : null
       };
       await client.query(`INSERT INTO public.persistence_metadata(key, value) VALUES ('alpha_reset', $1::jsonb)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [JSON.stringify(marker)]);

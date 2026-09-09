@@ -80,6 +80,7 @@ try {
   if (build.status !== 0) throw new Error(`Database test build failed with status ${build.status}`);
 
   const testEnvironment = { ...process.env, OCG_TEST_DATABASE_URL:databaseUrl };
+  testEnvironment.OCG_TEST_DB_CONTAINER = container;
   delete testEnvironment.DATABASE_URL;
   const test = spawnSync(process.execPath, [join(repositoryRoot, "scripts", "db-integration-test.mjs")], {
     cwd:repositoryRoot,
@@ -127,6 +128,16 @@ try {
     });
     if (alphaReset.error) throw alphaReset.error;
     if (alphaReset.status !== 0) process.exitCode = alphaReset.status ?? 1;
+  }
+  if (process.exitCode == null || process.exitCode === 0) {
+    const recovery = spawnSync(process.execPath, [join(repositoryRoot, "scripts", "alpha-reset-recovery-regression.mjs")], {
+      cwd:repositoryRoot,
+      env:testEnvironment,
+      stdio:"inherit",
+      shell:false
+    });
+    if (recovery.error) throw recovery.error;
+    if (recovery.status !== 0) process.exitCode = recovery.status ?? 1;
   }
 } finally {
   cleanup();

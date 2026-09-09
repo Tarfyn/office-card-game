@@ -1,0 +1,45 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+IFS=$'\n\t'
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+readonly BASE_DIR="/srv/office-card-game"
+readonly RELEASE_ROOT="${BASE_DIR}/releases"
+readonly CURRENT_LINK="${BASE_DIR}/current"
+readonly RUNTIME_DIR="${BASE_DIR}/runtime"
+readonly ENV_FILE="/etc/office-card-game.env"
+readonly NODE="/usr/bin/node"
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+usage() { printf 'Usage: ocg-alpha-reset --dry-run --epoch=alpha-YYYYMMDDTHHMMSSZ --cutoff=ISO\n'; printf '       ocg-alpha-reset --apply --resume? --epoch=... --cutoff=... --confirm=ALPHA_RESET:... --backup=/srv/office-card-game/backups/postgresql/<dump> --legacy-snapshot=/srv/office-card-game/runtime/<archive>\n' >&2; exit 64; }
+[[ ${EUID} -eq 0 ]] || die "This helper must run as root.";
+[[ -L ${CURRENT_LINK} ]] || die "${CURRENT_LINK} must be an active-release symlink.";
+command -v /usr/bin/readlink >/dev/null 2>&1 || die "readlink is required.";
+readonly RELEASE_DIR="$(/usr/bin/readlink --canonicalize-existing "${CURRENT_LINK}")"
+[[ ${RELEASE_DIR} == "${RELEASE_ROOT}/"* ]] || die "Active release is outside the immutable release root.";
+[[ -f ${RELEASE_DIR}/package.json && ! -L ${RELEASE_DIR}/package.json ]] || die "Active release package metadata is unsafe.";
+[[ -f ${RELEASE_DIR}/scripts/alpha-reset.mjs && ! -L ${RELEASE_DIR}/scripts/alpha-reset.mjs ]] || die "Active release reset tool is missing or unsafe.";
+[[ -f ${ENV_FILE} && ! -L ${ENV_FILE} ]] || die "${ENV_FILE} is missing or unsafe.";
+[[ $(/usr/bin/stat --format='%U:%G:%a' "${ENV_FILE}") == "root:root:600" ]] || die "${ENV_FILE} must be root:root mode 0600.";
+[[ $(/usr/bin/stat --format='%U:%G:%a' "${RELEASE_DIR}/scripts/alpha-reset.mjs") == "root:root:644" || $(/usr/bin/stat --format='%U:%G:%a' "${RELEASE_DIR}/scripts/alpha-reset.mjs") == "root:root:755" ]] || die "Reset tool ownership/mode is unsafe.";
+
+apply_flag=""; args=( );
+for arg in "$@"; do
+  case "${arg}" in
+    --dry-run) [[ -z ${apply_flag} ]] || die "Choose exactly one of --dry-run or --apply."; apply_flag=--dry-run ;;
+    --apply) [[ -z ${apply_flag} ]] || die "Choose exactly one of --dry-run or --apply."; apply_flag=--apply ;;
+    --epoch=*|--cutoff=*|--confirm=*|--backup=*|--legacy-snapshot=*|--backup-sha256=*|--resume) args+=("${arg}") ;;
+    *) usage ;;
+  esac
+done
+[[ -n ${apply_flag} ]] || usage
+args+=("${apply_flag}")
+set -a
+. "${ENV_FILE}"
+set +a
+unset OCG_ALPHA_RESET_TEST
+export RUNTIME_DIR
+exec "${NODE}" "${RELEASE_DIR}/scripts/alpha-reset.mjs" "${args[@]}"

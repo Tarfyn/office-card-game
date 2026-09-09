@@ -10,11 +10,13 @@ This candidate adds the pre-Alpha epoch/cutoff fence and deterministic reset too
 
 ## Reset tool
 
-`npm run ops:alpha-reset` is dry-run by default. Apply requires an explicit epoch and cutoff, the exact `ALPHA_RESET:<epochId>` confirmation token, a validated recent custom-format PostgreSQL backup, and a legacy runtime snapshot reference. It locks users deterministically, rebuilds profiles through canonical starter/economy/ranked helpers, revokes sessions, preserves privileged-role counts, writes the durable epoch marker transactionally, and atomically reinitializes the local Room/Matchmaking stores after archiving them. A repeated epoch returns `ALREADY_APPLIED`; failures roll back PostgreSQL and restore archived runtime stores where possible.
+`npm run ops:alpha-reset` is dry-run by default. Apply requires an explicit epoch and cutoff, the exact `ALPHA_RESET:<epochId>` confirmation token, a validated recent custom-format PostgreSQL backup, and a legacy runtime snapshot reference. It locks users deterministically, rebuilds profiles through canonical starter/economy/ranked helpers, revokes sessions, preserves privileged-role counts, writes the durable epoch marker transactionally, and atomically reinitializes the local Room/Matchmaking stores after archiving them. Production apply is pinned to `/srv/office-card-game/runtime`; custom runtime paths are test-only. Backups, snapshots, runtime stores, archives, and state files are canonicalized and reject symlink escapes. Runtime archive artifacts carry byte counts and SHA-256 evidence in both the durable state and epoch marker. A repeated epoch returns `ALREADY_APPLIED`.
+
+The constrained future root entry point is `ops/ocg-alpha-reset`, intended for `/usr/local/sbin/ocg-alpha-reset` with root-only execution and no shell/sudo/systemd access. It validates the immutable active release and root-owned environment before invoking the reviewed tool. Recovery state is fsynced through `PREPARED`, `RUNTIME_ARCHIVED`, `RUNTIME_REINITIALIZED`, `DB_COMMITTED`, `COMPLETED`, and `RECOVERY_REQUIRED`. An injected interruption regression restores the original runtime bytes, resumes deterministically, verifies archive hashes, and confirms idempotency.
 
 ## Rehearsal and QA
 
-The disposable PostgreSQL 18 rehearsal restored the real timer-generated production dump, proved dry-run zero writes, applied the reset, verified the epoch fence and post-reset policy, restarted the application, and reached `/api/ready` and `/api/health`. The Docker DB chain includes the reset regression. Migration checks canonicalize checkout line endings so restored production dumps remain 2/2 current/exact on Windows and Linux.
+The disposable PostgreSQL 18 rehearsal restored the real timer-generated production dump, proved dry-run zero writes, applied the reset, verified the epoch fence and post-reset policy, restarted the application, and reached `/api/ready` and `/api/health`. The Docker DB chain includes the reset and interruption/resume regressions. Migration checks canonicalize checkout line endings so restored production dumps remain 2/2 current/exact on Windows and Linux.
 
 ## Operational boundaries
 
