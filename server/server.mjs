@@ -109,6 +109,7 @@ const APPLICATION_VERSION = JSON.parse(await readFile(fileURLToPath(new URL("../
 // Current runtime compatibility marker: version: "7.69.79"
 // Current runtime release marker: version: "7.69.80"
 // Current compact runtime compatibility marker: version:"7.69.79"
+// Current compact runtime release marker: version:"7.69.80"
 // Current startup compatibility marker: Office Card Game v7.69.79 server
 
 function cliValue(name) {
