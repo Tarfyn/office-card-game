@@ -107,6 +107,7 @@ import { buildOperationsOverview, operationsSection } from "./operations-status.
 // continue to match the compatibility marker below, but responses use APPLICATION_VERSION.
 const APPLICATION_VERSION = JSON.parse(await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version;
 // Current runtime compatibility marker: version: "7.69.79"
+// Current runtime release marker: version: "7.69.80"
 // Current compact runtime compatibility marker: version:"7.69.79"
 // Current startup compatibility marker: Office Card Game v7.69.79 server
 
@@ -427,7 +428,7 @@ async function recordCompletedProfileMatches(completion) {
   const accountEntries = accountService ? entries.filter((item) => !guestEntries.includes(item)) : [];
   let replayed = false;
   if (accountEntries.length) {
-    const receipt = await accountService.settleMatchCompletion({ settlementId:completion.matchId, matchId:completion.matchId, mode:completion.mode, entries:accountEntries, rankedResult:accountEntries.length === 2 ? rankedResult : undefined });
+    const receipt = await accountService.settleMatchCompletion({ settlementId:completion.matchId, matchId:completion.matchId, mode:completion.mode, entries:accountEntries, rankedResult:accountEntries.length === 2 ? rankedResult : undefined, originatedAt:completion.createdAt });
     replayed ||= Boolean(receipt.replayed);
   }
   if (guestEntries.length) {
@@ -575,6 +576,11 @@ async function processProfileCompletion(completion, attemptCount = 0) {
     console.info("Profile match settlement succeeded", key, receipt.replayed ? "ALREADY_APPLIED" : "APPLIED");
   } catch (error) {
     const code = error instanceof AccountError ? error.code : error instanceof Error ? error.message : "PROFILE_MATCH_COMPLETION_FAILED";
+    if (code === "ALPHA_EPOCH_FENCE") {
+      rooms.markProfileCompletionRejected(completion.roomId, key, code);
+      console.warn("Profile match settlement rejected by Alpha epoch fence", key);
+      return;
+    }
     const retryCount = Math.max(0, Number(attemptCount) || 0);
     const delay = Math.min(30_000, 500 * (2 ** Math.min(6, retryCount)));
     rooms.markProfileCompletionAttempt(completion.roomId, key, Date.now() + delay, code);

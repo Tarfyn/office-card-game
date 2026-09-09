@@ -20,7 +20,7 @@ function sliceBetween(source:string,start:string,end:string){
 }
 
 test("v7.69.10 version markers are current",()=>{
-assert.equal(pkg.version,"7.69.79");
+assert.equal(pkg.version,"7.69.80");
 assert.match(server,/version: "7\.69\.79"/);
 assert.match(server,/version:"7\.69\.79"/);
 assert.match(server,/Office Card Game v7\.69\.79 server/);

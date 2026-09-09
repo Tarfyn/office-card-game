@@ -16,7 +16,7 @@ const polish=css.slice(css.lastIndexOf("/* v7.69.12 — centered hover preview, 
 function between(source:string,start:string,end:string){ const a=source.indexOf(start),b=source.indexOf(end,a+start.length); assert.ok(a>=0&&b>a); return source.slice(a,b); }
 
 test("v7.69.12 version markers are current",()=>{
-assert.equal(pkg.version,"7.69.79");
+assert.equal(pkg.version,"7.69.80");
 assert.match(server,/version: "7\.69\.79"/);
 assert.match(server,/version:"7\.69\.79"/);
 assert.match(server,/Office Card Game v7\.69\.79 server/);

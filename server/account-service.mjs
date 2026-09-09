@@ -447,7 +447,7 @@ export class PostgresAccountService {
    * The ledger row is inserted in the same transaction as the profile writes,
    * so a retry is a cheap no-op after a successful commit.
    */
-  async settleMatchCompletion({ settlementId, matchId, mode, entries, rankedResult }) {
+  async settleMatchCompletion({ settlementId, matchId, mode, entries, rankedResult, originatedAt }) {
     this.requireReady();
     const normalizedEntries = (Array.isArray(entries) ? entries : []).filter((item) => item?.playerId && item?.entry);
     const ids = [...new Set(normalizedEntries.map((item) => String(item.playerId)))].sort();
@@ -457,6 +457,16 @@ export class PostgresAccountService {
       await client.query("BEGIN");
       const result = await client.query("SELECT user_id, profile_data, revision FROM public.player_profiles WHERE user_id = ANY($1::uuid[]) ORDER BY user_id FOR UPDATE", [ids]);
       if (result.rows.length !== ids.length) throw new AccountError("PLAYER_NOT_FOUND");
+      const epochResult = await client.query("SELECT value FROM public.persistence_metadata WHERE key = 'alpha_reset' FOR SHARE");
+      const epoch = epochResult.rows[0]?.value;
+      if (epoch?.completionState === "APPLIED" || epoch?.state === "APPLIED") {
+        const cutoff = Date.parse(String(epoch.cutoffAt ?? ""));
+        const origin = Number(originatedAt ?? 0);
+        if (!Number.isFinite(cutoff) || cutoff <= 0 || !Number.isFinite(origin) || origin <= 0) {
+          throw new AccountError("ALPHA_EPOCH_FENCE", "Match provenance is unavailable for the active Alpha epoch.");
+        }
+        if (origin < cutoff) throw new AccountError("ALPHA_EPOCH_FENCE", "This match originated before the active Alpha epoch.");
+      }
       const ledger = await client.query(`INSERT INTO public.match_settlements(settlement_id, match_id, settlement_kind, mode, profile_ids)
         VALUES ($1, $2, 'PROFILE_COMPLETION', $3, $4::jsonb)
         ON CONFLICT (settlement_id) DO NOTHING
@@ -483,6 +493,89 @@ export class PostgresAccountService {
       if (error instanceof AccountError || this.preserveMutationError(error)) throw error;
       console.error("PostgreSQL match settlement failed", safeDbError(error));
       throw new AccountError("PROFILE_MUTATION_FAILED");
+    } finally {
+      client.release();
+    }
+  }
+
+  async getAlphaResetMetadata() {
+    this.requireReady();
+    const result = await this.pool.query("SELECT value FROM public.persistence_metadata WHERE key = 'alpha_reset'");
+    return result.rows[0]?.value ? structuredClone(result.rows[0].value) : null;
+  }
+
+  /**
+   * Transactional Alpha reset primitive. The caller supplies the canonical
+   * profile builder; this service owns row locking, projections, sessions,
+   * privileged-role preservation, and the epoch marker.
+   */
+  async alphaReset({ epochId, cutoffAt, policyVersion = "alpha-reset-v1", backupReference = null, legacySnapshotReference = null, dryRun = false, resetProfile }) {
+    this.requireReady();
+    if (typeof resetProfile !== "function") throw new AccountError("ALPHA_RESET_PROFILE_BUILDER", "A canonical profile reset builder is required.");
+    const id = String(epochId ?? "").trim();
+    const cutoff = new Date(cutoffAt);
+    if (!/^alpha-[0-9]{8}T[0-9]{6}Z$/.test(id)) throw new AccountError("ALPHA_RESET_EPOCH_INVALID", "Alpha epoch id is invalid.");
+    if (!Number.isFinite(cutoff.getTime())) throw new AccountError("ALPHA_RESET_CUTOFF_INVALID", "Alpha cutoff is invalid.");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const metadataResult = await client.query("SELECT value FROM public.persistence_metadata WHERE key = 'alpha_reset' FOR UPDATE");
+      const existing = metadataResult.rows[0]?.value ?? null;
+      if (existing?.completionState === "APPLIED" || existing?.state === "APPLIED") {
+        if (String(existing.epochId ?? "") === id) {
+          await client.query("ROLLBACK");
+          return { status:"ALREADY_APPLIED", epochId:id };
+        }
+        throw new AccountError("ALPHA_RESET_ALREADY_APPLIED", "A different Alpha epoch is already applied.");
+      }
+      const rows = await client.query(`SELECT u.id, u.email, u.role, u.status, p.profile_data
+        FROM public.users u JOIN public.player_profiles p ON p.user_id = u.id
+        ORDER BY u.id FOR UPDATE OF u, p`);
+      const privilegedBefore = rows.rows.filter((row) => isOperationsRole(String(row.role))).length;
+      const summary = {
+        userCount:rows.rows.length,
+        privilegedCount:privilegedBefore,
+        sessionsToRevoke:Number((await client.query("SELECT count(*)::int AS count FROM public.sessions WHERE revoked_at IS NULL AND expires_at > now()")).rows[0]?.count ?? 0),
+        profilesToReset:rows.rows.length,
+        decksToReplace:Number((await client.query("SELECT count(*)::int AS count FROM public.player_decks")).rows[0]?.count ?? 0),
+        rewardsToRebuild:Number((await client.query("SELECT count(*)::int AS count FROM public.reward_grants")).rows[0]?.count ?? 0),
+        achievementsToReset:Number((await client.query("SELECT count(*)::int AS count FROM public.achievement_progress")).rows[0]?.count ?? 0)
+      };
+      if (dryRun) {
+        await client.query("ROLLBACK");
+        return { status:"DRY_RUN", summary };
+      }
+      const profiles = [];
+      for (const row of rows.rows) {
+        const profile = await resetProfile({ userId:String(row.id), email:String(row.email), role:String(row.role), status:String(row.status), profile:structuredClone(row.profile_data), now:cutoff.getTime() });
+        if (!profile || typeof profile !== "object") throw new AccountError("ALPHA_RESET_PROFILE_BUILDER", "Canonical profile reset builder returned an invalid profile.");
+        profiles.push({ id:String(row.id), profile });
+      }
+      for (const item of profiles) {
+        await client.query("UPDATE public.player_profiles SET profile_data = $2::jsonb, revision = revision + 1, updated_at = now() WHERE user_id = $1", [item.id, JSON.stringify(item.profile)]);
+        await this.syncProfileProjections(client, item.id, item.profile);
+      }
+      await client.query("UPDATE public.sessions SET revoked_at = now() WHERE revoked_at IS NULL");
+      const marker = {
+        epochId:id,
+        cutoffAt:cutoff.toISOString(),
+        policyVersion:String(policyVersion),
+        appliedAt:new Date().toISOString(),
+        completionState:"APPLIED",
+        backupReference:backupReference ? String(backupReference) : null,
+        legacySnapshotReference:legacySnapshotReference ? String(legacySnapshotReference) : null
+      };
+      await client.query(`INSERT INTO public.persistence_metadata(key, value) VALUES ('alpha_reset', $1::jsonb)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [JSON.stringify(marker)]);
+      const privilegedAfter = Number((await client.query("SELECT count(*)::int AS count FROM public.users WHERE role IN ('OPS','ADMIN')")).rows[0]?.count ?? 0);
+      if (privilegedAfter !== privilegedBefore) throw new AccountError("ALPHA_RESET_PRIVILEGED_ROLE_LOSS", "Privileged account role count changed during Alpha reset.");
+      await client.query("COMMIT");
+      return { status:"APPLIED", epochId:id, summary:{ ...summary, privilegedCount:privilegedAfter } };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (error instanceof AccountError) throw error;
+      console.error("Alpha reset failed", safeDbError(error));
+      throw new AccountError("ALPHA_RESET_FAILED", "Alpha reset failed.");
     } finally {
       client.release();
     }

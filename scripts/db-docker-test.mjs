@@ -119,6 +119,15 @@ try {
     if (lease.error) throw lease.error;
     if (lease.status !== 0) process.exitCode = lease.status ?? 1;
   }
+  if (process.exitCode == null || process.exitCode === 0) {
+    const alphaReset = spawnSync(process.execPath, [join(repositoryRoot, "scripts", "alpha-reset-regression.mjs")], {
+      cwd:repositoryRoot,
+      env:testEnvironment,
+      stdio:"inherit"
+    });
+    if (alphaReset.error) throw alphaReset.error;
+    if (alphaReset.status !== 0) process.exitCode = alphaReset.status ?? 1;
+  }
 } finally {
   cleanup();
 }

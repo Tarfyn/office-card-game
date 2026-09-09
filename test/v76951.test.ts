@@ -11,9 +11,9 @@ const helper = read("ops/ocg-db-helper");
 const marker = read("deploy/postgres-persistence-ready");
 const styles = read("public/styles.css");
 
-assert.equal(packageJson.version, "7.69.79");
-assert.equal(packageLock.version, "7.69.79");
-assert.equal(packageLock.packages[""].version, "7.69.79");
+assert.equal(packageJson.version, "7.69.80");
+assert.equal(packageLock.version, "7.69.80");
+assert.equal(packageLock.packages[""].version, "7.69.80");
 assert.match(server, /version: "7\.69\.79"/);
 assert.match(server, /version:"7\.69\.79"/);
 assert.match(server, /accountPersistence:accountService \? "POSTGRES" : "UNAVAILABLE"/);
@@ -41,4 +41,4 @@ assert.doesNotMatch(deploy, /"\$DB_HELPER" enable-postgres/);
 assert.match(styles, /\.ops-header-actions button\{min-height:44px\}/);
 assert.match(styles, /\.ops-header-actions \.ghost\{color:#ece7dc\}/);
 
-console.log("v7.69.79 Executive Edition variant ownership release-gate markers passed.");
+console.log("v7.69.80 Executive Edition variant ownership release-gate markers passed.");

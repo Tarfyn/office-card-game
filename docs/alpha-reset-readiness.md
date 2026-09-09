@@ -18,4 +18,4 @@ The following are policy choices, not implementation assumptions: whether cosmet
 
 ## Operational prerequisites
 
-Before any future reset, freeze writes, record the reset epoch, capture legacy JSON and a validated PostgreSQL dump, reconcile `public.match_settlements` and pending completions, reset ownership/decks/loadouts/starter state according to the approved policy, and verify post-reset rewards and idempotency. Scheduled backup health remains a separate F04 finding; a successful manual helper backup does not prove the scheduled service is healthy.
+Before any future reset, freeze writes, record the reset epoch, capture legacy JSON and a validated PostgreSQL dump, reconcile `public.match_settlements` and pending completions, reset ownership/decks/loadouts/starter state according to the approved policy, and verify post-reset rewards and idempotency. F04 scheduled backup execution and isolated restore capability are proven; the immediate pre-reset backup gate remains mandatory.

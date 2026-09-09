@@ -39,8 +39,7 @@ The intentional live storage split is:
 
 Do not describe production as fully PostgreSQL-backed. The recorded VPS baseline is Ubuntu 26.04
 with PostgreSQL 18.6, loopback-only listeners on `127.0.0.1` and `::1`, and no public 5432
-exposure. The scheduled backup service and restore drill are an open F04 finding; a successful
-manual helper invocation does not prove scheduled-backup health.
+exposure. Scheduled backup execution and an isolated PostgreSQL 18 restore drill have been verified for F04; future operational checks must still use the helper and current service state.
 
 ## Repository workflow after cutover
 

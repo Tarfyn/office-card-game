@@ -18,7 +18,9 @@ export function discoverMigrations(migrationDir) {
   return names.map((name) => {
     const path = resolve(fixedDir, name);
     if (dirname(path) !== fixedDir) throw new Error(`Migration escaped its fixed directory: ${name}`);
-    const sql = readFileSync(path, "utf8");
+    // Canonicalize checkout line endings so Windows CRLF and Linux LF builds
+    // record the same migration identity in PostgreSQL.
+    const sql = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
     if (!sql.trim()) throw new Error(`Migration is empty: ${name}`);
     if (forbiddenMetaCommand.test(sql)) throw new Error(`Migration may not contain psql meta-commands: ${name}`);
     if (forbiddenTransactionControl.test(sql)) throw new Error(`Migration transaction control is runner-owned: ${name}`);

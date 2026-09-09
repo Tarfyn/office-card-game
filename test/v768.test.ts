@@ -18,7 +18,7 @@ const css=root("public/styles.css");
 const readme=root("README.md");
 
 test("current version markers keep the v7.68 safety line and advance to v7.69",()=>{
-assert.equal(pkg.version,"7.69.79");
+assert.equal(pkg.version,"7.69.80");
 assert.match(server,/version: "7\.69\.79"/);
 assert.match(server,/Office Card Game v7\.69\.79 server/);
   assert.match(html,/v7\.69\.18 Alpha Playtest/);

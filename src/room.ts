@@ -84,6 +84,8 @@ export interface MatchCompletionResult {
   roomId: string;
   matchId: string;
   mode: RoomMatchMode;
+  /** Server-owned room provenance used by the Alpha epoch settlement fence. */
+  createdAt: number;
   winnerPlayerId: PlayerId | null;
   reason: string;
   startedAt: number | null;
@@ -166,10 +168,11 @@ export interface PersistedCachedIntent {
 
 export interface PersistedProfileCompletion {
   settlementId: string;
-  status: "PENDING" | "SETTLED";
+  status: "PENDING" | "SETTLED" | "REJECTED";
   attemptCount: number;
   nextAttemptAt: number;
   lastError: string | null;
+  rejectionReason?: string | null;
   completion: MatchCompletionResult;
 }
 
@@ -451,6 +454,19 @@ export class RoomService {
     completion.status = "SETTLED";
     completion.nextAttemptAt = Number.MAX_SAFE_INTEGER;
     completion.lastError = null;
+    completion.rejectionReason = null;
+    this.persist();
+    this.notify(room);
+  }
+
+  markProfileCompletionRejected(roomId: string, settlementId: string, reason: string): void {
+    const room = this.rooms.get(String(roomId).toUpperCase());
+    const completion = room?.profileCompletion;
+    if (!room || !completion || completion.settlementId !== settlementId || completion.status !== "PENDING") return;
+    completion.status = "REJECTED";
+    completion.nextAttemptAt = Number.MAX_SAFE_INTEGER;
+    completion.lastError = null;
+    completion.rejectionReason = String(reason).slice(0, 80);
     this.persist();
     this.notify(room);
   }
@@ -1257,6 +1273,7 @@ export class RoomService {
       roomId: room.id,
       matchId: room.state.matchId,
       mode: room.settings.mode,
+      createdAt: room.lifecycle.createdAt,
       winnerPlayerId: room.state.winnerId,
       reason: String(room.state.reason ?? "UNKNOWN"),
       startedAt: room.lifecycle.matchStartedAt,
@@ -1267,7 +1284,7 @@ export class RoomService {
       }
     };
     if (!room.profileCompletion || room.profileCompletion.settlementId !== completion.matchId) {
-      room.profileCompletion = { settlementId:completion.matchId, status:"PENDING", attemptCount:0, nextAttemptAt:0, lastError:null, completion:structuredClone(completion) };
+      room.profileCompletion = { settlementId:completion.matchId, status:"PENDING", attemptCount:0, nextAttemptAt:0, lastError:null, rejectionReason:null, completion:structuredClone(completion) };
     }
     this.onMatchCompleted?.(completion);
   }

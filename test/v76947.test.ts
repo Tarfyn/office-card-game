@@ -9,9 +9,9 @@ const app = root("public/app.js");
 const server = root("server/server.mjs");
 const cosmetics = root("src/cosmetics.ts");
 
-assert.equal(packageJson.version, "7.69.79");
-assert.equal(packageLock.version, "7.69.79");
-assert.equal(packageLock.packages[""].version, "7.69.79");
+assert.equal(packageJson.version, "7.69.80");
+assert.equal(packageLock.version, "7.69.80");
+assert.equal(packageLock.packages[""].version, "7.69.80");
 assert.match(server, /version: "7\.69\.79"/);
 assert.match(server, /version:"7\.69\.79"/);
 assert.match(packageJson.scripts.test, /dist\/test\/v76947\.test\.js/);
@@ -25,4 +25,4 @@ assert.match(app, /roomCosmeticLoadout\(player\.id\)\.cardBackId/);
 assert.match(app, /COS-BACK-004/);
 assert.match(app, /COS-BACK-005/);
 
-console.log("v7.69.79 cosmetic release markers passed.");
+console.log("v7.69.80 cosmetic release markers passed.");

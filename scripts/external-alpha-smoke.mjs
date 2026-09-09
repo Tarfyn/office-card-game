@@ -2,8 +2,12 @@ const base=String(process.env.ALPHA_BASE_URL ?? `http://127.0.0.1:${process.env.
 async function request(path,{method="GET",body,headers={}}={}){const r=await fetch(base+path,{method,headers:{...(body?{"content-type":"application/json"}:{}),...headers},body:body?JSON.stringify(body):undefined});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`${method} ${path} -> ${r.status} ${data?.error?.message??""}`);return data;}
 const a=await request('/api/profiles/guest',{method:'POST',body:{displayName:'External Alpha A'}});
 const b=await request('/api/profiles/guest',{method:'POST',body:{displayName:'External Alpha B'}});
-const room=await request('/api/rooms',{method:'POST',body:{deckId:'customer-service-starter',profileToken:a.profileToken,mode:'FRIENDLY'}});
-const joined=await request(`/api/rooms/${room.roomId}/join`,{method:'POST',body:{deckId:'it-starter',profileToken:b.profileToken}});
+// The bundled starter presets are Training loaners. Use deterministic inline
+// legal decks so this Friendly smoke exercises the normal hosted path.
+const smokeCards=['CS-001','CS-002','CS-003','CS-004','CS-005','CS-006','CS-007','CS-008','CS-009','CS-010','CS-011','CS-012','CS-013','CS-014'];
+const smokeDeck=(suffix)=>({id:`external-smoke-${suffix}`,name:`External Smoke ${suffix}`,cards:smokeCards.map((definitionId,index)=>({definitionId,copies:index<13?3:1}))});
+const room=await request('/api/rooms',{method:'POST',body:{deck:smokeDeck('a'),mode:'FRIENDLY'}});
+const joined=await request(`/api/rooms/${room.roomId}/join`,{method:'POST',body:{deck:smokeDeck('b')}});
 const aState=await request(`/api/rooms/${room.roomId}/state?after=0`,{headers:{'x-room-token':room.token}});
 const bState=await request(`/api/rooms/${room.roomId}/state?after=0`,{headers:{'x-room-token':joined.token}});
 const aStream=await request(`/api/rooms/${room.roomId}/stream-ticket`,{method:'POST',headers:{'x-room-token':room.token},body:{clientId:'external-smoke-a'}});

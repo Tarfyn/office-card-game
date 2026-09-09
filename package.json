@@ -1,6 +1,6 @@
 {
   "name": "office-card-game-headless",
-  "version": "7.69.79",
+  "version": "7.69.80",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "ops:health": "node scripts/healthcheck.mjs",
     "ops:external-smoke": "node scripts/external-alpha-smoke.mjs",
     "ops:alpha-check": "node scripts/alpha-candidate-check.mjs",
+    "ops:alpha-reset": "node scripts/alpha-reset.mjs",
     "ops:i18n-audit": "node scripts/localization-audit.mjs",
     "ops:art-audit": "node scripts/artwork-audit.mjs --write",
     "ops:cosmetic-audit": "node scripts/cosmetic-asset-audit.mjs",
